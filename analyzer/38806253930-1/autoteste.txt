@@ -1,0 +1,59 @@
+  Identificando ps3_test.elf (SHA-256 de 846.656 bytes)...
+  ELF PPU sem cifra: pronto para análise.
+  Lendo funções, TOC e importações (ps3recomp ppu_loader)...
+  Analisando 19 funções PPU...
+  Procurando programas SPU embutidos...
+  Análise: 19 funções, 16 candidatas.
+  Recompilando 16 funções com o lifter do ps3recomp...
+  Compilando o código recompilado para x86_64-windows-gnu (zig/clang)... na primeira vez leva alguns minutos
+  Gerando estados iniciais...
+  Executando 256 casos no executável recompilado...
+  Executando os mesmos 256 casos na CPU de referência (código PowerPC original)...
+    referência: 100/256
+    referência: 200/256
+  Comparando...
+  Gravando relatórios...
+OK    análise: 19 funções
+OK    recompilação: 16/16 funções idênticas, 256/256 casos
+OK    mutação: divergência detectada em ['func_10001938'] (esperado [func_10001938])
+OK    SELF de varejo: reconhecido como cifrado e não analisado
+código de saída do .exe: 3221226505
+ 
+--- analise.log
+Identificando ps3_test.elf (SHA-256 de 846.656 bytes)...
+ELF PPU sem cifra: pronto para análise.
+Lendo funções, TOC e importações (ps3recomp ppu_loader)...
+Analisando 19 funções PPU...
+Procurando programas SPU embutidos...
+Análise: 19 funções, 16 candidatas.
+Recompilando 16 funções com o lifter do ps3recomp...
+Compilando o código recompilado para x86_64-windows-gnu (zig/clang)... na primeira vez leva alguns minutos
+Gerando estados iniciais...
+Executando 256 casos no executável recompilado...
+Executando os mesmos 256 casos na CPU de referência (código PowerPC original)...
+Windows fatal exception: access violation
+
+Current thread 0x000019f4 (most recent call first):
+  File "unicorn\unicorn_py3\unicorn.py", line 1236 in ctl
+  File "unicorn\unicorn_py3\unicorn.py", line 1254 in __ctl_w
+  File "unicorn\unicorn_py3\unicorn.py", line 1443 in ctl_set_tlb_mode
+  File "gow3_analyzer\reference.py", line 64 in _create
+  File "gow3_analyzer\reference.py", line 145 in run
+  File "gow3_analyzer\recomp_test.py", line 212 in run
+  File "gow3_analyzer\pipeline.py", line 75 in run
+  File "gow3_analyzer\cli.py", line 47 in main
+  File "GOW3_Native_Analyzer.py", line 39 in <lambda>
+  File "threading.py", line 1012 in run
+  File "threading.py", line 1075 in _bootstrap_inner
+  File "threading.py", line 1032 in _bootstrap
+
+Thread 0x00001f78 (most recent call first):
+  File "threading.py", line 1169 in _wait_for_tstate_lock
+  File "threading.py", line 1149 in join
+  File "GOW3_Native_Analyzer.py", line 41 in <module>
+
+FALHA executável empacotado: código 3221226505, None/None funções idênticas
+FALHA executável empacotado: relatório HTML gerado
+OK    executável empacotado com SELF de varejo: código 4 (esperado 4), sem análise
+
+AUTOTESTE: 2 falha(s)
