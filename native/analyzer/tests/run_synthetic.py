@@ -28,13 +28,13 @@ MUTANT = "func_10001938"  # mul64 do corpus: termina com add r3,r9,r10
 
 
 def mutate(path: Path):
-    src = path.read_text(encoding="utf-8")
+    src = path.read_text(encoding="latin-1")  # o lifter grava na codificação local (cp1252 no Windows)
     m = re.search(r"void %s\(ppu_context\* ctx\)\s*\{" % MUTANT, src)
     assert m, "função do teste de mutação não encontrada no código gerado"
     body_start = m.end()
     i = src.index("ctx->gpr[3] = ", body_start)
     src = src[:i] + "ctx->gpr[3] = 1 ^ " + src[i + len("ctx->gpr[3] = "):]
-    path.write_text(src, encoding="utf-8")
+    path.write_text(src, encoding="latin-1")
 
 
 def check(cond, msg, failures):
