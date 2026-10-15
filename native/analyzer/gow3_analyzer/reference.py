@@ -47,13 +47,19 @@ def _fcti_isa(bits: int, width: int, toward_zero: bool):
 
 
 class Reference:
+    """Uma única máquina Unicorn por executável (criada uma vez). Entre casos, a memória volta ao
+    estado original restaurando só os bytes escritos, e o XER (inclusive CA) é reposto por `mtxer`."""
+
     def __init__(self, image):
         self.image = image
+        self.mu = None
+        self.dirty: set[int] = set()   # bytes escritos desde a última restauração
+        self.written: set[int] = set()  # bytes escritos na chamada atual
+        self.exceptions: list = []
+        self.fcti_hooked: set[int] = set()
+        self.seed = None
 
-    def new_machine(self, seed: int = 0):
-        return self._machine({"seed": seed})
-
-    def _machine(self, case):
+    def _create(self):
         mu = Uc(UC_ARCH_PPC, UC_MODE_PPC64 | UC_MODE_BIG_ENDIAN)
         mu.ctl_set_tlb_mode(UC_TLB_VIRTUAL)
         mapped = []
@@ -71,11 +77,53 @@ class Reference:
                 mu.mem_write(seg["vaddr"], self.image.data[seg["offset"]:seg["offset"] + seg["filesz"]])
         mu.mem_map(S.STACK_BASE, S.STACK_SIZE)
         mu.mem_map(S.SCRATCH_BASE, S.SCRATCH_SIZE)
-        mu.mem_write(S.SCRATCH_BASE, S.scratch_bytes(case["seed"]))
         mu.mem_map(S.RETURN_SENTINEL, 0x1000)
-        # sentinela: nop; mfxer r3 (lido depois do retorno, ver abaixo)
-        mu.mem_write(S.RETURN_SENTINEL, b"\x60\x00\x00\x00\x7c\x61\x02\xa6\x60\x00\x00\x00")
-        return mu
+        # sentinela: nop; mfxer r3 (leitura do XER completo); mtxer r3 (preparo do XER); nop
+        mu.mem_write(S.RETURN_SENTINEL, bytes.fromhex("60000000" "7c6102a6" "7c6103a6" "60000000"))
+        # Os callbacks ficam guardados no objeto: vivem tanto quanto a máquina.
+        self._on_write_cb = self._on_write
+        self._on_intr_cb = self._on_intr
+        self._on_fcti_cb = self._on_fcti
+        mu.hook_add(UC_HOOK_MEM_WRITE, self._on_write_cb)
+        mu.hook_add(UC_HOOK_INTR, self._on_intr_cb)
+        self.mu = mu
+
+    def _on_write(self, uc, access, address, size, value, data):
+        for k in range(size):
+            self.written.add(address + k)
+            self.dirty.add(address + k)
+
+    def _on_intr(self, uc, intno, data):
+        # Qualquer exceção da CPU (instrução ilegal, trap, sc) encerra a execução como falha.
+        self.exceptions.append((intno, uc.reg_read(P.UC_PPC_REG_PC)))
+        uc.emu_stop()
+
+    def _on_fcti(self, uc, address, size, data):
+        # Correção documentada da referência: o QEMU 5 que o Unicorn 2.1 usa devolve 0x80000000 em
+        # TODA conversão fcti* inválida, inclusive estouro positivo; o ISA manda saturar. Nesses
+        # endereços a conversão é refeita conforme o ISA e a instrução é pulada.
+        _a, w, width, toward_zero = data
+        frt, frb = (w >> 21) & 31, (w >> 11) & 31
+        fixed = _fcti_isa(uc.reg_read(getattr(P, f"UC_PPC_REG_FPR{frb}")) & S.MASK, width, toward_zero)
+        if fixed is not None:
+            uc.reg_write(getattr(P, f"UC_PPC_REG_FPR{frt}"), fixed)
+            uc.reg_write(P.UC_PPC_REG_PC, address + 4)
+
+    def _original_byte(self, addr: int) -> int:
+        for seg in self.image.loads:
+            if seg["vaddr"] <= addr < seg["vaddr"] + seg["filesz"]:
+                return self.image.data[seg["offset"] + addr - seg["vaddr"]]
+        return 0
+
+    def _reset_memory(self, seed: int):
+        mu = self.mu
+        for a in self.dirty:
+            if not S.SCRATCH_BASE <= a < S.SCRATCH_BASE + S.SCRATCH_SIZE:
+                mu.mem_write(a, bytes([self._original_byte(a)]))
+        if self.dirty or self.seed != seed:
+            mu.mem_write(S.SCRATCH_BASE, S.scratch_bytes(seed))
+        self.seed = seed
+        self.dirty.clear()
 
     def _fcti_sites(self, start: int, end: int) -> list[tuple[int, int, int, bool]]:
         out = []
@@ -90,64 +138,43 @@ class Reference:
                 out.append((a, w, width, toward_zero))
         return out
 
-    def run(self, code_addr: int, case: dict, machine=None, code_end: int | None = None) -> dict:
-        """Executa a função a partir do estado `case`. Com `machine` (de `new_machine`), a memória
-        continua de uma chamada para a outra, como num processo único."""
-        mu = machine if machine is not None else self._machine(case)
-        for i in range(32):
-            mu.reg_write(getattr(P, f"UC_PPC_REG_{i}"), case["gpr"][i])
-            mu.reg_write(getattr(P, f"UC_PPC_REG_FPR{i}"), case["fpr"][i])
-        mu.reg_write(P.UC_PPC_REG_CR, case["cr"])
-        mu.reg_write(P.UC_PPC_REG_XER, case["xer"])
-        mu.reg_write(P.UC_PPC_REG_CTR, case["ctr"])
-        mu.reg_write(P.UC_PPC_REG_LR, case["lr"])
+    def run(self, code_addr: int, case: dict, code_end: int | None = None, reset: bool = True) -> dict:
+        """Executa a função a partir do estado `case`. Com reset=False a memória continua da chamada
+        anterior, como num processo único (usado na validação contra o QEMU)."""
+        if self.mu is None:
+            self._create()
+            self.seed = None
+            self._reset_memory(case.get("seed", 0))
+        elif reset:
+            self._reset_memory(case["seed"])
+        mu = self.mu
+        if code_end and code_addr not in self.fcti_hooked:
+            self.fcti_hooked.add(code_addr)
+            for site in self._fcti_sites(code_addr, code_end):
+                mu.hook_add(UC_HOOK_CODE, self._on_fcti_cb, site, site[0], site[0])
         mu.reg_write(P.UC_PPC_REG_MSR, mu.reg_read(P.UC_PPC_REG_MSR) | MSR_FP)
         msr = mu.reg_read(P.UC_PPC_REG_MSR)
         if not msr >> 63 or not msr & MSR_FP:
             raise RuntimeError("Unicorn sem modo de 64 bits ou sem ponto flutuante (MSR=%x)" % msr)
-        written = set()
-        hooks = []
-
-        def on_write(uc, access, address, size, value, data):
-            for k in range(size):
-                written.add(address + k)
-
-        hooks.append(mu.hook_add(UC_HOOK_MEM_WRITE, on_write))
-        # Qualquer exceção da CPU (instrução ilegal, trap, sc) encerra a execução como falha.
-        exceptions = []
-
-        def on_intr(uc, intno, data):
-            exceptions.append((intno, uc.reg_read(P.UC_PPC_REG_PC)))
-            uc.emu_stop()
-
-        hooks.append(mu.hook_add(UC_HOOK_INTR, on_intr))
-
-        # Correção documentada da referência: o QEMU 5 que o Unicorn 2.1 usa devolve 0x80000000 em
-        # TODA conversão fcti* inválida, inclusive estouro positivo; o ISA manda saturar. Nesses
-        # endereços a conversão é refeita conforme o ISA e a instrução é pulada.
-        def on_fcti(uc, address, size, data):
-            _a, w, width, toward_zero = data
-            frt, frb = (w >> 21) & 31, (w >> 11) & 31
-            fixed = _fcti_isa(uc.reg_read(getattr(P, f"UC_PPC_REG_FPR{frb}")) & S.MASK, width, toward_zero)
-            if fixed is not None:
-                uc.reg_write(getattr(P, f"UC_PPC_REG_FPR{frt}"), fixed)
-                uc.reg_write(P.UC_PPC_REG_PC, address + 4)
-
-        if code_end:
-            for site in self._fcti_sites(code_addr, code_end):
-                hooks.append(mu.hook_add(UC_HOOK_CODE, on_fcti, site, site[0], site[0]))
+        # XER completo (SO/OV/CA) pelo próprio processador: mtxer r3
+        mu.reg_write(P.UC_PPC_REG_3, case["xer"])
+        mu.emu_start(S.RETURN_SENTINEL + 8, S.RETURN_SENTINEL + 12, count=1)
+        for i in range(32):
+            mu.reg_write(getattr(P, f"UC_PPC_REG_{i}"), case["gpr"][i])
+            mu.reg_write(getattr(P, f"UC_PPC_REG_FPR{i}"), case["fpr"][i])
+        mu.reg_write(P.UC_PPC_REG_CR, case["cr"])
+        mu.reg_write(P.UC_PPC_REG_CTR, case["ctr"])
+        mu.reg_write(P.UC_PPC_REG_LR, case["lr"])
+        self.written = set()
+        self.exceptions = []
         try:
             mu.emu_start(code_addr, S.RETURN_SENTINEL, count=S.INSTRUCTION_LIMIT)
         except UcError as error:
-            for h in hooks:
-                mu.hook_del(h)
-            msg = str(error)
-            kind = "read" if "READ" in msg.upper() else "write" if "WRITE" in msg.upper() else "fetch" if "FETCH" in msg.upper() else "cpu"
+            msg = str(error).upper()
+            kind = "read" if "READ" in msg else "write" if "WRITE" in msg else "fetch" if "FETCH" in msg else "cpu"
             return {"fault": kind, "addr": mu.reg_read(P.UC_PPC_REG_PC)}
-        for h in hooks:
-            mu.hook_del(h)
-        if exceptions:
-            return {"fault": f"cpu-excecao-{exceptions[0][0]}", "addr": exceptions[0][1]}
+        if self.exceptions:
+            return {"fault": f"cpu-excecao-{self.exceptions[0][0]}", "addr": self.exceptions[0][1]}
         if mu.reg_read(P.UC_PPC_REG_PC) != S.RETURN_SENTINEL:
             return {"fault": "timeout", "addr": mu.reg_read(P.UC_PPC_REG_PC)}
         result_gpr = [mu.reg_read(getattr(P, f"UC_PPC_REG_{i}")) & S.MASK for i in range(32)]
@@ -157,9 +184,7 @@ class Reference:
         mu.emu_start(S.RETURN_SENTINEL + 4, S.RETURN_SENTINEL + 8, count=1)
         xer = mu.reg_read(P.UC_PPC_REG_3) & 0xFFFFFFFF
         mu.reg_write(P.UC_PPC_REG_3, result_gpr[3])
-        pairs = []
-        for a in sorted(written):
-            pairs.append((a, mu.mem_read(a, 1)[0]))
+        pairs = [(a, mu.mem_read(a, 1)[0]) for a in sorted(self.written)]
         return {
             "gpr": result_gpr,
             "fpr": [mu.reg_read(getattr(P, f"UC_PPC_REG_FPR{i}")) & S.MASK for i in range(32)],

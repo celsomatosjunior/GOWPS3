@@ -33,7 +33,6 @@ def main():
     meta = json.load(open(meta_path))["functions"]
     ref = Reference(ElfImage(elf))
     lines = []
-    machine = ref.new_machine()  # um "processo" só, como o main do QEMU (globais persistem)
     for name, sig, inputs in CASES:
         args, ret = parse(sig)
         m = meta[name]
@@ -47,7 +46,8 @@ def main():
                     fi += 1
                 else:
                     case["gpr"][3 + position] = int(value) & S.MASK
-            r = ref.run(m["code"], case, machine, code_end=m["code"] + m["size"])
+            # reset=False: um "processo" só, como o main do QEMU (variáveis globais persistem)
+            r = ref.run(m["code"], case, code_end=m["code"] + m["size"], reset=False)
             text = ",".join(repr(x) if isinstance(x, float) else str(x) for x in inp)
             if r.get("fault"):
                 lines.append(f"{name}({text})=FALHA {r['fault']} {r['addr']:x}")
