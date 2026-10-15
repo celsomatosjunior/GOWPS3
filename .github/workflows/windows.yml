@@ -105,9 +105,18 @@ jobs:
           echo "QTDIR=C:\Qt\${{ env.QT_VER }}\${{ env.QT_VER_MSVC }}_64" >> $env:GITHUB_ENV
           echo "VULKAN_SDK=C:\VulkanSDK\${{ env.VULKAN_VER }}" >> $env:GITHUB_ENV
 
+      - name: Restaurar RPCS3 já compilado (mesmo commit)
+        id: rpcs3bin
+        uses: actions/cache/restore@v4
+        with:
+          path: rpcs3/bin
+          key: gow3-rpcs3bin-${{ env.RPCS3_COMMIT }}-v1
+
       - uses: nuget/setup-nuget@v2
+        if: steps.rpcs3bin.outputs.cache-hit != 'true'
 
       - name: Pacotes NuGet
+        if: steps.rpcs3bin.outputs.cache-hit != 'true'
         working-directory: rpcs3
         run: nuget restore rpcs3.sln
 
@@ -116,6 +125,7 @@ jobs:
         run: .ci/get_keys-windows.sh
 
       - name: Restaurar ccache
+        if: steps.rpcs3bin.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.CCACHE_DIR }}
@@ -144,14 +154,23 @@ jobs:
           done < .ci/ci-vars.env
 
       - uses: microsoft/setup-msbuild@v2
+        if: steps.rpcs3bin.outputs.cache-hit != 'true'
 
       - name: Compilar RPCS3 (MSVC, Release x64)
+        if: steps.rpcs3bin.outputs.cache-hit != 'true'
         shell: pwsh
         working-directory: rpcs3
         run: msbuild rpcs3.sln /p:Configuration=Release /v:minimal /p:Platform=x64 /p:PreferredToolArchitecture=x64 /p:CLToolPath=${{ env.CCACHE_BIN_DIR }} /p:UseMultiToolTask=true /p:CustomAfterMicrosoftCommonTargets="${{ github.workspace }}\rpcs3\buildfiles\msvc\ci_only.targets"
 
+      - name: Guardar RPCS3 compilado
+        if: steps.rpcs3bin.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: rpcs3/bin
+          key: gow3-rpcs3bin-${{ env.RPCS3_COMMIT }}-v1
+
       - name: Salvar ccache
-        if: always()
+        if: always() && steps.rpcs3bin.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ env.CCACHE_DIR }}
@@ -170,16 +189,26 @@ jobs:
         run: |
           # O RPCS3 recusa DLLs do Visual C++ fora da pasta do Windows (rpcs3/module_verifier.cpp),
           # então o pacote leva o instalador oficial da Microsoft, não as DLLs.
+          $ErrorActionPreference = 'Stop'
           $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
-          $redist = Get-ChildItem "$vs\VC\Redist\MSVC" -Directory | Sort-Object { [version]($_.Name -replace '[^0-9.]', '') } -Descending |
-                    Where-Object { Test-Path "$($_.FullName)\vc_redist.x64.exe" } | Select-Object -First 1
-          if (-not $redist) { throw "vc_redist.x64.exe não encontrado em $vs" }
-          $crt = Get-ChildItem "$($redist.FullName)\x64" -Directory -Filter 'Microsoft.VC*.CRT' | Select-Object -First 1
-          $version = (Get-Item "$($crt.FullName)\msvcp140.dll").VersionInfo.FileVersionRaw.ToString()
-          Copy-Item "$($redist.FullName)\vc_redist.x64.exe" vc_redist.x64.exe
+          Write-Host "Visual Studio: $vs"
+          Get-ChildItem "$vs\VC\Redist\MSVC" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  VC\Redist\MSVC\$($_.Name)" }
+          $candidates = @(Get-ChildItem "$vs\VC\Redist\MSVC" -Recurse -Filter vc_redist.x64.exe -ErrorAction SilentlyContinue) +
+                        @(Get-Item rpcs3\bin\vc_redist.x64.exe -ErrorAction SilentlyContinue)
+          $redist = $candidates | Where-Object { $_ } | Sort-Object { $_.VersionInfo.FileVersionRaw } -Descending | Select-Object -First 1
+          if (-not $redist) {
+            Write-Host "vc_redist.x64.exe não está no Visual Studio; baixando o instalador oficial da Microsoft"
+            Invoke-WebRequest 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile vc_redist_download.exe
+            $redist = Get-Item vc_redist_download.exe
+          }
+          $sig = Get-AuthenticodeSignature $redist.FullName
+          if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'Microsoft') {
+            Write-Host "::error::Assinatura do vc_redist.x64.exe inválida: $($sig.Status) $($sig.SignerCertificate.Subject)"; exit 1
+          }
+          Copy-Item $redist.FullName vc_redist.x64.exe -Force
+          $version = $redist.VersionInfo.FileVersionRaw.ToString()
           "VCREDIST_VERSION=$version" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
-          Write-Host "vc_redist.x64.exe de $($redist.FullName); Visual C++ exigido: $version"
-          Get-ChildItem rpcs3\bin -Filter *.dll | Where-Object Name -match '^(msvcp140|vcruntime140|concrt140|vulkan-1)' | ForEach-Object { Write-Host "DLL do Windows no bin (será excluída do pacote): $($_.Name)" }
+          Write-Host "::notice title=Visual C++::Instalador $($redist.FullName), versão $version, assinado por $($sig.SignerCertificate.Subject)"
           New-Item -ItemType Directory -Force rpcs3\bin\config\input_configs | Out-Null
           Invoke-WebRequest 'https://raw.githubusercontent.com/gabomdq/SDL_GameControllerDB/master/gamecontrollerdb.txt' -OutFile rpcs3\bin\config\input_configs\gamecontrollerdb.txt
 
@@ -266,13 +295,13 @@ jobs:
           {
             echo "# Relatório de compilação — GOW3 PS3 PC"
             echo
-            echo '```'; cat build_info.txt; echo '```'
+            echo '```'; cat build_info.txt 2>/dev/null || echo "(sem build_info)"; echo '```'
             echo
             echo "## GOW3_PS3_PC.exe (dumpbin /dependents)"
-            echo '```'; cat app/app_dependents.txt; echo '```'
+            echo '```'; cat app/app_dependents.txt 2>/dev/null || echo "(sem dados)"; echo '```'
             echo
             echo "## Pacote"
-            echo '```'; ls -la dist; (cd dist && find GOW3_PS3_PC -maxdepth 3 | sort | head -200); echo '```'
+            echo '```'; ls -la dist 2>/dev/null; (cd dist 2>/dev/null && find GOW3_PS3_PC -maxdepth 3 | sort | head -200) || true; echo '```'
             echo
             echo "## Autoteste na máquina de compilação"
             echo '```'; cat selftest_build.txt 2>/dev/null || echo "(autoteste não rodou)"; echo '```'
