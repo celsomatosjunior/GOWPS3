@@ -1,0 +1,10 @@
+﻿RPCS3 v0.0.43-20310-4d5def58 Alpha | master
+Architecture: x64
+AMD EPYC 9V45 96-Core Processor | 4 Threads | 15.99 GiB RAM | TSC: 2.596GHz | AVX-512+ | FMA3
+Operating system: Windows, Major: 10, Minor: 0, Build: 26100, Service Pack: none
+Qt version: Compiled against Qt 6.12.0 | Run-time uses Qt 6.12.0
+Current Time: 2026-10-15T17:34:56
+Initialization times before main(): 0.148701Gc
+·! 0:00:00.000008 SYS: argc: 3, argv: 'D:\a\GOWPS3\GOWPS3\dist\GOW3_PS3_PC\runtime\rpcs3\rpcs3.exe' '--headless' '--version'
+·! 0:00:00.000442 SYS: argv_utf8: 'D:\a\GOWPS3\GOWPS3\dist\GOW3_PS3_PC\runtime\rpcs3\rpcs3.exe' '--headless' '--version'
+·E 0:00:00.000549 SYS: Found incorrectly installed module: 'msvcp140.dll' (path='D:\a\GOWPS3\GOWPS3\dist\GOW3_PS3_PC\runtime\rpcs3\MSVCP140.dll', windows='C:\Windows')
