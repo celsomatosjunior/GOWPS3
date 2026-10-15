@@ -1,0 +1,5 @@
+total 76784
+drwxr-xr-x 1 runneradmin 197121        0 Oct 15 18:49 .
+drwxr-xr-x 1 runneradmin 197121        0 Oct 15 18:50 ..
+drwxr-xr-x 1 runneradmin 197121        0 Oct 15 18:49 GOW3_PS3_PC
+-rw-r--r-- 1 runneradmin 197121 78616836 Oct 15 18:49 GOW3_PS3_PC_Windows_x64.zip
