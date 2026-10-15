@@ -10,6 +10,7 @@
 #include "../core/settings.hpp"
 #include "../core/sha256.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <iostream>
@@ -206,6 +207,39 @@ static void test_runtime()
 	CHECK_EQ(installed_firmware(real), std::string("4.92"));
 }
 
+static void test_contract_strings()
+{
+	const auto needles = rpcs3_required_strings();
+	auto has = [&](const char* text) { return std::find(needles.begin(), needles.end(), text) != needles.end(); };
+	CHECK(has("Write Color Buffers"));
+	CHECK(has("FidelityFX Super Resolution"));
+	CHECK(has("Async Recompiler with Shader Interpreter"));
+	CHECK(has("no-gui"));
+	CHECK(has("RPCS3_CONFIG_DIR"));
+	CHECK(!has("100"));
+	std::string image = "xx Write Color Buffers\0yy";
+	for (char c : std::string("RPCS3_CONFIG_DIR")) {
+		image.push_back(c);
+		image.push_back('\0');
+	}
+	const auto missing = missing_strings(image, {"Write Color Buffers", "RPCS3_CONFIG_DIR", "Nao Existe"});
+	CHECK(missing.size() == 1 && missing[0] == "Nao Existe");
+
+	TempDir tmp;
+	fs::create_directories(tmp.path / "rpcs3-v0.0.38-win64" / "qt6");
+	write_file(tmp.path / "rpcs3-v0.0.38-win64" / "rpcs3.exe", "MZ");
+	CHECK(find_rpcs3_folder(tmp.path) == tmp.path / "rpcs3-v0.0.38-win64");
+	CHECK(find_rpcs3_folder(tmp.path / "rpcs3-v0.0.38-win64") == tmp.path / "rpcs3-v0.0.38-win64");
+	CHECK(find_rpcs3_folder(tmp.path / "rpcs3-v0.0.38-win64" / "qt6").empty());
+
+	const Layout layout = Layout::from_app_dir(tmp.path / "app");
+	write_file(layout.rpcs3_exe(), "MZ falso");
+	write_file(layout.runtime_dir / "qt6" / "plugins" / "x.dll", "dll");
+	write_file(layout.runtime_manifest(), build_runtime_manifest(layout));
+	CHECK(parse_runtime_manifest(build_runtime_manifest(layout)).size() == 2);
+	CHECK(!has_error(check_runtime(layout, true)));
+}
+
 static void test_diagnostics()
 {
 	const std::string log = "\xC2\xB7! 0:00:00.000 SYS: RPCS3\n"
@@ -253,6 +287,7 @@ int main(int argc, char** argv)
 	test_settings();
 	test_runtime();
 	test_diagnostics();
+	test_contract_strings();
 	for (int i = 1; i + 1 < argc; i++)
 		if (std::strcmp(argv[i], "--pe") == 0)
 			test_pe(argv[i + 1]);

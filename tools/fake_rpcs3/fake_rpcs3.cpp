@@ -9,13 +9,27 @@
 #include <fstream>
 
 extern "C" __declspec(dllimport) int fake_qt_version();
+#ifdef WITH_VCRUNTIME
+// Importa uma função do VCRUNTIME140.dll, como o rpcs3.exe oficial (compilado com MSVC) faz.
+extern "C" __declspec(dllimport) const void* vcr_memchr(const void*, int, size_t);
+#endif
 
 namespace fs = std::filesystem;
+
+#ifdef WITH_CONTRACT
+#include "contract_strings.inc"
+#endif
 
 int wmain(int argc, wchar_t** argv)
 {
 	wchar_t env[4096] = {};
 	std::wstring dir;
+#ifdef WITH_VCRUNTIME
+	if (argc > 98) std::printf("%p", vcr_memchr("abc", 98, 3));
+#endif
+#ifdef WITH_CONTRACT
+	if (argc > 99) std::puts(contract_strings[0]);
+#endif
 	if (GetEnvironmentVariableW(L"RPCS3_CONFIG_DIR", env, 4096)) {
 		dir = env;
 		for (auto& c : dir) if (c == L'\\') c = L'/';

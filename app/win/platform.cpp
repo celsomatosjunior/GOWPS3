@@ -53,6 +53,13 @@ fs::path executable_dir()
 	return fs::path(buffer).parent_path();
 }
 
+fs::path system_dir()
+{
+	wchar_t buffer[MAX_PATH] = {};
+	GetSystemDirectoryW(buffer, MAX_PATH);
+	return fs::path(buffer);
+}
+
 bool directory_writable(const fs::path& dir)
 {
 	std::error_code ec;

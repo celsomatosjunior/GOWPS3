@@ -60,5 +60,12 @@ struct RuntimeEntry {
 };
 std::vector<RuntimeEntry> parse_runtime_manifest(const std::string& text);
 Findings check_runtime(const Layout& layout, bool verify_hashes);
+std::string build_runtime_manifest(const Layout& layout); // varre runtime\rpcs3
+
+// Textos da lista que não aparecem no executável (procura em ASCII e UTF-16LE).
+std::vector<std::string> missing_strings(const std::string& image, const std::vector<std::string>& needles);
+
+// Aceita a pasta do rpcs3.exe ou uma pasta acima dela (ex.: a pasta onde o .7z foi extraído).
+fs::path find_rpcs3_folder(const fs::path& picked);
 
 } // namespace gow3

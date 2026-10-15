@@ -3,6 +3,8 @@
 
 #include "sha256.hpp"
 
+#include <algorithm>
+
 namespace gow3 {
 
 Layout Layout::from_app_dir(const fs::path& app_dir, const fs::path& user_dir_override)
@@ -162,8 +164,8 @@ Findings check_runtime(const Layout& layout, bool verify_hashes)
 	Findings out;
 	std::error_code ec;
 	if (!fs::is_regular_file(layout.rpcs3_exe(), ec)) {
-		out.push_back({Level::error, "Componente RPCS3 ausente: " + path_to_utf8(layout.rpcs3_exe()) +
-		                                 ". Extraia o ZIP inteiro de novo."});
+		out.push_back({Level::error, "RPCS3 ainda não instalado neste aplicativo. Baixe o RPCS3 para Windows em rpcs3.net, "
+		                             "extraia, clique em 'Instalar RPCS3...' e escolha a pasta extraída."});
 		return out;
 	}
 	if (fs::is_directory(layout.portable_dir(), ec))
@@ -194,11 +196,56 @@ Findings check_runtime(const Layout& layout, bool verify_hashes)
 	}
 	if (missing || wrong)
 		out.push_back({Level::error, std::to_string(missing) + " componente(s) ausente(s) e " + std::to_string(wrong) +
-		                                 " diferente(s) do pacote original (ex.: " + example + "). Extraia o ZIP de novo."});
+		                                 " diferente(s) do que foi instalado (ex.: " + example + "). Use 'Instalar RPCS3...' de novo."});
 	else
 		out.push_back({Level::ok, "Componentes do RPCS3 conferidos: " + std::to_string(entries.size()) + " arquivos" +
 		                              (verify_hashes ? " (com SHA-256)" : "")});
 	return out;
+}
+
+std::string build_runtime_manifest(const Layout& layout)
+{
+	std::string out = "# sha256 tamanho caminho (gerado pelo GOW3_PS3_PC.exe ao instalar o RPCS3)\n";
+	std::error_code ec;
+	std::vector<fs::path> files;
+	for (auto it = fs::recursive_directory_iterator(layout.runtime_dir, ec); !ec && it != fs::recursive_directory_iterator();
+	     it.increment(ec))
+		if (it->is_regular_file(ec))
+			files.push_back(it->path());
+	std::sort(files.begin(), files.end());
+	const fs::path base = layout.runtime_dir.parent_path();
+	for (const auto& file : files)
+		out += sha256_file(file).value_or("ilegivel") + " " + std::to_string(fs::file_size(file, ec)) + " " +
+		       generic_utf8(fs::relative(file, base, ec)) + "\n";
+	return out;
+}
+
+std::vector<std::string> missing_strings(const std::string& image, const std::vector<std::string>& needles)
+{
+	std::vector<std::string> missing;
+	for (const auto& needle : needles) {
+		if (image.find(needle) != std::string::npos)
+			continue;
+		std::string wide;
+		for (char c : needle) {
+			wide.push_back(c);
+			wide.push_back('\0');
+		}
+		if (image.find(wide) == std::string::npos)
+			missing.push_back(needle);
+	}
+	return missing;
+}
+
+fs::path find_rpcs3_folder(const fs::path& picked)
+{
+	std::error_code ec;
+	if (fs::is_regular_file(picked / "rpcs3.exe", ec))
+		return picked;
+	for (const auto& entry : fs::directory_iterator(picked, ec))
+		if (entry.is_directory(ec) && fs::is_regular_file(entry.path() / "rpcs3.exe", ec))
+			return entry.path();
+	return {};
 }
 
 } // namespace gow3

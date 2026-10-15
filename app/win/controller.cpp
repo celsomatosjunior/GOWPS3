@@ -140,7 +140,14 @@ Findings Controller::install_firmware(const fs::path& pup)
 		out.push_back({Level::error, "Não foi possível iniciar o RPCS3: " + result.error});
 		return out;
 	}
-	log("Instalação de firmware terminou com código " + std::to_string(result.exit_code));
+	log("Instalação de firmware (modo sem janela) terminou com código " + std::to_string(result.exit_code));
+	if (!firmware_installed(layout_)) {
+		// Plano B: o instalador com janela do próprio RPCS3 (mostra o progresso; feche o RPCS3 no fim).
+		log("Firmware não detectado; abrindo o instalador com janela do RPCS3");
+		std::string error;
+		if (void* handle = win::start_process(layout_.rpcs3_exe(), {"--installfw", path_to_utf8(pup)}, rpcs3_environment(), error))
+			win::wait_process(handle);
+	}
 	if (firmware_installed(layout_))
 		out.push_back({Level::ok, "Firmware instalado: " + installed_firmware(layout_)});
 	else
@@ -201,6 +208,142 @@ std::string Controller::diagnostics_text()
 		                                   std::to_string(report.warnings) + " avisos no log."});
 	return "Log: " + path_to_utf8(layout_.rpcs3_log()) + "\n\n" + format_findings(findings) +
 	       "\nÚltimas linhas:\n" + log_tail(text, 60);
+}
+
+Findings Controller::run_rpcs3_version(std::string* version)
+{
+	Findings run;
+	std::error_code rm;
+	fs::remove(layout_.rpcs3_log(), rm);
+	// Sem console, o Qt mostraria o --version numa caixa de diálogo (QCommandLineParser no Windows);
+	// esta variável do Qt manda o texto para a saída padrão, que é capturada aqui.
+	auto env = rpcs3_environment();
+	env.emplace_back("QT_COMMAND_LINE_PARSER_NO_GUI_MESSAGE_BOXES", "1");
+	const auto result = win::run_process(layout_.rpcs3_exe(), version_arguments(), env, 120000);
+	char hex[16];
+	std::snprintf(hex, sizeof(hex), "0x%08lX", result.exit_code);
+	const std::string text = trim(result.output);
+	if (!result.started)
+		run.push_back({Level::error, "rpcs3.exe não iniciou: " + result.error});
+	else if (result.timed_out)
+		run.push_back({Level::error, "rpcs3.exe --version não terminou em 120 s"});
+	else if (result.exit_code != 0)
+		run.push_back({Level::error, std::string("rpcs3.exe --version terminou com código ") + hex +
+		                                 (result.exit_code == 0xC0000135 ? " (DLL ausente)" : "")});
+	else
+		run.push_back({Level::ok, "rpcs3.exe executou e respondeu: " + (text.empty() ? std::string("(sem texto)") : text)});
+	if (result.started && !result.timed_out && result.exit_code == 0) {
+		run.push_back(fs::is_regular_file(layout_.rpcs3_log(), rm)
+		                  ? Finding{Level::ok, "O RPCS3 gravou o log dentro da pasta do aplicativo: " + path_to_utf8(layout_.rpcs3_log())}
+		                  : Finding{Level::error, "O RPCS3 não gravou o log em " + path_to_utf8(layout_.rpcs3_log()) +
+		                                              " (isolamento por RPCS3_CONFIG_DIR falhou)"});
+		if (version)
+			*version = text;
+	}
+	return run;
+}
+
+Findings Controller::check_rpcs3_binary()
+{
+	std::string image;
+	if (!read_file(layout_.rpcs3_exe(), image))
+		return {{Level::error, "rpcs3.exe ausente ou ilegível"}};
+	const auto missing = missing_strings(image, rpcs3_required_strings());
+	if (missing.empty())
+		return {{Level::ok, "Todas as " + std::to_string(rpcs3_required_strings().size()) +
+		                        " opções usadas pelo aplicativo existem neste rpcs3.exe"}};
+	std::string list;
+	for (const auto& m : missing)
+		list += (list.empty() ? "" : ", ") + m;
+	return {{Level::warning, std::to_string(missing.size()) + " opção(ões) usadas pelo aplicativo não aparecem neste rpcs3.exe "
+	                         "(versão diferente do RPCS3?): " + list}};
+}
+
+Findings Controller::import_rpcs3(const fs::path& picked)
+{
+	Findings out;
+	std::error_code ec;
+	const fs::path source = find_rpcs3_folder(picked);
+	if (source.empty())
+		return {{Level::error, "rpcs3.exe não encontrado em " + path_to_utf8(picked) +
+		                           ". Escolha a pasta onde você extraiu o RPCS3 baixado de rpcs3.net."}};
+	const fs::path canonical_source = fs::weakly_canonical(source, ec), canonical_app = fs::weakly_canonical(layout_.app_dir, ec);
+	if (path_to_utf8(canonical_source).rfind(path_to_utf8(canonical_app), 0) == 0)
+		return {{Level::error, "Escolha a pasta onde o RPCS3 foi extraído, não uma pasta dentro do GOW3 PS3 PC."}};
+	std::string image;
+	read_file(source / "rpcs3.exe", image);
+	const PeImports pe = read_pe_imports(image);
+	if (!pe.valid || !pe.is_x64)
+		return {{Level::error, "rpcs3.exe não é um executável Windows x64 válido."}};
+	log("Instalando RPCS3 a partir de " + path_to_utf8(source));
+
+	// Copia tudo, menos pastas de dados de outra instalação (saves, firmware, cache etc. ficam em user\rpcs3).
+	const std::set<std::string> skip = {"portable", "dev_hdd0", "dev_hdd1", "dev_flash", "dev_flash2", "dev_flash3",
+	                                    "dev_usb000", "dev_bdvd", "cache", "log", "savestates", "games", "captures"};
+	fs::remove_all(layout_.runtime_dir, ec);
+	fs::create_directories(layout_.runtime_dir, ec);
+	size_t copied = 0;
+	for (const auto& entry : fs::directory_iterator(source, ec)) {
+		const std::string name = to_lower(path_to_utf8(entry.path().filename()));
+		if (entry.is_directory(ec) && skip.count(name))
+			continue;
+		if (!entry.is_directory(ec) && (name == "config.yml" || name == "vfs.yml"))
+			continue;
+		std::error_code copy_ec;
+		fs::copy(entry.path(), layout_.runtime_dir / entry.path().filename(),
+		         fs::copy_options::recursive | fs::copy_options::overwrite_existing, copy_ec);
+		if (copy_ec)
+			return {{Level::error, "Falha ao copiar " + path_to_utf8(entry.path()) + ": " + copy_ec.message()}};
+		copied++;
+	}
+
+	// Runtime do Visual C++: copia a versão instalada no Windows para dentro do aplicativo.
+	std::set<std::string> needed;
+	for (bool changed = true; changed;) {
+		changed = false;
+		for (auto it = fs::recursive_directory_iterator(layout_.runtime_dir, ec); !ec && it != fs::recursive_directory_iterator();
+		     it.increment(ec)) {
+			const std::string ext = to_lower(path_to_utf8(it->path().extension()));
+			if (!it->is_regular_file(ec) || (ext != ".exe" && ext != ".dll"))
+				continue;
+			std::string bytes;
+			read_file(it->path(), bytes);
+			for (const auto& dll : read_pe_imports(bytes).dlls) {
+				const std::string lower = to_lower(dll);
+				const bool vc = lower.rfind("msvcp", 0) == 0 || lower.rfind("vcruntime", 0) == 0 || lower.rfind("concrt", 0) == 0;
+				if (!vc || fs::is_regular_file(layout_.runtime_dir / dll, ec))
+					continue;
+				const fs::path system_copy = win::system_dir() / dll;
+				if (!fs::is_regular_file(system_copy, ec)) {
+					needed.insert(dll);
+					continue;
+				}
+				fs::copy_file(system_copy, layout_.runtime_dir / dll, fs::copy_options::overwrite_existing, ec);
+				out.push_back({Level::ok, "Runtime do Visual C++ copiado para o aplicativo: " + dll});
+				changed = true;
+			}
+		}
+	}
+	if (!needed.empty()) {
+		std::string list;
+		for (const auto& n : needed)
+			list += (list.empty() ? "" : ", ") + n;
+		out.push_back({Level::error, "Faltam DLLs do Visual C++ (" + list + "). Instale o Visual C++ Redistributable x64 "
+		                             "(https://aka.ms/vs/17/release/vc_redist.x64.exe) e repita 'Instalar RPCS3...'."});
+	}
+
+	write_file(layout_.runtime_manifest(), build_runtime_manifest(layout_));
+	out.push_back({Level::ok, std::to_string(copied) + " itens copiados de " + path_to_utf8(source) + " para " +
+	                              path_to_utf8(layout_.runtime_dir)});
+	const Findings contract = check_rpcs3_binary();
+	out.insert(out.end(), contract.begin(), contract.end());
+	std::string version;
+	const Findings run = run_rpcs3_version(&version);
+	out.insert(out.end(), run.begin(), run.end());
+	if (!version.empty())
+		write_file(layout_.app_dir / "runtime" / "rpcs3_version.txt", version + "\n");
+	log("Instalação do RPCS3 terminou: " + (version.empty() ? std::string("versão não confirmada") : version));
+	return out;
 }
 
 bool Controller::self_test(std::string& report, bool allow_missing_vulkan)
@@ -301,34 +444,15 @@ bool Controller::self_test(std::string& report, bool allow_missing_vulkan)
 	}
 	section("3. Dados do usuário", data);
 
+	// 3b. Opções usadas pelo aplicativo existem neste rpcs3.exe?
+	section("3b. Compatibilidade do RPCS3 instalado", check_rpcs3_binary());
+
 	// 4. Execução real do RPCS3 embutido
 	Findings run;
 	if (vulkan_missing && allow_missing_vulkan) {
 		run.push_back({Level::warning, "Execução do RPCS3 pulada: sem vulkan-1.dll o Windows não carrega o rpcs3.exe."});
 	} else {
-		std::error_code rm;
-		fs::remove(layout_.rpcs3_log(), rm);
-		// Sem console, o Qt mostraria o --version numa caixa de diálogo (QCommandLineParser no Windows);
-		// esta variável do Qt manda o texto para a saída padrão, que o autoteste captura.
-		auto env = rpcs3_environment();
-		env.emplace_back("QT_COMMAND_LINE_PARSER_NO_GUI_MESSAGE_BOXES", "1");
-		const auto result = win::run_process(layout_.rpcs3_exe(), version_arguments(), env, 120000);
-		char hex[16];
-		std::snprintf(hex, sizeof(hex), "0x%08lX", result.exit_code);
-		if (!result.started)
-			run.push_back({Level::error, "rpcs3.exe não iniciou: " + result.error});
-		else if (result.timed_out)
-			run.push_back({Level::error, "rpcs3.exe --version não terminou em 120 s"});
-		else if (result.exit_code != 0)
-			run.push_back({Level::error, std::string("rpcs3.exe --version terminou com código ") + hex +
-			                                 (result.exit_code == 0xC0000135 ? " (DLL ausente)" : "")});
-		else
-			run.push_back({Level::ok, "rpcs3.exe executou e respondeu: " + trim(result.output.empty() ? std::string("(sem texto)") : result.output)});
-		if (result.started && !result.timed_out && result.exit_code == 0)
-			run.push_back(fs::is_regular_file(layout_.rpcs3_log(), rm)
-			                  ? Finding{Level::ok, "O RPCS3 gravou o log dentro da pasta do pacote: " + path_to_utf8(layout_.rpcs3_log())}
-			                  : Finding{Level::error, "O RPCS3 não gravou o log em " + path_to_utf8(layout_.rpcs3_log()) +
-			                                              " (isolamento por RPCS3_CONFIG_DIR falhou)"});
+		run = run_rpcs3_version(nullptr);
 	}
 	section("4. Execução do RPCS3 embutido", run);
 

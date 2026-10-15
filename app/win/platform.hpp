@@ -12,6 +12,7 @@ std::wstring widen(std::string_view utf8);
 std::string narrow(std::wstring_view wide);
 
 fs::path executable_dir();
+fs::path system_dir(); // C:\Windows\System32
 bool directory_writable(const fs::path& dir);
 
 struct ProcessResult {

@@ -3,8 +3,11 @@
 """Monta o pacote portátil GOW3_PS3_PC_Windows_x64.zip.
 
 Uso:
-  python tools/package.py --app GOW3_PS3_PC.exe --rpcs3-bin <pasta bin do RPCS3 compilado>
+  python tools/package.py --app GOW3_PS3_PC.exe [--rpcs3-bin <pasta bin do RPCS3 compilado>]
                           --out <pasta de saída> [--licenses <pasta>] [--build-info <arquivo>]
+
+Sem --rpcs3-bin, o pacote sai sem o RPCS3: o usuário instala o RPCS3 oficial pelo botão
+"Instalar RPCS3..." (o aplicativo copia para runtime\rpcs3 e gera o manifesto).
 
 Estrutura gerada:
   GOW3_PS3_PC/
@@ -57,13 +60,13 @@ def check_forbidden(path, base):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--app", required=True, type=Path)
-    parser.add_argument("--rpcs3-bin", required=True, type=Path)
+    parser.add_argument("--rpcs3-bin", type=Path)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--licenses", type=Path, help="pasta com licenças extras (copiada para licenses/)")
     parser.add_argument("--build-info", type=Path, help="texto com commits e versões da compilação")
     args = parser.parse_args()
 
-    if not (args.rpcs3_bin / "rpcs3.exe").is_file():
+    if args.rpcs3_bin and not (args.rpcs3_bin / "rpcs3.exe").is_file():
         sys.exit(f"rpcs3.exe não encontrado em {args.rpcs3_bin}")
     if not args.app.is_file():
         sys.exit(f"aplicativo não encontrado: {args.app}")
@@ -76,7 +79,8 @@ def main():
     shutil.copy2(args.app, stage / "GOW3_PS3_PC.exe")
 
     problems, entries = [], []
-    for source in sorted(p for p in args.rpcs3_bin.rglob("*") if p.is_file()):
+    sources = sorted(p for p in args.rpcs3_bin.rglob("*") if p.is_file()) if args.rpcs3_bin else []
+    for source in sources:
         problem = check_forbidden(source, args.rpcs3_bin)
         if problem:
             problems.append(problem)
@@ -91,8 +95,14 @@ def main():
     if problems:
         sys.exit("Pacote recusado (conteúdo que não pode ser distribuído):\n  " + "\n  ".join(problems))
 
-    (stage / "runtime" / "runtime_manifest.txt").write_text(
-        "# sha256 tamanho caminho (gerado por tools/package.py)\n" + "\n".join(entries) + "\n", encoding="utf-8")
+    if entries:
+        (stage / "runtime" / "runtime_manifest.txt").write_text(
+            "# sha256 tamanho caminho (gerado por tools/package.py)\n" + "\n".join(entries) + "\n", encoding="utf-8")
+    else:
+        (stage / "runtime" / "LEIA-ME.txt").write_text(
+            "O RPCS3 é instalado aqui pelo GOW3_PS3_PC.exe (botão 'Instalar RPCS3...').\n"
+            "Baixe o RPCS3 para Windows em https://rpcs3.net/download, extraia numa pasta qualquer e escolha essa pasta.\n",
+            encoding="utf-8")
 
     licenses = stage / "licenses"
     licenses.mkdir()

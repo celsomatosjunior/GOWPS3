@@ -57,4 +57,9 @@ Settings parse_settings(const std::string& text); // valores inválidos voltam a
 
 std::string rpcs3_yaml(const Settings& settings); // lança std::invalid_argument se inválido
 
+// Nomes de chaves, valores e opções de linha de comando do RPCS3 usados pelo aplicativo.
+// Todos aparecem como texto literal dentro do rpcs3.exe; servem para conferir uma versão
+// do RPCS3 que não foi compilada aqui (ex.: a oficial baixada pelo usuário).
+std::vector<std::string> rpcs3_required_strings();
+
 } // namespace gow3

@@ -8,6 +8,7 @@
 //   --user-dir <pasta>        usa outra pasta de dados
 //   --game <pasta>            grava a pasta do jogo nas configurações
 //   --install-firmware <PUP>  instala o firmware do PS3 fornecido pelo usuário
+//   --import-rpcs3 <pasta>    instala dentro do aplicativo o RPCS3 baixado de rpcs3.net
 //   --play                    inicia o jogo direto com as configurações salvas (atalhos, Steam)
 //   --version
 #ifndef WIN32_LEAN_AND_MEAN
@@ -85,6 +86,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
 	if (const std::string game = value("--game"); !game.empty()) {
 		controller.settings().game_path = game;
 		controller.save_settings();
+	}
+	if (const std::string folder = value("--import-rpcs3"); !folder.empty()) {
+		const Findings findings = controller.import_rpcs3(utf8_to_path(folder));
+		write_out(format_findings(findings));
+		return has_error(findings) ? 1 : 0;
 	}
 	if (const std::string pup = value("--install-firmware"); !pup.empty()) {
 		const Findings findings = controller.install_firmware(utf8_to_path(pup));

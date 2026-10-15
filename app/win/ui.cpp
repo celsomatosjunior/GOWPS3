@@ -21,7 +21,7 @@ namespace gow3 {
 namespace {
 
 enum : int {
-	ID_TAB = 100, ID_GAME_PATH, ID_PICK_GAME, ID_STATUS, ID_FIRMWARE, ID_REFRESH, ID_PLAY,
+	ID_TAB = 100, ID_IMPORT_RPCS3, ID_GAME_PATH, ID_PICK_GAME, ID_STATUS, ID_FIRMWARE, ID_REFRESH, ID_PLAY,
 	ID_RES, ID_SCALING, ID_ANISO, ID_VSYNC, ID_RCAS, ID_RCAS_VALUE, ID_FULLSCREEN,
 	ID_FPS, ID_SHADER, ID_SPU_BLOCK, ID_SPU_THREADS, ID_ADAPTER, ID_WCB, ID_OVERLAY, ID_HINT,
 	ID_RPCS3_SETTINGS,
@@ -152,8 +152,9 @@ void MainWindow::build()
 	add(0, L"EDIT", win::widen(s.game_path), ES_AUTOHSCROLL | ES_READONLY | WS_BORDER, 150, 98, 560, 26, ID_GAME_PATH);
 	add(0, L"BUTTON", L"Escolher...", BS_PUSHBUTTON | WS_TABSTOP, 720, 97, 140, 28, ID_PICK_GAME);
 	add(0, L"EDIT", L"", ES_MULTILINE | ES_READONLY | WS_VSCROLL | WS_BORDER, 36, 136, 824, 390, ID_STATUS);
-	add(0, L"BUTTON", L"Instalar firmware...", BS_PUSHBUTTON | WS_TABSTOP, 36, 546, 170, 40, ID_FIRMWARE);
-	add(0, L"BUTTON", L"Verificar de novo", BS_PUSHBUTTON | WS_TABSTOP, 216, 546, 150, 40, ID_REFRESH);
+	add(0, L"BUTTON", L"Instalar RPCS3...", BS_PUSHBUTTON | WS_TABSTOP, 36, 546, 150, 40, ID_IMPORT_RPCS3);
+	add(0, L"BUTTON", L"Instalar firmware...", BS_PUSHBUTTON | WS_TABSTOP, 196, 546, 160, 40, ID_FIRMWARE);
+	add(0, L"BUTTON", L"Verificar de novo", BS_PUSHBUTTON | WS_TABSTOP, 366, 546, 150, 40, ID_REFRESH);
 	HWND play_button = add(0, L"BUTTON", L"JOGAR", BS_DEFPUSHBUTTON | WS_TABSTOP, 680, 538, 180, 52, ID_PLAY);
 	SendMessageW(play_button, WM_SETFONT, reinterpret_cast<WPARAM>(big_font_), TRUE);
 
@@ -366,6 +367,16 @@ void MainWindow::on_command(int id, int code)
 	}
 	case ID_REFRESH: refresh(); break;
 	case ID_PLAY: play(); break;
+	case ID_IMPORT_RPCS3: {
+		if (busy_ || game_running_)
+			break;
+		const std::wstring folder = pick(true, L"Pasta onde você extraiu o RPCS3 baixado de rpcs3.net (com rpcs3.exe)");
+		if (!folder.empty())
+			run_task(ID_STATUS, [this, folder] {
+				return TaskResult{ID_STATUS, "Instalação do RPCS3:\n" + format_findings(c_.import_rpcs3(fs::path(folder))), true};
+			});
+		break;
+	}
 	case ID_FIRMWARE: {
 		const std::wstring file = pick(false, L"Escolha o PS3UPDAT.PUP baixado do site oficial da PlayStation");
 		if (!file.empty())

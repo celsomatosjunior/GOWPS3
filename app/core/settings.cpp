@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include "settings.hpp"
 
+#include <algorithm>
 #include <sstream>
 #include <stdexcept>
 
@@ -232,6 +233,35 @@ std::string rpcs3_yaml(const Settings& s)
 	  << "  Start games in fullscreen mode: " << b(s.fullscreen) << "\n"
 	  << "  Show shader compilation hint: " << b(s.shader_compilation_hint) << "\n";
 	return y.str();
+}
+
+std::vector<std::string> rpcs3_required_strings()
+{
+	std::vector<std::string> out;
+	auto add = [&](const std::string& text) {
+		if (!text.empty() && std::find(out.begin(), out.end(), text) == out.end())
+			out.push_back(text);
+	};
+	for (const auto& raw : split(rpcs3_yaml(Settings{}), '\n')) {
+		const auto line = trim(raw);
+		const auto colon = line.find(':');
+		if (line.empty() || line[0] == '#' || colon == std::string::npos)
+			continue;
+		add(line.substr(0, colon));
+		const std::string value = trim(line.substr(colon + 1));
+		if (value.size() > 2 && value.front() == '"')
+			add(value.substr(1, value.size() - 2));
+	}
+	for (const auto* table : {&internal_resolution_table(), &scaling_table(), &anisotropic_table(), &vsync_table(),
+	                          &frame_limit_table(), &shader_mode_table(), &spu_block_table()}) {
+		add(table->key);
+		for (const auto& option : table->options)
+			if (option.value.find_first_not_of("0123456789") != std::string::npos)
+				add(option.value);
+	}
+	for (const char* option : {"no-gui", "fullscreen", "installfw", "headless", "RPCS3_CONFIG_DIR"})
+		add(option);
+	return out;
 }
 
 } // namespace gow3

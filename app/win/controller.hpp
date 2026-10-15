@@ -34,6 +34,9 @@ public:
 	// Inicia o jogo; devolve o handle do processo (esperar com win::wait_process) ou nullptr.
 	void* start_game(std::string& error);
 	Findings install_firmware(const fs::path& pup);
+	Findings import_rpcs3(const fs::path& folder); // instala o RPCS3 baixado pelo usuário em runtime\rpcs3
+	Findings check_rpcs3_binary();
+	Findings run_rpcs3_version(std::string* version);
 	bool open_rpcs3_settings(std::string& error);
 	Findings check_game_integrity(bool reset_reference);
 	Findings clear_game_cache();
