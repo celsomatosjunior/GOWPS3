@@ -1,0 +1,32 @@
+func_10001938 caso 0 (semente b0cf09a8):
+    r3: recompilado=0x9005028AA597F37 referência=0x9005028AA597F36
+func_10001938 caso 1 (semente b0cf09a9):
+    r3: recompilado=0xFFFFFFFFFFF86DF9 referência=0xFFFFFFFFFFF86DF8
+func_10001938 caso 2 (semente b0cf09aa):
+    r3: recompilado=0xDE6F425181959BBC referência=0xDE6F425181959BBD
+func_10001938 caso 3 (semente b0cf09ab):
+    r3: recompilado=0x560030B3F6AA469 referência=0x560030B3F6AA468
+func_10001938 caso 4 (semente b0cf09ac):
+    r3: recompilado=0x90059401423BE35 referência=0x90059401423BE34
+func_10001938 caso 5 (semente b0cf09ad):
+    r3: recompilado=0xFFFFFFFFFFFBB796 referência=0xFFFFFFFFFFFBB797
+func_10001938 caso 6 (semente b0cf09ae):
+    r3: recompilado=0xFAEEB9B2EFC46DDA referência=0xFAEEB9B2EFC46DDB
+func_10001938 caso 7 (semente b0cf09af):
+    r3: recompilado=0x7B20B4793AE5AC1B referência=0x7B20B4793AE5AC1A
+func_10001938 caso 8 (semente b0cf09b0):
+    r3: recompilado=0x9008188BC64C2EF referência=0x9008188BC64C2EE
+func_10001938 caso 9 (semente b0cf09b1):
+    r3: recompilado=0xFFFFFFFFFFFA64D5 referência=0xFFFFFFFFFFFA64D4
+func_10001938 caso 10 (semente b0cf09b2):
+    r3: recompilado=0x400E34269CFC1D4E referência=0x400E34269CFC1D4F
+func_10001938 caso 11 (semente b0cf09b3):
+    r3: recompilado=0x50160EED0AB2EEE5 referência=0x50160EED0AB2EEE4
+func_10001938 caso 12 (semente b0cf09b4):
+    r3: recompilado=0x9002279FE35FC43 referência=0x9002279FE35FC42
+func_10001938 caso 13 (semente b0cf09b5):
+    r3: recompilado=0x3C46F referência=0x3C46E
+func_10001938 caso 14 (semente b0cf09b6):
+    r3: recompilado=0x7AF0BAAC9A541B0A referência=0x7AF0BAAC9A541B0B
+func_10001938 caso 15 (semente b0cf09b7):
+    r3: recompilado=0xAEECAA9F334D8D75 referência=0xAEECAA9F334D8D74
