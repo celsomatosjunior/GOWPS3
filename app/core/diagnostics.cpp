@@ -134,6 +134,15 @@ PeImports read_pe_imports(const std::string& d)
 	return result;
 }
 
+bool is_vc_runtime(std::string_view dll)
+{
+	const std::string lower = to_lower(dll);
+	for (const char* prefix : {"msvcp140", "vcruntime140", "concrt140", "vccorlib140", "vcomp140"})
+		if (lower.rfind(prefix, 0) == 0)
+			return true;
+	return false;
+}
+
 bool is_api_set(std::string_view dll)
 {
 	const std::string lower = to_lower(dll);

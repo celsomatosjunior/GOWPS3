@@ -34,6 +34,8 @@ public:
 	// Inicia o jogo; devolve o handle do processo (esperar com win::wait_process) ou nullptr.
 	void* start_game(std::string& error);
 	Findings install_firmware(const fs::path& pup);
+	Findings vcruntime_status() const;              // Visual C++ instalado no Windows (exigido pelo RPCS3)
+	Findings install_vcredist(bool quiet);          // roda runtime\redist\vc_redist.x64.exe como administrador
 	Findings import_rpcs3(const fs::path& folder); // instala o RPCS3 baixado pelo usuário em runtime\rpcs3
 	Findings check_rpcs3_binary();
 	Findings run_rpcs3_version(std::string* version);

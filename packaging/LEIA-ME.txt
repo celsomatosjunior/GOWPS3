@@ -16,10 +16,12 @@ COMO USAR
      Não rode de dentro do ZIP, de pastas temporárias nem do OneDrive.
   2. Abra GOW3_PS3_PC.exe. Se o Windows mostrar "O Windows protegeu o computador",
      clique em "Mais informações" e "Executar assim mesmo" (o programa não tem assinatura digital).
-  3. Aba HOME > "Instalar firmware..." > escolha o PS3UPDAT.PUP.
-  4. Aba HOME > "Escolher..." > escolha a pasta do jogo.
-  5. Ajuste GRAPHICS e PERFORMANCE se quiser. Em CONTROLS, configure o controle.
-  6. Clique em JOGAR.
+  3. Se a aba HOME pedir o Visual C++, clique em "Instalar Visual C++..." (instalador
+     oficial da Microsoft, incluído no pacote; o Windows pede permissão de administrador).
+  4. Aba HOME > "Instalar firmware..." > escolha o PS3UPDAT.PUP.
+  5. Aba HOME > "Escolher..." > escolha a pasta do jogo.
+  6. Ajuste GRAPHICS e PERFORMANCE se quiser. Em CONTROLS, configure o controle.
+  7. Clique em JOGAR.
 
 ONDE FICAM OS DADOS
   user\settings.ini                       configurações do GOW3 PS3 PC

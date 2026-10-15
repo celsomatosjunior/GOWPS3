@@ -37,6 +37,9 @@ FORBIDDEN_DIRS = {"dev_flash", "dev_hdd0", "dev_hdd1", "dev_usb000", "portable",
 # Lixo de compilação que o próprio deploy do RPCS3 remove (.ci/deploy-windows.sh).
 DROP_SUFFIXES = {".exp", ".lib", ".pdb", ".ilk", ".iobj", ".ipdb"}
 DROP_NAMES = {"vc_redist.x64.exe"}
+# O RPCS3 recusa o Visual C++ e o Vulkan fora da pasta do Windows (rpcs3/module_verifier.cpp):
+# essas DLLs nunca vão ao lado do rpcs3.exe; o instalador oficial vai em runtime/redist.
+WINDOWS_ONLY_PREFIXES = ("msvcp140", "vcruntime140", "concrt140", "vccorlib140", "vcomp140", "vulkan-1")
 
 
 def sha256(path):
@@ -63,6 +66,8 @@ def main():
     parser.add_argument("--rpcs3-bin", type=Path)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--licenses", type=Path, help="pasta com licenças extras (copiada para licenses/)")
+    parser.add_argument("--vcredist", type=Path, help="vc_redist.x64.exe oficial da Microsoft")
+    parser.add_argument("--vcredist-version", help="versão mínima do Visual C++ exigida pelo RPCS3 compilado")
     parser.add_argument("--build-info", type=Path, help="texto com commits e versões da compilação")
     args = parser.parse_args()
 
@@ -87,11 +92,22 @@ def main():
             continue
         if source.suffix.lower() in DROP_SUFFIXES or source.name.lower() in DROP_NAMES:
             continue
+        if source.suffix.lower() == ".dll" and source.name.lower().startswith(WINDOWS_ONLY_PREFIXES):
+            print(f"removido do pacote (precisa vir do Windows): {source.name}")
+            continue
         target = runtime / source.relative_to(args.rpcs3_bin)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
         rel = target.relative_to(stage / "runtime").as_posix()
         entries.append(f"{sha256(target)} {target.stat().st_size} {rel}")
+    if args.vcredist:
+        redist = stage / "runtime" / "redist"
+        redist.mkdir(parents=True)
+        shutil.copy2(args.vcredist, redist / "vc_redist.x64.exe")
+        (redist / "version.txt").write_text((args.vcredist_version or "") + "\n", encoding="utf-8")
+        for name in ("vc_redist.x64.exe", "version.txt"):
+            target = redist / name
+            entries.append(f"{sha256(target)} {target.stat().st_size} redist/{name}")
     if problems:
         sys.exit("Pacote recusado (conteúdo que não pode ser distribuído):\n  " + "\n  ".join(problems))
 

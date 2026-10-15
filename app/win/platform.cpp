@@ -61,6 +61,23 @@ fs::path system_dir()
 	return fs::path(buffer);
 }
 
+std::string file_version(const fs::path& file)
+{
+	DWORD ignored = 0;
+	const DWORD size = GetFileVersionInfoSizeW(file.c_str(), &ignored);
+	if (!size)
+		return {};
+	std::vector<unsigned char> data(size);
+	if (!GetFileVersionInfoW(file.c_str(), 0, size, data.data()))
+		return {};
+	VS_FIXEDFILEINFO* info = nullptr;
+	UINT length = 0;
+	if (!VerQueryValueW(data.data(), L"\\", reinterpret_cast<void**>(&info), &length) || !info)
+		return {};
+	return std::to_string(HIWORD(info->dwFileVersionMS)) + "." + std::to_string(LOWORD(info->dwFileVersionMS)) + "." +
+	       std::to_string(HIWORD(info->dwFileVersionLS)) + "." + std::to_string(LOWORD(info->dwFileVersionLS));
+}
+
 bool directory_writable(const fs::path& dir)
 {
 	std::error_code ec;
@@ -142,6 +159,33 @@ HANDLE create(const fs::path& exe, const std::vector<std::string>& args,
 }
 
 } // namespace
+
+ProcessResult run_elevated(const fs::path& exe, const std::vector<std::string>& args)
+{
+	ProcessResult result;
+	std::string params;
+	for (const auto& arg : args)
+		params += (params.empty() ? "" : " ") + quote_windows_argument(arg);
+	const std::wstring wide_params = widen(params);
+	SHELLEXECUTEINFOW info{};
+	info.cbSize = sizeof(info);
+	info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+	info.lpVerb = L"runas";
+	info.lpFile = exe.c_str();
+	info.lpParameters = wide_params.c_str();
+	info.nShow = SW_SHOWNORMAL;
+	if (!ShellExecuteExW(&info) || !info.hProcess) {
+		result.error = last_error_text(GetLastError());
+		return result;
+	}
+	result.started = true;
+	WaitForSingleObject(info.hProcess, INFINITE);
+	DWORD code = 0;
+	GetExitCodeProcess(info.hProcess, &code);
+	result.exit_code = code;
+	CloseHandle(info.hProcess);
+	return result;
+}
 
 void* start_process(const fs::path& exe, const std::vector<std::string>& args,
                     const std::vector<std::pair<std::string, std::string>>& env, std::string& error)

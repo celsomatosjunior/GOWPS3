@@ -254,6 +254,7 @@ static void test_diagnostics()
 	CHECK_EQ(log_tail("a\nb\nc\n", 2), std::string("b\nc\n"));
 	CHECK(is_api_set("api-ms-win-crt-runtime-l1-1-0.dll"));
 	CHECK(!is_api_set("Qt6Core.dll"));
+	CHECK(is_vc_runtime("MSVCP140.dll") && is_vc_runtime("vcruntime140_1.dll") && !is_vc_runtime("Qt6Core.dll"));
 	CHECK(!read_pe_imports("not a pe").valid);
 }
 

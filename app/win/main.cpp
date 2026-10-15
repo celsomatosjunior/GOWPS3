@@ -9,6 +9,7 @@
 //   --game <pasta>            grava a pasta do jogo nas configurações
 //   --install-firmware <PUP>  instala o firmware do PS3 fornecido pelo usuário
 //   --import-rpcs3 <pasta>    instala dentro do aplicativo o RPCS3 baixado de rpcs3.net
+//   --install-vcredist        instala o Visual C++ incluído no pacote (--quiet: sem janela)
 //   --play                    inicia o jogo direto com as configurações salvas (atalhos, Steam)
 //   --version
 #ifndef WIN32_LEAN_AND_MEAN
@@ -89,6 +90,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
 	}
 	if (const std::string folder = value("--import-rpcs3"); !folder.empty()) {
 		const Findings findings = controller.import_rpcs3(utf8_to_path(folder));
+		write_out(format_findings(findings));
+		return has_error(findings) ? 1 : 0;
+	}
+	if (flag("--install-vcredist")) {
+		const Findings findings = controller.install_vcredist(flag("--quiet"));
 		write_out(format_findings(findings));
 		return has_error(findings) ? 1 : 0;
 	}

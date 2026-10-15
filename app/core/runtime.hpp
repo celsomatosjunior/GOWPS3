@@ -23,6 +23,8 @@ struct Layout {
 
 	fs::path rpcs3_exe() const { return runtime_dir / "rpcs3.exe"; }
 	fs::path runtime_manifest() const { return app_dir / "runtime" / "runtime_manifest.txt"; }
+	fs::path vcredist_exe() const { return app_dir / "runtime" / "redist" / "vc_redist.x64.exe"; }
+	fs::path vcredist_version_file() const { return app_dir / "runtime" / "redist" / "version.txt"; }
 	fs::path portable_dir() const { return runtime_dir / "portable"; }
 	fs::path settings_file() const { return user_dir / "settings.ini"; }
 	fs::path launcher_log() const { return user_dir / "logs" / "GOW3_PS3_PC.log"; }

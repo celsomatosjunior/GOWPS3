@@ -42,7 +42,7 @@ if(WIN32)
 		app/win/platform.cpp
 		app/win/ui.cpp
 		app/res/app.rc)
-	target_link_libraries(GOW3_PS3_PC PRIVATE gow3core comctl32 shell32 ole32 uuid advapi32 user32 gdi32)
+	target_link_libraries(GOW3_PS3_PC PRIVATE gow3core comctl32 shell32 ole32 uuid advapi32 user32 gdi32 version)
 	configure_file(app/res/version.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/version.h @ONLY)
 	target_include_directories(GOW3_PS3_PC PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 	target_compile_definitions(GOW3_PS3_PC PRIVATE UNICODE _UNICODE)

@@ -13,6 +13,7 @@ std::string narrow(std::wstring_view wide);
 
 fs::path executable_dir();
 fs::path system_dir(); // C:\Windows\System32
+std::string file_version(const fs::path& file); // "14.44.35211.0" ou vazio
 bool directory_writable(const fs::path& dir);
 
 struct ProcessResult {
@@ -28,6 +29,8 @@ struct ProcessResult {
 void* start_process(const fs::path& exe, const std::vector<std::string>& args,
                     const std::vector<std::pair<std::string, std::string>>& env, std::string& error);
 unsigned long wait_process(void* handle); // fecha o handle
+// Executa como administrador (pede confirmação do UAC) e espera. Devolve o código de saída.
+ProcessResult run_elevated(const fs::path& exe, const std::vector<std::string>& args);
 // Executa e espera, capturando a saída. timeout_ms = 0 espera sem limite.
 ProcessResult run_process(const fs::path& exe, const std::vector<std::string>& args,
                           const std::vector<std::pair<std::string, std::string>>& env, unsigned timeout_ms);

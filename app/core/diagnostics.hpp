@@ -28,6 +28,10 @@ struct PeImports {
 };
 PeImports read_pe_imports(const std::string& image);
 
+// DLLs do Visual C++ e o carregador Vulkan: o RPCS3 só aceita essas DLLs carregadas da pasta do
+// Windows (rpcs3/module_verifier.cpp); cópias ao lado do rpcs3.exe causam "Fatal Error".
+bool is_vc_runtime(std::string_view dll);
+
 // DLLs que o Windows resolve sozinho (API sets).
 bool is_api_set(std::string_view dll);
 

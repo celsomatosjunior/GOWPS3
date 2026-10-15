@@ -70,6 +70,8 @@ std::string Controller::installed_update(const std::string& serial) const
 Findings Controller::preflight()
 {
 	Findings out = check_runtime(layout_, false);
+	const Findings vc = vcruntime_status();
+	out.insert(out.end(), vc.begin(), vc.end());
 	game_ = inspect_game(utf8_to_path(settings_.game_path));
 	out.insert(out.end(), game_.findings.begin(), game_.findings.end());
 
@@ -302,39 +304,16 @@ Findings Controller::import_rpcs3(const fs::path& picked)
 		copied++;
 	}
 
-	// Runtime do Visual C++: copia a versão instalada no Windows para dentro do aplicativo.
-	std::set<std::string> needed;
-	for (bool changed = true; changed;) {
-		changed = false;
-		for (auto it = fs::recursive_directory_iterator(layout_.runtime_dir, ec); !ec && it != fs::recursive_directory_iterator();
-		     it.increment(ec)) {
-			const std::string ext = to_lower(path_to_utf8(it->path().extension()));
-			if (!it->is_regular_file(ec) || (ext != ".exe" && ext != ".dll"))
-				continue;
-			std::string bytes;
-			read_file(it->path(), bytes);
-			for (const auto& dll : read_pe_imports(bytes).dlls) {
-				const std::string lower = to_lower(dll);
-				const bool vc = lower.rfind("msvcp", 0) == 0 || lower.rfind("vcruntime", 0) == 0 || lower.rfind("concrt", 0) == 0;
-				if (!vc || fs::is_regular_file(layout_.runtime_dir / dll, ec))
-					continue;
-				const fs::path system_copy = win::system_dir() / dll;
-				if (!fs::is_regular_file(system_copy, ec)) {
-					needed.insert(dll);
-					continue;
-				}
-				fs::copy_file(system_copy, layout_.runtime_dir / dll, fs::copy_options::overwrite_existing, ec);
-				out.push_back({Level::ok, "Runtime do Visual C++ copiado para o aplicativo: " + dll});
-				changed = true;
-			}
+	// Cópias locais do Visual C++ fazem o RPCS3 parar com erro fatal (module_verifier.cpp): remove.
+	for (const auto& entry : fs::directory_iterator(layout_.runtime_dir, ec))
+		if (entry.is_regular_file(ec) && is_vc_runtime(path_to_utf8(entry.path().filename()))) {
+			fs::remove(entry.path(), ec);
+			out.push_back({Level::warning, "Removida cópia local de " + path_to_utf8(entry.path().filename()) +
+			                                   " (o RPCS3 só aceita o Visual C++ instalado no Windows)"});
 		}
-	}
-	if (!needed.empty()) {
-		std::string list;
-		for (const auto& n : needed)
-			list += (list.empty() ? "" : ", ") + n;
-		out.push_back({Level::error, "Faltam DLLs do Visual C++ (" + list + "). Instale o Visual C++ Redistributable x64 "
-		                             "(https://aka.ms/vs/17/release/vc_redist.x64.exe) e repita 'Instalar RPCS3...'."});
+	{
+		const Findings vc = vcruntime_status();
+		out.insert(out.end(), vc.begin(), vc.end());
 	}
 
 	write_file(layout_.runtime_manifest(), build_runtime_manifest(layout_));
@@ -348,6 +327,62 @@ Findings Controller::import_rpcs3(const fs::path& picked)
 	if (!version.empty())
 		write_file(layout_.app_dir / "runtime" / "rpcs3_version.txt", version + "\n");
 	log("Instalação do RPCS3 terminou: " + (version.empty() ? std::string("versão não confirmada") : version));
+	return out;
+}
+
+Findings Controller::vcruntime_status() const
+{
+	Findings out;
+	std::string required;
+	read_file(layout_.vcredist_version_file(), required);
+	required = trim(required);
+	std::error_code ec;
+	std::string worst;
+	for (const char* dll : {"msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll"}) {
+		if (fs::is_regular_file(layout_.runtime_dir / dll, ec))
+			out.push_back({Level::error, std::string("Cópia local de ") + dll + " em runtime\\rpcs3: o RPCS3 recusa e para com "
+			                             "'Fatal Error'. Apague esse arquivo."});
+		const fs::path installed = win::system_dir() / dll;
+		const std::string version = fs::is_regular_file(installed, ec) ? win::file_version(installed) : std::string();
+		if (version.empty()) {
+			worst = "ausente";
+			break;
+		}
+		if (worst.empty() || compare_versions(version, worst) < 0)
+			worst = version;
+	}
+	const std::string fix = fs::is_regular_file(layout_.vcredist_exe(), ec)
+	                            ? "Clique em 'Instalar Visual C++...' (instalador oficial da Microsoft incluído no pacote)."
+	                            : "Instale o Visual C++ Redistributable x64: https://aka.ms/vs/17/release/vc_redist.x64.exe";
+	if (worst == "ausente")
+		out.push_back({Level::error, "Visual C++ 2015-2022 (x64) não está instalado no Windows; o RPCS3 precisa dele. " + fix});
+	else if (!required.empty() && compare_versions(worst, required) < 0)
+		out.push_back({Level::error, "Visual C++ instalado (" + worst + ") é mais antigo que o exigido por este RPCS3 (" + required +
+		                                 "). " + fix});
+	else
+		out.push_back({Level::ok, "Visual C++ instalado no Windows: " + worst + (required.empty() ? "" : " (exigido: " + required + ")")});
+	return out;
+}
+
+Findings Controller::install_vcredist(bool quiet)
+{
+	std::error_code ec;
+	if (!fs::is_regular_file(layout_.vcredist_exe(), ec))
+		return {{Level::error, "Instalador não encontrado: " + path_to_utf8(layout_.vcredist_exe())}};
+	log("Instalando Visual C++: " + path_to_utf8(layout_.vcredist_exe()));
+	const auto result = win::run_elevated(layout_.vcredist_exe(), {"/install", quiet ? "/quiet" : "/passive", "/norestart"});
+	if (!result.started)
+		return {{Level::error, "O instalador do Visual C++ não iniciou: " + result.error}};
+	log("Instalador do Visual C++ terminou com código " + std::to_string(result.exit_code));
+	Findings out;
+	if (result.exit_code == 3010)
+		out.push_back({Level::warning, "Visual C++ instalado; o Windows pede reinicialização."});
+	else if (result.exit_code == 1602)
+		out.push_back({Level::error, "Instalação do Visual C++ cancelada."});
+	else if (result.exit_code != 0 && result.exit_code != 1638) // 1638: versão igual ou mais nova já instalada
+		out.push_back({Level::error, "O instalador do Visual C++ terminou com código " + std::to_string(result.exit_code) + "."});
+	const Findings status = vcruntime_status();
+	out.insert(out.end(), status.begin(), status.end());
 	return out;
 }
 
@@ -402,22 +437,26 @@ bool Controller::self_test(std::string& report, bool allow_missing_vulkan)
 						found = root;
 				}
 				const std::string lower = to_lower(dll);
-				if (lower == "vulkan-1.dll") {
-					// Vem do driver de vídeo, nunca do pacote.
-					if (found.source == win::DllSource::not_found)
-						vulkan_missing = true;
+				const std::string user = generic_utf8(fs::relative(it->path(), layout_.runtime_dir, ec));
+				if (lower == "vulkan-1.dll" || is_vc_runtime(lower)) {
+					// O RPCS3 só aceita essas DLLs vindas da pasta do Windows (module_verifier.cpp).
+					if (found.source == win::DllSource::local)
+						missing.insert(dll + " está copiada dentro do pacote (" + path_to_utf8(found.file) +
+						               "); o RPCS3 recusa e para com 'Fatal Error'");
+					else if (found.source == win::DllSource::not_found) {
+						if (lower == "vulkan-1.dll")
+							vulkan_missing = true;
+						else
+							missing_list.insert(dll + " (usada por " + user + "): instale o Visual C++ Redistributable x64");
+					}
 					continue;
 				}
-				const bool vc_runtime = lower.rfind("msvcp", 0) == 0 || lower.rfind("vcruntime", 0) == 0 ||
-				                        lower.rfind("concrt", 0) == 0 || lower.rfind("vcomp", 0) == 0;
-				if (found.source == win::DllSource::local)
+				if (found.source == win::DllSource::local || found.source == win::DllSource::system)
 					continue;
-				if (found.source == win::DllSource::system && !vc_runtime)
-					continue; // DLL do Windows
-				if (found.source != win::DllSource::not_found) {
-					// Achou fora do pacote (PATH ou Visual C++ instalado): num PC limpo faltaria.
-					missing_list.insert(dll + " (usada por " + generic_utf8(fs::relative(it->path(), layout_.runtime_dir, ec)) +
-					               "; encontrada só fora do pacote, em " + path_to_utf8(found.file) + ")");
+				if (found.source == win::DllSource::path) {
+					// Achou só no PATH desta máquina: num PC limpo faltaria.
+					missing_list.insert(dll + " (usada por " + user + "; encontrada só fora do pacote, em " +
+					                    path_to_utf8(found.file) + ")");
 					continue;
 				}
 				missing_list.insert(dll + " (usada por " + generic_utf8(fs::relative(it->path(), layout_.runtime_dir, ec)) + ")");
@@ -437,6 +476,7 @@ bool Controller::self_test(std::string& report, bool allow_missing_vulkan)
 		dll_findings.push_back({Level::ok, std::to_string(images) + " executáveis/DLLs analisados, " + std::to_string(imports) +
 		                                       " importações resolvidas"});
 	section("2. Dependências (DLLs)", dll_findings);
+	section("2b. Visual C++ instalado no Windows", vcruntime_status());
 
 	// 3. Pasta de dados e configuração
 	Findings data;

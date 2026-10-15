@@ -4,7 +4,7 @@
 |---|---|---|---|
 | RPCS3 | `runtime/rpcs3/rpcs3.exe` | GPL-2.0-only | Compilado sem modificações; commit em `BUILD_INFO.txt` |
 | Qt 6 | `runtime/rpcs3/Qt6*.dll`, `runtime/rpcs3/qt6/` | LGPL-3.0 | Ligação dinâmica; pode ser trocado pelo usuário. Fonte: https://download.qt.io/ |
-| Microsoft Visual C++ Runtime | `runtime/rpcs3/msvcp140*.dll`, `vcruntime140*.dll`, `concrt140.dll` | Licença de redistribuição do Visual Studio | Cópia local permitida pela Microsoft |
+| Microsoft Visual C++ Redistributable | `runtime/redist/vc_redist.x64.exe` | Licença de redistribuição do Visual Studio | Instalador oficial. O RPCS3 só aceita o Visual C++ instalado no Windows (`rpcs3/module_verifier.cpp`), por isso as DLLs não vão ao lado do `rpcs3.exe` |
 | OpenCV | `runtime/rpcs3/opencv_world*.dll` | Apache-2.0 | Usado pelo RPCS3 |
 | OpenAL Soft | `runtime/rpcs3/OpenAL32.dll` (se presente) | LGPL-2.0 | Usado pelo RPCS3 |
 | LLVM (bibliotecas estáticas) | dentro do `rpcs3.exe` | Apache-2.0 com exceção LLVM | Recompiladores PPU/SPU |
