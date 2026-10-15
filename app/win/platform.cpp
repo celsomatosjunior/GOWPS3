@@ -10,6 +10,7 @@
 #include <windows.h>
 #include <shellapi.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -111,7 +112,8 @@ std::wstring environment_block(const std::vector<std::pair<std::string, std::str
 }
 
 HANDLE create(const fs::path& exe, const std::vector<std::string>& args,
-              const std::vector<std::pair<std::string, std::string>>& env, HANDLE output, std::string& error)
+              const std::vector<std::pair<std::string, std::string>>& env, HANDLE output, std::string& error,
+              HANDLE job = nullptr)
 {
 	std::wstring command = widen(windows_command_line(exe, args));
 	std::wstring block = environment_block(env);
@@ -125,10 +127,15 @@ HANDLE create(const fs::path& exe, const std::vector<std::string>& args,
 	}
 	PROCESS_INFORMATION info{};
 	if (!CreateProcessW(exe.c_str(), command.data(), nullptr, nullptr, output != nullptr,
-	                    CREATE_UNICODE_ENVIRONMENT | (output ? CREATE_NO_WINDOW : 0), block.data(), cwd.c_str(),
-	                    &startup, &info)) {
+	                    CREATE_UNICODE_ENVIRONMENT | (output ? CREATE_NO_WINDOW : 0) | (job ? CREATE_SUSPENDED : 0),
+	                    block.data(), cwd.c_str(), &startup, &info)) {
 		error = last_error_text(GetLastError());
 		return nullptr;
+	}
+	if (job) {
+		// Todos os processos que ele abrir (ex.: o "rpcs3 --error" que mostra erros fatais) ficam no mesmo grupo.
+		AssignProcessToJobObject(job, info.hProcess);
+		ResumeThread(info.hThread);
 	}
 	CloseHandle(info.hThread);
 	return info.hProcess;
@@ -151,6 +158,55 @@ unsigned long wait_process(void* handle)
 	return code;
 }
 
+namespace {
+
+struct WindowScan {
+	std::vector<DWORD> pids;
+	std::string text;
+};
+
+BOOL CALLBACK collect_child_text(HWND child, LPARAM param)
+{
+	wchar_t text[1024] = {};
+	if (GetWindowTextW(child, text, 1023) > 0) {
+		auto* scan = reinterpret_cast<WindowScan*>(param);
+		scan->text += " | " + narrow(text);
+	}
+	return TRUE;
+}
+
+BOOL CALLBACK collect_window_text(HWND window, LPARAM param)
+{
+	auto* scan = reinterpret_cast<WindowScan*>(param);
+	DWORD pid = 0;
+	GetWindowThreadProcessId(window, &pid);
+	if (!IsWindowVisible(window) || std::find(scan->pids.begin(), scan->pids.end(), pid) == scan->pids.end())
+		return TRUE;
+	wchar_t title[512] = {};
+	GetWindowTextW(window, title, 511);
+	scan->text += "\n    janela \"" + narrow(title) + "\"";
+	EnumChildWindows(window, collect_child_text, param);
+	return TRUE;
+}
+
+// Texto das janelas abertas pelos processos do grupo (para explicar um travamento).
+std::string job_windows(HANDLE job)
+{
+	struct {
+		JOBOBJECT_BASIC_PROCESS_ID_LIST list;
+		ULONG_PTR more[63];
+	} ids{};
+	WindowScan scan;
+	if (QueryInformationJobObject(job, JobObjectBasicProcessIdList, &ids, sizeof(ids), nullptr))
+		for (DWORD i = 0; i < ids.list.NumberOfProcessIdsInList; i++)
+			scan.pids.push_back(static_cast<DWORD>(ids.list.ProcessIdList[i]));
+	EnumWindows(collect_window_text, reinterpret_cast<LPARAM>(&scan));
+	return std::to_string(scan.pids.size()) + " processo(s) ainda abertos" +
+	       (scan.text.empty() ? std::string(", nenhuma janela visível") : scan.text);
+}
+
+} // namespace
+
 ProcessResult run_process(const fs::path& exe, const std::vector<std::string>& args,
                           const std::vector<std::pair<std::string, std::string>>& env, unsigned timeout_ms)
 {
@@ -162,10 +218,19 @@ ProcessResult run_process(const fs::path& exe, const std::vector<std::string>& a
 		return result;
 	}
 	SetHandleInformation(read_end, HANDLE_FLAG_INHERIT, 0);
-	HANDLE process = create(exe, args, env, write_end, result.error);
+	// Grupo de processos: ao fechar, o Windows encerra o RPCS3 e tudo o que ele abriu.
+	HANDLE job = CreateJobObjectW(nullptr, nullptr);
+	if (job) {
+		JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+		limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+		SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
+	}
+	HANDLE process = create(exe, args, env, write_end, result.error, job);
 	CloseHandle(write_end);
 	if (!process) {
 		CloseHandle(read_end);
+		if (job)
+			CloseHandle(job);
 		return result;
 	}
 	result.started = true;
@@ -177,6 +242,8 @@ ProcessResult run_process(const fs::path& exe, const std::vector<std::string>& a
 	});
 	if (WaitForSingleObject(process, timeout_ms ? timeout_ms : INFINITE) == WAIT_TIMEOUT) {
 		result.timed_out = true;
+		if (job)
+			result.error = job_windows(job);
 		TerminateProcess(process, 1);
 		WaitForSingleObject(process, 5000);
 	}
@@ -184,6 +251,10 @@ ProcessResult run_process(const fs::path& exe, const std::vector<std::string>& a
 	GetExitCodeProcess(process, &code);
 	result.exit_code = code;
 	CloseHandle(process);
+	if (job) {
+		TerminateJobObject(job, 1); // processos que sobraram seguram o pipe aberto
+		CloseHandle(job);
+	}
 	reader.join();
 	CloseHandle(read_end);
 	return result;

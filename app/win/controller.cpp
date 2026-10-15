@@ -226,7 +226,7 @@ Findings Controller::run_rpcs3_version(std::string* version)
 	if (!result.started)
 		run.push_back({Level::error, "rpcs3.exe não iniciou: " + result.error});
 	else if (result.timed_out)
-		run.push_back({Level::error, "rpcs3.exe --version não terminou em 120 s"});
+		run.push_back({Level::error, "rpcs3.exe --version não terminou em 120 s: " + result.error});
 	else if (result.exit_code != 0)
 		run.push_back({Level::error, std::string("rpcs3.exe --version terminou com código ") + hex +
 		                                 (result.exit_code == 0xC0000135 ? " (DLL ausente)" : "")});

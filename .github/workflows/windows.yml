@@ -64,6 +64,8 @@ jobs:
     needs: app
     runs-on: windows-2025-vs2026   # mesma imagem do CI oficial do RPCS3
     timeout-minutes: 340
+    permissions:
+      contents: write   # só para publicar relatórios no ramo ci-logs
     env:
       BUILD_REPOSITORY_NAME: RPCS3/rpcs3
       BUILD_SOURCEBRANCHNAME: master
@@ -216,20 +218,32 @@ jobs:
         run: python gow3/tools/package.py --app app/build/Release/GOW3_PS3_PC.exe --rpcs3-bin rpcs3/bin --out dist --licenses licenses --build-info build_info.txt
 
       - name: Autoteste do pacote (máquina de compilação)
+        id: selftest
         shell: pwsh
         run: |
           # vulkan-1.dll vem do driver; servidores sem GPU podem não ter. Procura a do Vulkan SDK.
-          $loader = Get-ChildItem "$env:SystemRoot\System32\vulkan-1.dll", "$env:VULKAN_SDK" -Recurse -Filter vulkan-1.dll -ErrorAction SilentlyContinue | Select-Object -First 1
+          $loader = @(Get-Item "$env:SystemRoot\System32\vulkan-1.dll" -ErrorAction SilentlyContinue) +
+                    @(Get-ChildItem "$env:VULKAN_SDK" -Recurse -Filter vulkan-1.dll -ErrorAction SilentlyContinue) | Select-Object -First 1
           $extra = @()
           if ($loader) { $env:PATH = "$($loader.DirectoryName);$env:PATH"; Write-Host "vulkan-1.dll: $($loader.FullName)" }
           else { $extra = @('--allow-missing-vulkan'); Write-Host "vulkan-1.dll não encontrada nesta máquina" }
           $p = Start-Process dist\GOW3_PS3_PC\GOW3_PS3_PC.exe -ArgumentList (@('--selftest', '--report', "$pwd\selftest_build.txt") + $extra) -Wait -PassThru
-          Get-Content selftest_build.txt
-          if ($p.ExitCode -ne 0) { throw "Autoteste reprovado (código $($p.ExitCode))" }
-          # O pacote não pode ter sido modificado pelo autoteste (dados vão para a pasta user).
+          $report = Get-Content selftest_build.txt -Raw
+          Write-Host $report
+          # Relatórios para diagnóstico (ramo ci-logs e anotação legível pela API).
+          New-Item -ItemType Directory -Force reports | Out-Null
+          Copy-Item selftest_build.txt reports\
+          Copy-Item dist\GOW3_PS3_PC\user\rpcs3\log\RPCS3.log reports\RPCS3_selftest.log -ErrorAction SilentlyContinue
+          Copy-Item dist\GOW3_PS3_PC\user\logs\GOW3_PS3_PC.log reports\ -ErrorAction SilentlyContinue
+          $kind = if ($p.ExitCode -eq 0) { 'notice' } else { 'error' }
+          $escaped = $report.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')
+          Write-Host "::$($kind) title=Autoteste (código $($p.ExitCode))::$escaped"
+          "ok=$($p.ExitCode -eq 0)" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          # O ZIP já foi gerado antes; a pasta user criada pelo autoteste não entra nele.
           Remove-Item -Recurse -Force dist\GOW3_PS3_PC\user -ErrorAction SilentlyContinue
 
       - name: Código-fonte correspondente (GPL)
+        if: always() && steps.selftest.outcome == 'success'
         run: |
           mkdir -p source
           git -C gow3 archive --format=tar --prefix=gow3_ps3_pc/ HEAD | gzip -9 > source/gow3_ps3_pc-src.tar.gz
@@ -241,6 +255,7 @@ jobs:
           ls -la source
 
       - name: Relatório da compilação
+        if: always()
         run: |
           {
             echo "# Relatório de compilação — GOW3 PS3 PC"
@@ -254,11 +269,12 @@ jobs:
             echo '```'; ls -la dist; (cd dist && find GOW3_PS3_PC -maxdepth 3 | sort | head -200); echo '```'
             echo
             echo "## Autoteste na máquina de compilação"
-            echo '```'; cat selftest_build.txt; echo '```'
+            echo '```'; cat selftest_build.txt 2>/dev/null || echo "(autoteste não rodou)"; echo '```'
           } > BUILD_REPORT.md
           cat BUILD_REPORT.md >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
+        if: always() && hashFiles('dist/GOW3_PS3_PC_Windows_x64.zip') != ''
         with:
           name: GOW3_PS3_PC_Windows_x64
           path: dist/GOW3_PS3_PC_Windows_x64.zip
@@ -266,17 +282,41 @@ jobs:
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
+        if: always() && hashFiles('source/*') != ''
         with:
           name: GOW3_PS3_PC_source
           path: source/
           compression-level: 0
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: BUILD_REPORT
           path: |
             BUILD_REPORT.md
             selftest_build.txt
+
+      - name: Publicar relatórios no ramo ci-logs
+        if: always()
+        working-directory: gow3
+        run: |
+          mkdir -p ../reports && cp ../BUILD_REPORT.md ../build_info.txt ../reports/ 2>/dev/null || true
+          ls -la ../dist >> ../reports/dist_listing.txt 2>&1 || true
+          git config user.name "gow3-ci" && git config user.email "gow3-ci@users.noreply.github.com"
+          if git fetch --depth=1 origin ci-logs 2>/dev/null; then
+            git checkout -f -B ci-logs FETCH_HEAD
+          else
+            git checkout --orphan ci-logs && git rm -rqf --cached .
+          fi
+          dest="runs/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$dest" && cp -r ../reports/. "$dest/"
+          git add "$dest" && git commit -qm "Relatórios da execução ${GITHUB_RUN_ID}" && git push -q origin ci-logs
+
+      - name: Resultado do autoteste
+        if: always() && steps.selftest.outputs.ok != 'True'
+        run: |
+          echo "Autoteste reprovado ou não executado: veja selftest_build.txt / ramo ci-logs"
+          exit 1
 
   clean_test:
     name: Autoteste numa máquina Windows limpa

@@ -47,6 +47,10 @@ int wmain(int argc, wchar_t** argv)
 		args << buf << "\n";
 	}
 	for (int i = 1; i < argc; i++) {
+		if (std::wstring(argv[i]) == L"--version" && GetEnvironmentVariableW(L"FAKE_RPCS3_HANG", nullptr, 0)) {
+			MessageBoxW(nullptr, L"Erro fatal de teste", L"RPCS3", MB_OK); // simula report_fatal_error
+			return 1;
+		}
 		if (std::wstring(argv[i]) == L"--version") {
 			std::printf("RPCS3 0.0.0-falso\n");
 			return 0;
