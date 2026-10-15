@@ -1,0 +1,218 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# GOW3 PS3 NATIVE — primeira evidência verificável de recompilação estática PPU -> Windows x64.
+#
+#  ps3recomp_windows  compila o ps3recomp (commit fixado) com clang-cl no Windows e roda as suítes
+#                     dele, incluindo a conformidade que COMPILA E EXECUTA 1.300+ instruções traduzidas
+#  ppu_diff_generate  Linux: compila o corpus para PowerPC/Cell, executa no QEMU (referência),
+#                     recompila com o ppu_lifter e testa o binário recompilado no Linux
+#  ppu_diff_windows   compila o C recompilado com clang-cl para Windows x64, executa e compara
+#  report             junta tudo num relatório e publica no ramo ci-logs (legível pela API)
+#
+# Não usa nem executa RPCS3. Não usa arquivos do God of War III (não estão no repositório).
+name: Native recomp (PPU)
+
+on:
+  push:
+    branches: [native-recomp]
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  ps3recomp_windows:
+    name: ps3recomp no Windows (clang-cl)
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: gow3
+      - name: Commit fixado do ps3recomp
+        run: echo "PS3RECOMP_COMMIT=$(tr -d '[:space:]' < gow3/native/PS3RECOMP_COMMIT.txt)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          repository: sp00nznet/ps3recomp
+          ref: ${{ env.PS3RECOMP_COMMIT }}
+          path: ps3recomp
+      - name: Aplicar o patch do projeto (lwax + --toc para ELF)
+        working-directory: ps3recomp
+        run: git apply ../gow3/native/ps3recomp-elfv1.patch
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Ninja
+        run: choco install ninja -y --no-progress
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compilar o runtime (clang-cl, Release)
+        working-directory: ps3recomp
+        run: |
+          clang-cl --version | tee ../toolchain.txt
+          cmake -S . -B build -G Ninja -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_BUILD_TYPE=Release -DPS3RECOMP_BUILD_TESTS=ON
+          cmake --build build 2>&1 | tail -5
+          ls -la build/ps3recomp_runtime.lib
+      - name: Testes do runtime (ctest)
+        working-directory: ps3recomp
+        run: ctest --test-dir build --output-on-failure 2>&1 | tee ../ctest_windows.txt
+      - name: Suítes do lifter (a de conformidade compila e executa as instruções traduzidas)
+        working-directory: ps3recomp
+        env:
+          CI: "1"
+        run: |
+          set -o pipefail
+          : > ../lifter_suites_windows.txt
+          for t in tools/test_*.py; do
+            echo "--- $t" | tee -a ../lifter_suites_windows.txt
+            python "$t" 2>&1 | tail -3 | tee -a ../lifter_suites_windows.txt
+          done
+      - name: Andaime de boot PPU (verificação do próprio ps3recomp)
+        working-directory: ps3recomp
+        run: python tools/check_ppu_scaffold.py 2>&1 | tail -5 | tee ../scaffold_windows.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ps3recomp_windows_logs
+          path: |
+            toolchain.txt
+            ctest_windows.txt
+            lifter_suites_windows.txt
+            scaffold_windows.txt
+
+  ppu_diff_generate:
+    name: Corpus PowerPC + referência QEMU + recompilação (Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: gow3
+      - name: Commit fixado do ps3recomp
+        run: echo "PS3RECOMP_COMMIT=$(tr -d '[:space:]' < gow3/native/PS3RECOMP_COMMIT.txt)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          repository: sp00nznet/ps3recomp
+          ref: ${{ env.PS3RECOMP_COMMIT }}
+          path: ps3recomp
+      - name: Aplicar o patch do projeto
+        working-directory: ps3recomp
+        run: git apply ../gow3/native/ps3recomp-elfv1.patch
+      - name: Compilador PowerPC (gcc -mcpu=cell), QEMU e Clang
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-powerpc64-linux-gnu qemu-user clang ninja-build cmake >/dev/null
+          powerpc64-linux-gnu-gcc --version | head -1 | tee toolchain_linux.txt
+          qemu-ppc64 --version | head -1 | tee -a toolchain_linux.txt
+          clang --version | head -1 | tee -a toolchain_linux.txt
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python do ps3recomp
+        run: pip install -q -r ps3recomp/requirements.txt
+      - name: Gerar (compilar para PowerPC, executar no QEMU, recompilar)
+        run: python gow3/native/ppu_diff/run.py generate --ps3recomp ps3recomp --out bundle 2>&1 | tee generate.log
+      - name: Compilar e executar o recompilado no Linux x64
+        run: |
+          cmake -S bundle -B build-linux -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-linux
+          ./build-linux/ppu_diff_lifted bundle/corpus.elf > bundle/out_linux.txt
+          python gow3/native/ppu_diff/run.py compare --bundle bundle --output bundle/out_linux.txt | tee compare_linux.txt
+      - name: Guardar logs junto do pacote
+        if: always()
+        run: cp -f generate.log compare_linux.txt toolchain_linux.txt bundle/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ppu_diff_bundle
+          path: bundle/
+          if-no-files-found: error
+
+  ppu_diff_windows:
+    name: Código recompilado em Windows x64 (clang-cl)
+    needs: ppu_diff_generate
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: gow3
+      - uses: actions/download-artifact@v4
+        with:
+          name: ppu_diff_bundle
+          path: bundle
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Ninja
+        run: choco install ninja -y --no-progress
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compilar com clang-cl (LLVM) para Windows x64
+        run: |
+          clang-cl --version | head -1 | tee bundle/toolchain_windows.txt
+          cmake -S bundle -B build-win -G Ninja -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-win
+      - name: Executar no Windows e comparar com o PowerPC (QEMU)
+        run: |
+          ./build-win/ppu_diff_lifted.exe bundle/corpus.elf > bundle/out_windows.txt
+          python gow3/native/ppu_diff/run.py compare --bundle bundle --output bundle/out_windows.txt | tee bundle/compare_windows.txt
+      - name: Informações do executável
+        if: always()
+        shell: pwsh
+        run: |
+          $exe = Get-Item build-win\ppu_diff_lifted.exe
+          "arquivo: $($exe.Name)  tamanho: $($exe.Length)  sha256: $((Get-FileHash $exe -Algorithm SHA256).Hash)" | Tee-Object bundle\exe_windows.txt
+          dumpbin /nologo /headers $exe | Select-String 'machine|subsystem' | Tee-Object -Append bundle\exe_windows.txt
+          Copy-Item $exe bundle\
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ppu_recomp_windows_x64
+          path: |
+            bundle/ppu_diff_lifted.exe
+            bundle/corpus.elf
+            bundle/corpus.c
+            bundle/lifted/
+            bundle/ref_qemu.txt
+            bundle/out_windows.txt
+            bundle/compare_windows.txt
+            bundle/exe_windows.txt
+            bundle/toolchain_windows.txt
+
+  report:
+    name: Relatório
+    if: always()
+    needs: [ps3recomp_windows, ppu_diff_generate, ppu_diff_windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: gow3
+      - uses: actions/download-artifact@v4
+        with:
+          path: art
+      - name: Montar NATIVE_REPORT.md
+        env:
+          R_PS3RECOMP: ${{ needs.ps3recomp_windows.result }}
+          R_GENERATE: ${{ needs.ppu_diff_generate.result }}
+          R_WINDOWS: ${{ needs.ppu_diff_windows.result }}
+        run: |
+          python gow3/native/tools/make_report.py --artifacts art --out NATIVE_REPORT.md \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          cat NATIVE_REPORT.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NATIVE_REPORT
+          path: NATIVE_REPORT.md
+      - name: Publicar no ramo ci-logs
+        working-directory: gow3
+        run: |
+          git config user.name "gow3-ci" && git config user.email "gow3-ci@users.noreply.github.com"
+          if git fetch --depth=1 origin ci-logs 2>/dev/null; then git checkout -f -B ci-logs FETCH_HEAD; else git checkout --orphan ci-logs && git rm -rqf --cached .; fi
+          dest="native/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$dest"
+          cp ../NATIVE_REPORT.md "$dest/"
+          for f in ../art/*/*.txt ../art/ppu_diff_bundle/stats.json ../art/ppu_diff_bundle/lifter.log; do [ -f "$f" ] && cp "$f" "$dest/"; done
+          git add "$dest" && git commit -qm "Relatório native ${GITHUB_RUN_ID}" && git push -q origin ci-logs

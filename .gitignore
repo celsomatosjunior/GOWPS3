@@ -5,3 +5,10 @@ dist/
 tools/fake_rpcs3/*.exe
 tools/fake_rpcs3/*.dll
 tools/fake_rpcs3/*.a
+__pycache__/
+# dados do jogo e relatórios locais nunca entram no repositório
+*.ELF
+*.elf
+EBOOT.BIN
+relatorio_gow3/
+bundle/
