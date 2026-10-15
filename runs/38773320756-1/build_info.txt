@@ -1,0 +1,8 @@
+GOW3 PS3 PC — informações da compilação
+Data (UTC): 2026-10-15 17:12
+GOW3 PS3 PC: commit 1f4e99843cbe31d5a9ddf2a33d616583580cd498 (celsomatosjunior/GOWPS3)
+RPCS3: commit 4d5def5880217135554ed434cd5055cceebe9cc2 (https://github.com/RPCS3/rpcs3), sem modificações
+RPCS3 compilado com: MSVC / Visual Studio 18.10.3, Qt 6.12.0, LLVM 22.1.8, Vulkan SDK 1.4.341.1
+GOW3_PS3_PC.exe compilado com: CMake + Visual Studio 2022 (job 'app')
+Execução: https://github.com/celsomatosjunior/GOWPS3/actions/runs/38773320756
+Teste com God of War III: NÃO REALIZADO nesta compilação (sem jogo nem GPU no servidor).

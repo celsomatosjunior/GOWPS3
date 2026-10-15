@@ -1,0 +1,55 @@
+GOW3 PS3 PC 0.2.0 - autoteste do pacote
+Pasta do aplicativo: D:\a\GOWPS3\GOWPS3\dist\GOW3_PS3_PC
+Pasta de dados: D:\a\GOWPS3\GOWPS3\dist\GOW3_PS3_PC\user
+
+== 1. Componentes do RPCS3 (tamanho e SHA-256) ==
+[OK   ] Componentes do RPCS3 conferidos: 252 arquivos (com SHA-256)
+
+== 2. Dependências (DLLs) ==
+[AVISO] DLL ausente para um plugin opcional do Qt: MSVCP140.dll (usada por qt6/plugins/generic/qtuiotouchplugin.dll; encontrada só fora do pacote, em C:\Windows\system32\MSVCP140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: MSVCP140.dll (usada por qt6/plugins/multimedia/ffmpegmediaplugin.dll; encontrada só fora do pacote, em C:\Windows\system32\MSVCP140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: MSVCP140.dll (usada por qt6/plugins/multimedia/windowsmediaplugin.dll; encontrada só fora do pacote, em C:\Windows\system32\MSVCP140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: MSVCP140.dll (usada por qt6/plugins/networkinformation/qnetworklistmanager.dll; encontrada só fora do pacote, em C:\Windows\system32\MSVCP140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: MSVCP140.dll (usada por qt6/plugins/platforms/qwindows.dll; encontrada só fora do pacote, em C:\Windows\system32\MSVCP140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: MSVCP140.dll (usada por qt6/plugins/styles/qmodernwindowsstyle.dll; encontrada só fora do pacote, em C:\Windows\system32\MSVCP140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: MSVCP140.dll (usada por qt6/plugins/tls/qcertonlybackend.dll; encontrada só fora do pacote, em C:\Windows\system32\MSVCP140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: MSVCP140.dll (usada por qt6/plugins/tls/qschannelbackend.dll; encontrada só fora do pacote, em C:\Windows\system32\MSVCP140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: VCRUNTIME140.dll (usada por qt6/plugins/generic/qtuiotouchplugin.dll; encontrada só fora do pacote, em C:\Windows\system32\VCRUNTIME140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: VCRUNTIME140.dll (usada por qt6/plugins/iconengines/qsvgicon.dll; encontrada só fora do pacote, em C:\Windows\system32\VCRUNTIME140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: VCRUNTIME140.dll (usada por qt6/plugins/imageformats/qgif.dll; encontrada só fora do pacote, em C:\Windows\system32\VCRUNTIME140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: VCRUNTIME140.dll (usada por qt6/plugins/imageformats/qico.dll; encontrada só fora do pacote, em C:\Windows\system32\VCRUNTIME140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: VCRUNTIME140.dll (usada por qt6/plugins/imageformats/qjpeg.dll; encontrada só fora do pacote, em C:\Windows\system32\VCRUNTIME140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: VCRUNTIME140.dll (usada por qt6/plugins/imageformats/qsvg.dll; encontrada só fora do pacote, em C:\Windows\system32\VCRUNTIME140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: VCRUNTIME140.dll (usada por qt6/plugins/multimedia/ffmpegmediaplugin.dll; encontrada só fora do pacote, em C:\Windows\system32\VCRUNTIME140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: VCRUNTIME140.dll (usada por qt6/plugins/multimedia/windowsmediaplugin.dll; encontrada só fora do pacote, em C:\Windows\system32\VCRUNTIME140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: VCRUNTIME140.dll (usada por qt6/plugins/networkinformation/qnetworklistmanager.dll; encontrada só fora do pacote, em C:\Windows\system32\VCRUNTIME140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: VCRUNTIME140.dll (usada por qt6/plugins/platforms/qwindows.dll; encontrada só fora do pacote, em C:\Windows\system32\VCRUNTIME140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: VCRUNTIME140.dll (usada por qt6/plugins/styles/qmodernwindowsstyle.dll; encontrada só fora do pacote, em C:\Windows\system32\VCRUNTIME140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: VCRUNTIME140.dll (usada por qt6/plugins/tls/qcertonlybackend.dll; encontrada só fora do pacote, em C:\Windows\system32\VCRUNTIME140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: VCRUNTIME140.dll (usada por qt6/plugins/tls/qschannelbackend.dll; encontrada só fora do pacote, em C:\Windows\system32\VCRUNTIME140.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: VCRUNTIME140_1.dll (usada por qt6/plugins/multimedia/ffmpegmediaplugin.dll; encontrada só fora do pacote, em C:\Windows\system32\VCRUNTIME140_1.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: VCRUNTIME140_1.dll (usada por qt6/plugins/multimedia/windowsmediaplugin.dll; encontrada só fora do pacote, em C:\Windows\system32\VCRUNTIME140_1.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: VCRUNTIME140_1.dll (usada por qt6/plugins/networkinformation/qnetworklistmanager.dll; encontrada só fora do pacote, em C:\Windows\system32\VCRUNTIME140_1.dll)
+[AVISO] DLL ausente para um plugin opcional do Qt: VCRUNTIME140_1.dll (usada por qt6/plugins/platforms/qwindows.dll; encontrada só fora do pacote, em C:\Windows\system32\VCRUNTIME140_1.dll)
+[OK   ] 39 executáveis/DLLs analisados, 301 importações resolvidas
+
+== 3. Dados do usuário ==
+[OK   ] Pasta de dados gravável
+[OK   ] Configuração do RPCS3 gerada: D:\a\GOWPS3\GOWPS3\dist\GOW3_PS3_PC\user\gow3_rpcs3_config.yml
+
+== 3b. Compatibilidade do RPCS3 instalado ==
+[OK   ] Todas as 46 opções usadas pelo aplicativo existem neste rpcs3.exe
+
+== 4. Execução do RPCS3 embutido ==
+[ERRO ] rpcs3.exe --version não terminou em 120 s: 1 processo(s) ainda abertos
+    janela "RPCS3: Fatal Error"
+
+== 5. Computador (informativo) ==
+[OK   ] Windows 11 (build 26100)
+[OK   ] AMD EPYC 9V45 96-Core Processor, 4 threads
+[OK   ] CPU com AVX-512 (o RPCS3 usa essas instruções nos SPUs).
+[OK   ] 16.0 GB de RAM
+[ERRO ] Vulkan: o driver recusou criar uma instância Vulkan (erro -9). Instale ou atualize o driver de vídeo.
+
+RESULTADO: REPROVADO
+Observação: este autoteste não executa God of War III; ele confirma que o pacote está completo e que o RPCS3 embutido inicia.
