@@ -100,7 +100,9 @@ jobs:
           python gow3/native/analyzer/tests/make_ps3_test_elf.py corpus/corpus.elf corpus/meta.json ps3_test.elf
           python gow3/native/analyzer/tests/make_fake_self.py ps3_test.elf EBOOT_varejo_sintetico.BIN
       - name: Empacotar GOW3_Native_Analyzer.exe
-        run: python gow3/native/analyzer/build_exe.py --ps3recomp ps3recomp --out dist 2>&1 | grep -v " INFO: " | tail -20
+        run: |
+          set -o pipefail
+          python gow3/native/analyzer/build_exe.py --ps3recomp ps3recomp --out dist 2>&1 | grep -v " INFO: " | tail -20
       - name: Autoteste (código-fonte e .exe empacotado)
         env:
           GOW3_PS3RECOMP: ${{ github.workspace }}/ps3recomp
