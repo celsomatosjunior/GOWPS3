@@ -36,8 +36,8 @@ def main(argv=None) -> int:
         out = Path(args.saida) if args.saida else default_output()
         out.mkdir(parents=True, exist_ok=True)
         log = open(out / "analise.log", "a", encoding="utf-8", buffering=1)
-        import faulthandler
-        faulthandler.enable(log)  # registra também quedas do processo (ex.: dentro de uma DLL)
+        # (sem faulthandler: no Windows ele registra como "fatal" exceções que o Unicorn trata
+        # internamente, o que confundiria quem lê o log)
 
         def progress(msg):
             print(msg)

@@ -46,3 +46,10 @@ python native/tools/analyze_gow3.py "D:\Jogos\God of War III" --elf EBOOT.ELF --
 - Nenhum arquivo do jogo, firmware ou chave entra no repositório.
 - Este projeto não decifra SELF de varejo.
 - O RPCS3 é só referência de comportamento.
+
+## Fase 2 — GOW3_Native_Analyzer
+
+Programa Windows em `native/analyzer/` (veja o README de lá): identifica o EBOOT.BIN/ELF, analisa o
+código PPU do executável do jogo no computador do usuário e testa a recompilação das primeiras
+funções reais contra uma CPU de referência. Workflow: `.github/workflows/analyzer.yml`
+(ZIP `GOW3_Native_Analyzer_Windows_x64`).
