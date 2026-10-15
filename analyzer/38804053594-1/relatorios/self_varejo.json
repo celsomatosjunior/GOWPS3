@@ -1,0 +1,123 @@
+{
+ "tool": "GOW3_Native_Analyzer",
+ "version": "0.2.0",
+ "generated_at": "2026-10-15 20:46:59 +0000",
+ "input": {
+  "file": "EBOOT_varejo_sintetico.BIN",
+  "name": "EBOOT_varejo_sintetico.BIN",
+  "size": 33384,
+  "sha256": "d6ca7192ffc23b1239b96987004a5c176f0713427a825106206c0004debd194e",
+  "format": "SELF",
+  "sce_version": 2,
+  "key_revision": 28,
+  "header_type": 1,
+  "elf_size": 846656,
+  "auth_id": "0x1010000001000003",
+  "self_type": "aplicativo",
+  "app_version": "1.00",
+  "elf": {
+   "type": "EXEC",
+   "machine": "PowerPC 64 (PPU do Cell)",
+   "machine_id": 21,
+   "entry": 536870912,
+   "phnum": 3,
+   "shnum": 4
+  },
+  "segments": [
+   {
+    "type": "LOAD",
+    "flags": "RX",
+    "offset": 240,
+    "vaddr": 268435456,
+    "filesz": 801519,
+    "memsz": 801519,
+    "stored_size": 16384,
+    "compressed": false,
+    "encrypted": true
+   },
+   {
+    "type": "LOAD",
+    "flags": "RW",
+    "offset": 801760,
+    "vaddr": 269315224,
+    "filesz": 44460,
+    "memsz": 66168,
+    "stored_size": 16384,
+    "compressed": false,
+    "encrypted": true
+   },
+   {
+    "type": "LOAD",
+    "flags": "RW",
+    "offset": 846224,
+    "vaddr": 536870912,
+    "filesz": 152,
+    "memsz": 152,
+    "stored_size": 152,
+    "compressed": false,
+    "encrypted": true
+   }
+  ],
+  "segments_marked_encrypted": true,
+  "encrypted": true,
+  "fself_debug": false,
+  "ready": false,
+  "status": "SELF de varejo cifrado (revisão de chave 0x001C). A análise de funções PPU precisa de um EBOOT.ELF preparado legitimamente por você a partir da sua cópia. Este programa não decifra e não contorna proteções."
+ },
+ "notes": [],
+ "param_sfo": {},
+ "analysis": null,
+ "recompilation_test": null,
+ "ladder": [
+  {
+   "step": "1. Ferramentas compiladas",
+   "state": "ok",
+   "detail": "GOW3_Native_Analyzer 0.2.0 em execução (ps3recomp, referência e compilador empacotados)"
+  },
+  {
+   "step": "2. Executável analisado",
+   "state": "blocked",
+   "detail": "SELF de varejo cifrado (revisão de chave 0x001C). A análise de funções PPU precisa de um EBOOT.ELF preparado legitimamente por você a partir da sua cópia. Este programa não decifra e não contorna proteções."
+  },
+  {
+   "step": "3. Código PPU recompilado",
+   "state": "todo",
+   "detail": "nenhuma função do jogo testada"
+  },
+  {
+   "step": "4. Código SPU recompilado",
+   "state": "todo",
+   "detail": ""
+  },
+  {
+   "step": "5. Runtime inicializado",
+   "state": "todo",
+   "detail": ""
+  },
+  {
+   "step": "6. Primeiro quadro renderizado",
+   "state": "todo",
+   "detail": ""
+  },
+  {
+   "step": "7. Menu principal",
+   "state": "todo",
+   "detail": ""
+  },
+  {
+   "step": "8. Gameplay",
+   "state": "todo",
+   "detail": ""
+  },
+  {
+   "step": "9. Salvamento e carregamento",
+   "state": "todo",
+   "detail": ""
+  },
+  {
+   "step": "10. Jogo completo",
+   "state": "todo",
+   "detail": ""
+  }
+ ]
+}
