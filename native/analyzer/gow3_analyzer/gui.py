@@ -88,6 +88,13 @@ class App:
 
     def say(self, msg: str):
         self.events.put(("log", msg))
+        try:
+            out = Path(self.out.get().strip())
+            out.mkdir(parents=True, exist_ok=True)
+            with open(out / "analise.log", "a", encoding="utf-8") as f:
+                f.write(msg + "\n")
+        except OSError:
+            pass
 
     def start(self):
         if not self.path.get().strip():

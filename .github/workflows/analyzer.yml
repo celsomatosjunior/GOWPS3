@@ -128,6 +128,8 @@ jobs:
             if (Test-Path "synth\$d\relatorio_gow3.json") { Copy-Item "synth\$d\relatorio_gow3.json" "out\relatorios\$d.json" }
           }
           if (Test-Path synth\mutacao\recomp_test\divergencias.txt) { Copy-Item synth\mutacao\recomp_test\divergencias.txt out\mutacao_divergencias.txt }
+          foreach ($d in 'exe','exe_self') { if (Test-Path "synth\$d\analise.log") { Copy-Item "synth\$d\analise.log" "out\analise_$d.log" } }
+          if (Test-Path synth\exe) { Get-ChildItem -Recurse synth\exe | Where-Object { $_.FullName -notmatch 'trabalho' } | Select-Object FullName, Length | Out-File out\arquivos_exe.txt -Width 300 }
           if (Test-Path synth\exe\recomp_test\compilacao.log) { Copy-Item synth\exe\recomp_test\compilacao.log out\compilacao_exe.log }
       - uses: actions/upload-artifact@v4
         with:

@@ -34,8 +34,22 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     if args.cmd == "analisar":
         out = Path(args.saida) if args.saida else default_output()
-        rep = pipeline.run(args.entrada, out, recompile=not args.sem_recompilar, limit=args.funcoes, cases=args.casos,
-                           target=args.alvo, runner=args.executor)
+        out.mkdir(parents=True, exist_ok=True)
+        log = open(out / "analise.log", "a", encoding="utf-8", buffering=1)
+        import faulthandler
+        faulthandler.enable(log)  # registra também quedas do processo (ex.: dentro de uma DLL)
+
+        def progress(msg):
+            print(msg)
+            log.write(msg + "\n")
+
+        try:
+            rep = pipeline.run(args.entrada, out, recompile=not args.sem_recompilar, limit=args.funcoes,
+                               cases=args.casos, target=args.alvo, runner=args.executor, progress=progress)
+        except Exception:
+            import traceback
+            log.write(traceback.format_exc())
+            raise
         rt = rep.get("recompilation_test") or {}
         print(json.dumps({"saida": str(out), "pronto": rep["input"].get("ready"),
                           "funcoes": (rep.get("analysis") or {}).get("function_count"),

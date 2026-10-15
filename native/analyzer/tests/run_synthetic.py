@@ -79,8 +79,12 @@ def main():
         exe_out = out / "exe"
         proc = subprocess.run([args.exe, "analisar", args.elf, "--saida", str(exe_out)] + args.exe_extra.split(), capture_output=True, text=True,
                               timeout=1800)
+        print(f"código de saída do .exe: {proc.returncode}")
         print(proc.stdout[-2000:], proc.stderr[-2000:])
-        j = json.loads((exe_out / "relatorio_gow3.json").read_text(encoding="utf-8"))
+        if (exe_out / "analise.log").is_file():
+            print("--- analise.log\n" + (exe_out / "analise.log").read_text(encoding="utf-8", errors="replace")[-4000:])
+        rj = exe_out / "relatorio_gow3.json"
+        j = json.loads(rj.read_text(encoding="utf-8")) if rj.is_file() else {}
         te = (j.get("recompilation_test") or {}).get("totals") or {}
         summary["exe"] = te or j.get("recompilation_test")
         check(proc.returncode == 0 and te.get("functions", 0) >= 10 and te.get("identical_functions") == te.get("functions"),
