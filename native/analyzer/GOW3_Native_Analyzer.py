@@ -4,6 +4,12 @@
 import multiprocessing
 import os
 import sys
+import threading
+
+# O executável gerado pelo PyInstaller tem pilha de 1 MB na thread principal (o python.exe tem
+# 2 MB), pouco para a inicialização da CPU de referência (Unicorn/QEMU): no Windows isso derrubava
+# o processo. Todo o trabalho roda em threads com pilha de 64 MB.
+STACK = 64 * 1024 * 1024
 
 
 def _console_streams():
@@ -25,9 +31,14 @@ def _console_streams():
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
+    threading.stack_size(STACK)
     if len(sys.argv) > 1:
         _console_streams()
         from gow3_analyzer.cli import main as cli_main
-        sys.exit(cli_main())
+        result = {}
+        worker = threading.Thread(target=lambda: result.setdefault("code", cli_main()), name="cli")
+        worker.start()
+        worker.join()
+        sys.exit(result.get("code", 1))
     from gow3_analyzer.gui import main as gui_main
     gui_main()
