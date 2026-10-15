@@ -1,0 +1,170 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# GOW3 PS3 NATIVE — Fase 2: GOW3_Native_Analyzer para Windows x64.
+#
+#  corpus    Linux: compila o corpus do projeto para PowerPC/Cell e executa no QEMU (referência)
+#  windows   Windows: valida a CPU de referência (Unicorn) contra o QEMU, empacota o analisador
+#            (PyInstaller + ps3recomp + Unicorn + zig), roda o autoteste com o código-fonte e com o
+#            .exe empacotado (ELF sintético no formato de EBOOT, teste de mutação, SELF de varejo
+#            sintético) e publica o ZIP
+#  report    publica os resultados no ramo ci-logs
+#
+# Nenhum arquivo do God of War III é usado aqui: a análise real roda no computador do usuário.
+name: Native analyzer (Windows)
+
+on:
+  push:
+    branches: [native-recomp]
+  workflow_dispatch:
+
+env:
+  PYTHONIOENCODING: utf-8
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  corpus:
+    name: Corpus PowerPC + referência QEMU
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: gow3
+      - name: Commit fixado do ps3recomp
+        run: echo "PS3RECOMP_COMMIT=$(tr -d '[:space:]' < gow3/native/PS3RECOMP_COMMIT.txt)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          repository: sp00nznet/ps3recomp
+          ref: ${{ env.PS3RECOMP_COMMIT }}
+          path: ps3recomp
+      - name: Aplicar o patch do projeto
+        working-directory: ps3recomp
+        run: git apply ../gow3/native/ps3recomp-elfv1.patch
+      - name: gcc PowerPC, QEMU, clang
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-powerpc64-linux-gnu qemu-user clang >/dev/null
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -q -r ps3recomp/requirements.txt
+      - name: Corpus -> PowerPC -> QEMU
+        run: python gow3/native/ppu_diff/run.py generate --ps3recomp ps3recomp --out bundle 2>&1 | tail -5
+      - uses: actions/upload-artifact@v4
+        with:
+          name: corpus_ppc
+          path: |
+            bundle/corpus.elf
+            bundle/meta.json
+            bundle/ref_qemu.txt
+          if-no-files-found: error
+
+  windows:
+    name: Analisador Windows x64 (empacotar e testar)
+    needs: corpus
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: gow3
+      - name: Commit fixado do ps3recomp
+        run: echo "PS3RECOMP_COMMIT=$(tr -d '[:space:]' < gow3/native/PS3RECOMP_COMMIT.txt)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          repository: sp00nznet/ps3recomp
+          ref: ${{ env.PS3RECOMP_COMMIT }}
+          path: ps3recomp
+      - name: Aplicar o patch do projeto
+        working-directory: ps3recomp
+        run: git apply ../gow3/native/ps3recomp-elfv1.patch
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Dependências (versões fixadas)
+        run: |
+          pip install -q unicorn==2.1.4 ziglang==0.17.0 pyinstaller==6.22.3
+          python -c "import unicorn, ziglang, PyInstaller, tkinter; print('unicorn', unicorn.__version__, '| PyInstaller', PyInstaller.__version__)" | tee toolchain.txt
+          python -m ziglang version | tee -a toolchain.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: corpus_ppc
+          path: corpus
+      - name: Validar a CPU de referência (Unicorn) contra o QEMU
+        run: |
+          set -o pipefail
+          mkdir -p out
+          python gow3/native/analyzer/tests/validate_reference.py corpus/corpus.elf corpus/meta.json corpus/ref_qemu.txt out/unicorn_out.txt | tee out/validacao_referencia.txt
+      - name: Entradas sintéticas (ELF no formato de EBOOT e SELF de varejo falso)
+        run: |
+          python gow3/native/analyzer/tests/make_ps3_test_elf.py corpus/corpus.elf corpus/meta.json ps3_test.elf
+          python gow3/native/analyzer/tests/make_fake_self.py ps3_test.elf EBOOT_varejo_sintetico.BIN
+      - name: Empacotar GOW3_Native_Analyzer.exe
+        run: python gow3/native/analyzer/build_exe.py --ps3recomp ps3recomp --out dist 2>&1 | grep -v " INFO: " | tail -20
+      - name: Autoteste (código-fonte e .exe empacotado)
+        env:
+          GOW3_PS3RECOMP: ${{ github.workspace }}/ps3recomp
+        run: |
+          set -o pipefail
+          python gow3/native/analyzer/tests/run_synthetic.py ps3_test.elf EBOOT_varejo_sintetico.BIN synth \
+            --exe dist/GOW3_Native_Analyzer/GOW3_Native_Analyzer.exe 2>&1 | tee out/autoteste.txt
+      - name: Informações do pacote
+        if: always()
+        shell: pwsh
+        run: |
+          $exe = Get-Item dist\GOW3_Native_Analyzer\GOW3_Native_Analyzer.exe -ErrorAction SilentlyContinue
+          if ($exe) { "GOW3_Native_Analyzer.exe  tamanho: $($exe.Length)  sha256: $((Get-FileHash $exe -Algorithm SHA256).Hash)" | Tee-Object out\pacote.txt }
+          $t = Get-Item synth\exe\recomp_test\GOW3_Native_RecompTest.exe -ErrorAction SilentlyContinue
+          if ($t) { "GOW3_Native_RecompTest.exe (gerado pelo .exe empacotado)  tamanho: $($t.Length)  sha256: $((Get-FileHash $t -Algorithm SHA256).Hash)" | Tee-Object -Append out\pacote.txt }
+          $z = Get-Item dist\GOW3_Native_Analyzer_Windows_x64.zip -ErrorAction SilentlyContinue
+          if ($z) { "ZIP: $($z.Length) bytes  sha256: $((Get-FileHash $z -Algorithm SHA256).Hash)" | Tee-Object -Append out\pacote.txt }
+          Copy-Item toolchain.txt out\ -ErrorAction SilentlyContinue
+          Copy-Item synth\autoteste.json out\ -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force out\relatorios | Out-Null
+          foreach ($d in 'fonte','exe','self_varejo','mutacao') {
+            if (Test-Path "synth\$d\relatorio_gow3.html") { Copy-Item "synth\$d\relatorio_gow3.html" "out\relatorios\$d.html" }
+            if (Test-Path "synth\$d\relatorio_gow3.json") { Copy-Item "synth\$d\relatorio_gow3.json" "out\relatorios\$d.json" }
+          }
+          if (Test-Path synth\mutacao\recomp_test\divergencias.txt) { Copy-Item synth\mutacao\recomp_test\divergencias.txt out\mutacao_divergencias.txt }
+          if (Test-Path synth\exe\recomp_test\compilacao.log) { Copy-Item synth\exe\recomp_test\compilacao.log out\compilacao_exe.log }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GOW3_Native_Analyzer_Windows_x64
+          path: dist/GOW3_Native_Analyzer/
+          if-no-files-found: error
+          compression-level: 6
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: analyzer_reports
+          path: out/
+
+  report:
+    name: Publicar resultados
+    if: always()
+    needs: [corpus, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: gow3
+      - uses: actions/download-artifact@v4
+        with:
+          name: analyzer_reports
+          path: out
+        continue-on-error: true
+      - name: Publicar no ramo ci-logs
+        working-directory: gow3
+        env:
+          R_CORPUS: ${{ needs.corpus.result }}
+          R_WINDOWS: ${{ needs.windows.result }}
+        run: |
+          git config user.name "gow3-ci" && git config user.email "gow3-ci@users.noreply.github.com"
+          if git fetch --depth=1 origin ci-logs 2>/dev/null; then git checkout -f -B ci-logs FETCH_HEAD; else git checkout --orphan ci-logs && git rm -rqf --cached .; fi
+          dest="analyzer/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$dest"
+          echo "corpus=$R_CORPUS windows=$R_WINDOWS" > "$dest/jobs.txt"
+          [ -d ../out ] && cp -r ../out/. "$dest/" || true
+          git add "$dest" && git commit -qm "Analisador ${GITHUB_RUN_ID}" && git push -q origin ci-logs

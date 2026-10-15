@@ -1,0 +1,57 @@
+GOW3 Native Analyzer — Windows x64
+===================================
+
+O que faz
+---------
+1. Identifica o executável do PS3 que você escolher (EBOOT.BIN, EBOOT.ELF ou a pasta do jogo):
+   formato, se está cifrado, arquitetura, segmentos, SHA-256 e se está pronto para análise.
+2. Se o executável estiver legível (ELF), analisa o código PPU: funções, endereços e tamanhos,
+   importações de bibliotecas do sistema (NIDs), syscalls, dependências PRX, referências a SPU,
+   fluxo a partir da entrada, grafo de chamadas e funções candidatas à recompilação.
+3. Recompila as candidatas (PowerPC -> C++ -> x86-64) com o ps3recomp e o compilador incluído,
+   gerando o programa de teste GOW3_Native_RecompTest.exe, e compara cada função recompilada com o
+   código PowerPC original executado numa CPU de referência (Unicorn/QEMU), a partir dos mesmos
+   estados iniciais. Registradores e memória são comparados.
+4. Grava relatorio_gow3.html, relatorio_gow3.json, funcoes_ppu.csv e a pasta recomp_test com os
+   logs que permitem repetir a comparação.
+
+Tudo roda no seu computador. Nada é enviado para a internet.
+
+Como usar
+---------
+1. Extraia o ZIP inteiro numa pasta (por exemplo C:\GOW3_Native_Analyzer). Não rode de dentro do ZIP.
+2. Abra GOW3_Native_Analyzer.exe.
+3. Clique em "Arquivo…" e escolha:
+      <pasta do jogo>\PS3_GAME\USRDIR\EBOOT.BIN
+   ou clique em "Pasta…" e escolha a pasta do jogo (a que contém PS3_GAME).
+   Se houver um EBOOT.ELF ao lado do EBOOT.BIN, ele é usado automaticamente.
+4. Clique em "Analisar". O relatório abre no navegador quando terminar.
+   Na primeira recompilação o compilador prepara as bibliotecas do Windows (1 a 3 minutos);
+   depois fica em cache.
+
+Se o EBOOT.BIN for o de varejo (cifrado)
+----------------------------------------
+O relatório mostra "SELF de varejo cifrado" e para por aí. Este programa não decifra o executável
+e não contorna nenhuma proteção. Para a análise das funções é preciso um EBOOT.ELF preparado
+legitimamente por você a partir da sua própria cópia do jogo. Coloque o EBOOT.ELF na mesma pasta
+do EBOOT.BIN (ou escolha-o diretamente) e rode de novo.
+
+Linha de comando
+----------------
+  GOW3_Native_Analyzer.exe analisar "D:\jogos\BCES00510\PS3_GAME\USRDIR\EBOOT.ELF" --saida C:\relatorio
+  Opções: --sem-recompilar, --funcoes N (padrão 40), --casos N (padrão 16).
+  Códigos de saída: 0 = ok, 3 = teste de recompilação falhou, 4 = executável cifrado/não analisável.
+
+O que este programa NÃO faz
+---------------------------
+- Não executa o jogo e não recompila o jogo inteiro: testa funções isoladas.
+- Funções "idênticas" provam que a tradução delas está correta para os estados testados, não que
+  o God of War III funcione.
+
+Privacidade dos resultados
+--------------------------
+Os relatórios HTML/JSON/CSV contêm só metadados (endereços, tamanhos, contagens, nomes de
+bibliotecas). A pasta recomp_test\lifted contém código C++ gerado a partir do executável do jogo e
+o GOW3_Native_RecompTest.exe é derivado dele: não publique esses arquivos.
+
+Licenças: veja a pasta LICENCAS. Código-fonte do analisador: fonte_do_analisador.zip.

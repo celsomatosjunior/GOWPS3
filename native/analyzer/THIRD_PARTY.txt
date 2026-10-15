@@ -1,0 +1,16 @@
+Componentes de terceiros do GOW3 Native Analyzer
+================================================
+
+GOW3 Native Analyzer (este projeto) ........ GPL-2.0-only (fonte em fonte_do_analisador.zip)
+ps3recomp (sp00nznet/ps3recomp) ............. MIT. Ferramentas Python em _internal\ps3recomp\tools,
+                                              commit fixado em PS3RECOMP_COMMIT.txt, com o patch
+                                              ps3recomp-elfv1.patch (dentro de fonte_do_analisador.zip)
+Unicorn Engine 2.1.4 ........................ GPL-2.0 (baseado no QEMU). Código: https://github.com/unicorn-engine/unicorn
+Zig 0.17 (compilador, inclui clang/LLVM,
+  libc++, libc++abi, libunwind, mingw-w64) .. MIT; LLVM: Apache-2.0 com exceção LLVM;
+                                              mingw-w64: licenças em _internal\ziglang\lib\libc\mingw
+                                              Código: https://ziglang.org
+Python 3.12 e Tcl/Tk ........................ PSF License / licença BSD do Tcl/Tk
+PyInstaller (carregador) .................... GPL-2.0 com exceção de carregador
+
+Nenhum arquivo do jogo, firmware ou chave criptográfica faz parte deste pacote.
