@@ -1,0 +1,15 @@
+CÓDIGO-FONTE CORRESPONDENTE (GPL-2.0)
+=====================================
+
+Este pacote contém programas licenciados pela GNU General Public License versão 2:
+  * GOW3 PS3 PC (GOW3_PS3_PC.exe) — GPL-2.0-only
+  * RPCS3 (runtime\rpcs3) — GPL-2.0-only, compilado sem modificações a partir do commit
+    indicado em BUILD_INFO.txt (repositório https://github.com/RPCS3/rpcs3)
+
+O código-fonte completo e correspondente desta compilação é publicado junto com ela,
+como o artefato "GOW3_PS3_PC_source" da mesma execução do GitHub Actions que gerou
+este ZIP. Ele inclui o código do GOW3 PS3 PC, o RPCS3 no commit exato e todos os
+submódulos usados, além dos scripts de compilação (.github/workflows/windows.yml).
+
+Se você recebeu este pacote sem o código-fonte, quem o distribuiu deve fornecê-lo
+(GPL-2.0, seção 3). Componentes de terceiros e suas licenças: licenses\THIRD_PARTY.md.

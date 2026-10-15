@@ -1,0 +1,44 @@
+GOW3 PS3 PC — God of War III (PlayStation 3) no Windows
+=========================================================
+
+Projeto independente e de código aberto (GPL-2.0). Sem afiliação com a Sony
+Interactive Entertainment ou com o Santa Monica Studio. God of War é marca da Sony
+Interactive Entertainment.
+
+Este pacote NÃO contém o jogo, o firmware do PS3 nem nenhum arquivo da Sony.
+Você precisa de:
+  * a sua cópia do God of War III de PS3, copiada do seu console (pasta com PS3_GAME);
+  * o firmware PS3UPDAT.PUP, baixado do site oficial da PlayStation;
+  * Windows 10 ou 11 de 64 bits e uma placa de vídeo com driver Vulkan atualizado.
+
+COMO USAR
+  1. Extraia o ZIP inteiro numa pasta fixa (ex.: C:\Jogos\GOW3_PS3_PC).
+     Não rode de dentro do ZIP, de pastas temporárias nem do OneDrive.
+  2. Abra GOW3_PS3_PC.exe. Se o Windows mostrar "O Windows protegeu o computador",
+     clique em "Mais informações" e "Executar assim mesmo" (o programa não tem assinatura digital).
+  3. Aba HOME > "Instalar firmware..." > escolha o PS3UPDAT.PUP.
+  4. Aba HOME > "Escolher..." > escolha a pasta do jogo.
+  5. Ajuste GRAPHICS e PERFORMANCE se quiser. Em CONTROLS, configure o controle.
+  6. Clique em JOGAR.
+
+ONDE FICAM OS DADOS
+  user\settings.ini                       configurações do GOW3 PS3 PC
+  user\rpcs3\                             dados do RPCS3 embutido (firmware, cache, config)
+  user\rpcs3\dev_hdd0\home\00000001\savedata\   salvamentos
+  user\rpcs3\log\RPCS3.log                log do emulador
+  user\logs\                              log do aplicativo e do autoteste
+  Ao atualizar o GOW3 PS3 PC, guarde a pasta "user".
+  Se a pasta do aplicativo não permitir escrita, os dados vão para
+  %LOCALAPPDATA%\GOW3_PS3_PC\user.
+
+SE ALGO DER ERRADO
+  * ADVANCED > "Autoteste do pacote": confere arquivos, DLLs e se o RPCS3 embutido abre.
+  * ADVANCED > "Diagnóstico do log": explica os erros do RPCS3 em português.
+  * Mensagem sobre vulkan-1.dll ou Vulkan: instale/atualize o driver da placa de vídeo.
+
+ESTADO DO PROJETO
+  Versão alfa. Até que um teste completo com o jogo seja registrado em BUILD_INFO.txt,
+  não há garantia de que God of War III rode do início ao fim. A compatibilidade é a do
+  RPCS3 incluído (a wiki do RPCS3 não considera o jogo "Playable").
+
+LICENÇAS E CÓDIGO-FONTE: veja FONTE.txt e a pasta licenses.

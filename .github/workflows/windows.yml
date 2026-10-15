@@ -1,0 +1,338 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Compila o GOW3 PS3 PC para Windows x64 e gera GOW3_PS3_PC_Windows_x64.zip.
+#
+#  app        GOW3_PS3_PC.exe com CMake + Visual Studio 2022 (windows-2022) e testes do núcleo
+#  rpcs3      RPCS3 compilado do código-fonte no commit fixado em RPCS3_COMMIT.txt, com os mesmos
+#             passos e a mesma imagem de runner do CI oficial do RPCS3; monta o ZIP e roda o autoteste
+#  clean_test extrai o ZIP numa máquina Windows nova e roda o autoteste de novo
+name: Windows build
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  app:
+    name: GOW3_PS3_PC.exe (VS 2022)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar (CMake, Visual Studio 17 2022, x64)
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Compilar
+        run: cmake --build build --config Release --parallel
+
+      - name: Testes do núcleo
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Dependências do executável
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe | Where-Object FullName -like '*Hostx64\x64*' | Select-Object -First 1
+          & $dumpbin.FullName /nologo /dependents build\Release\GOW3_PS3_PC.exe | Tee-Object app_dependents.txt
+          cmake --version | Out-File -Append app_dependents.txt
+          & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property catalog_productDisplayVersion | Out-File -Append app_dependents.txt
+
+      - name: Configuração padrão enviada ao RPCS3
+        run: build/Release/core_tests.exe --dump-yaml > default_config.yml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app
+          path: |
+            build/Release/GOW3_PS3_PC.exe
+            default_config.yml
+            app_dependents.txt
+          if-no-files-found: error
+
+  rpcs3:
+    name: RPCS3 (MSVC) + pacote
+    needs: app
+    runs-on: windows-2025-vs2026   # mesma imagem do CI oficial do RPCS3
+    timeout-minutes: 340
+    env:
+      BUILD_REPOSITORY_NAME: RPCS3/rpcs3
+      BUILD_SOURCEBRANCHNAME: master
+      BUILD_ARTIFACTSTAGINGDIRECTORY: ${{ github.workspace }}/artifacts/
+      CCACHE_BIN_DIR: 'C:\ccache_bin'
+      CCACHE_DIR: 'C:\ccache'
+      CCACHE_INODECACHE: 'true'
+      CCACHE_SLOPPINESS: 'time_macros'
+      CCACHE_MAXSIZE: '7G'
+      DEPS_CACHE_DIR: ./dependency_cache
+    steps:
+      - name: Código do GOW3 PS3 PC
+        uses: actions/checkout@v4
+        with:
+          path: gow3
+
+      - name: Commit fixado do RPCS3
+        run: echo "RPCS3_COMMIT=$(tr -d '[:space:]' < gow3/RPCS3_COMMIT.txt)" >> "$GITHUB_ENV"
+
+      - name: Código do RPCS3
+        uses: actions/checkout@v4
+        with:
+          repository: RPCS3/rpcs3
+          ref: ${{ env.RPCS3_COMMIT }}
+          path: rpcs3
+          fetch-depth: 0   # .ci/setup-windows-ci-vars.sh conta os commits
+
+      - name: Versões das dependências (lidas do CI do próprio RPCS3 nesse commit)
+        run: |
+          python -m pip install --quiet pyyaml
+          python gow3/tools/rpcs3_ci_env.py rpcs3/.github/workflows/rpcs3.yml Windows_Build >> "$GITHUB_ENV"
+          python gow3/tools/rpcs3_ci_env.py rpcs3/.github/workflows/rpcs3.yml Windows_Build
+
+      - name: Pastas do Qt e do Vulkan SDK
+        shell: pwsh
+        run: |
+          echo "QTDIR=C:\Qt\${{ env.QT_VER }}\${{ env.QT_VER_MSVC }}_64" >> $env:GITHUB_ENV
+          echo "VULKAN_SDK=C:\VulkanSDK\${{ env.VULKAN_VER }}" >> $env:GITHUB_ENV
+
+      - uses: nuget/setup-nuget@v2
+
+      - name: Pacotes NuGet
+        working-directory: rpcs3
+        run: nuget restore rpcs3.sln
+
+      - name: Chaves de cache
+        working-directory: rpcs3
+        run: .ci/get_keys-windows.sh
+
+      - name: Restaurar ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: gow3-ccache-msvc-${{ env.RPCS3_COMMIT }}-${{ github.run_id }}
+          restore-keys: gow3-ccache-msvc-
+
+      - name: Restaurar dependências baixadas
+        uses: actions/cache/restore@v4
+        with:
+          path: rpcs3/dependency_cache
+          key: gow3-deps-${{ env.QT_VER }}-${{ env.VULKAN_SDK_SHA }}-${{ env.CCACHE_SHA }}-${{ hashFiles('rpcs3/llvm.lock') }}
+          restore-keys: gow3-deps-
+
+      - name: Baixar Qt, LLVM, Vulkan SDK e ccache (script do RPCS3)
+        working-directory: rpcs3
+        run: |
+          .ci/setup-windows.sh
+          .ci/setup-windows-ci-vars.sh win64 msvc
+
+      - name: Exportar variáveis
+        working-directory: rpcs3
+        run: |
+          while IFS='=' read -r key val; do
+            [[ -z "$key" || "$key" =~ ^# ]] && continue
+            echo "$key=$val" >> "$GITHUB_ENV"
+          done < .ci/ci-vars.env
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - name: Compilar RPCS3 (MSVC, Release x64)
+        shell: pwsh
+        working-directory: rpcs3
+        run: msbuild rpcs3.sln /p:Configuration=Release /v:minimal /p:Platform=x64 /p:PreferredToolArchitecture=x64 /p:CLToolPath=${{ env.CCACHE_BIN_DIR }} /p:UseMultiToolTask=true /p:CustomAfterMicrosoftCommonTargets="${{ github.workspace }}\rpcs3\buildfiles\msvc\ci_only.targets"
+
+      - name: Salvar ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: gow3-ccache-msvc-${{ env.RPCS3_COMMIT }}-${{ github.run_id }}
+
+      - name: Salvar dependências baixadas
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: rpcs3/dependency_cache
+          key: gow3-deps-${{ env.QT_VER }}-${{ env.VULKAN_SDK_SHA }}-${{ env.CCACHE_SHA }}-${{ hashFiles('rpcs3/llvm.lock') }}
+
+      - name: Runtime do Visual C++ (cópia local) e base de controles SDL
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $crt = Get-ChildItem "$vs\VC\Redist\MSVC" -Directory | Sort-Object Name -Descending |
+                 ForEach-Object { Get-ChildItem "$($_.FullName)\x64" -Directory -Filter 'Microsoft.VC*.CRT' -ErrorAction SilentlyContinue } |
+                 Select-Object -First 1
+          if (-not $crt) { throw "Runtime do Visual C++ não encontrado em $vs" }
+          Write-Host "Copiando $($crt.FullName)"
+          Copy-Item "$($crt.FullName)\*.dll" rpcs3\bin\
+          New-Item -ItemType Directory -Force rpcs3\bin\config\input_configs | Out-Null
+          Invoke-WebRequest 'https://raw.githubusercontent.com/gabomdq/SDL_GameControllerDB/master/gamecontrollerdb.txt' -OutFile rpcs3\bin\config\input_configs\gamecontrollerdb.txt
+
+      - name: Licenças de terceiros
+        run: |
+          mkdir -p licenses/rpcs3-3rdparty licenses/qt
+          cd rpcs3
+          find 3rdparty -maxdepth 4 -type f \( -iname 'LICENSE*' -o -iname 'COPYING*' -o -iname 'NOTICE*' \) | while read -r f; do
+            mkdir -p "../licenses/rpcs3-3rdparty/$(dirname "$f")"; cp "$f" "../licenses/rpcs3-3rdparty/$f"
+          done
+          cd ..
+          curl -fsSL https://www.gnu.org/licenses/lgpl-3.0.txt -o licenses/qt/LGPL-3.0.txt
+          curl -fsSL https://www.gnu.org/licenses/gpl-3.0.txt -o licenses/qt/GPL-3.0.txt
+          echo "Qt ${QT_VER} (LGPL-3.0). Código-fonte: https://download.qt.io/official_releases/qt/" > licenses/qt/LEIA-ME.txt
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: app
+          path: app
+
+      - name: Conferir contrato com o RPCS3
+        run: python gow3/tools/check_rpcs3_contract.py rpcs3 app/default_config.yml
+
+      - name: Informações da compilação
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property catalog_productDisplayVersion
+          @"
+          GOW3 PS3 PC — informações da compilação
+          Data (UTC): $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm'))
+          GOW3 PS3 PC: commit ${{ github.sha }} (${{ github.repository }})
+          RPCS3: commit ${{ env.RPCS3_COMMIT }} (https://github.com/RPCS3/rpcs3), sem modificações
+          RPCS3 compilado com: MSVC / Visual Studio $vs, Qt ${{ env.QT_VER }}, LLVM ${{ env.LLVM_VER }}, Vulkan SDK ${{ env.VULKAN_VER }}
+          GOW3_PS3_PC.exe compilado com: CMake + Visual Studio 2022 (job 'app')
+          Execução: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          Teste com God of War III: NÃO REALIZADO nesta compilação (sem jogo nem GPU no servidor).
+          "@ | Out-File -Encoding utf8 build_info.txt
+          Get-Content build_info.txt
+
+      - name: Montar GOW3_PS3_PC_Windows_x64.zip
+        run: python gow3/tools/package.py --app app/build/Release/GOW3_PS3_PC.exe --rpcs3-bin rpcs3/bin --out dist --licenses licenses --build-info build_info.txt
+
+      - name: Autoteste do pacote (máquina de compilação)
+        shell: pwsh
+        run: |
+          # vulkan-1.dll vem do driver; servidores sem GPU podem não ter. Procura a do Vulkan SDK.
+          $loader = Get-ChildItem "$env:SystemRoot\System32\vulkan-1.dll", "$env:VULKAN_SDK" -Recurse -Filter vulkan-1.dll -ErrorAction SilentlyContinue | Select-Object -First 1
+          $extra = @()
+          if ($loader) { $env:PATH = "$($loader.DirectoryName);$env:PATH"; Write-Host "vulkan-1.dll: $($loader.FullName)" }
+          else { $extra = @('--allow-missing-vulkan'); Write-Host "vulkan-1.dll não encontrada nesta máquina" }
+          $p = Start-Process dist\GOW3_PS3_PC\GOW3_PS3_PC.exe -ArgumentList (@('--selftest', '--report', "$pwd\selftest_build.txt") + $extra) -Wait -PassThru
+          Get-Content selftest_build.txt
+          if ($p.ExitCode -ne 0) { throw "Autoteste reprovado (código $($p.ExitCode))" }
+          # O pacote não pode ter sido modificado pelo autoteste (dados vão para a pasta user).
+          Remove-Item -Recurse -Force dist\GOW3_PS3_PC\user -ErrorAction SilentlyContinue
+
+      - name: Código-fonte correspondente (GPL)
+        run: |
+          mkdir -p source
+          git -C gow3 archive --format=tar --prefix=gow3_ps3_pc/ HEAD | gzip -9 > source/gow3_ps3_pc-src.tar.gz
+          cd rpcs3
+          git ls-files --recurse-submodules > ../rpcs3_files.txt
+          tar -czf ../source/rpcs3-${RPCS3_COMMIT}-src.tar.gz --transform "s,^,rpcs3/," -T ../rpcs3_files.txt
+          cd ..
+          echo "O LLVM entra no RPCS3 como bibliotecas pré-compiladas (RPCS3/llvm-mirror, versão ${LLVM_VER}, Apache-2.0)." > source/LEIA-ME.txt
+          ls -la source
+
+      - name: Relatório da compilação
+        run: |
+          {
+            echo "# Relatório de compilação — GOW3 PS3 PC"
+            echo
+            echo '```'; cat build_info.txt; echo '```'
+            echo
+            echo "## GOW3_PS3_PC.exe (dumpbin /dependents)"
+            echo '```'; cat app/app_dependents.txt; echo '```'
+            echo
+            echo "## Pacote"
+            echo '```'; ls -la dist; (cd dist && find GOW3_PS3_PC -maxdepth 3 | sort | head -200); echo '```'
+            echo
+            echo "## Autoteste na máquina de compilação"
+            echo '```'; cat selftest_build.txt; echo '```'
+          } > BUILD_REPORT.md
+          cat BUILD_REPORT.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GOW3_PS3_PC_Windows_x64
+          path: dist/GOW3_PS3_PC_Windows_x64.zip
+          compression-level: 0
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GOW3_PS3_PC_source
+          path: source/
+          compression-level: 0
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BUILD_REPORT
+          path: |
+            BUILD_REPORT.md
+            selftest_build.txt
+
+  clean_test:
+    name: Autoteste numa máquina Windows limpa
+    needs: rpcs3
+    runs-on: windows-2022
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: GOW3_PS3_PC_Windows_x64
+
+      - name: Extrair e rodar o autoteste
+        shell: pwsh
+        run: |
+          Expand-Archive GOW3_PS3_PC_Windows_x64.zip -DestinationPath C:\teste
+          $exe = 'C:\teste\GOW3_PS3_PC\GOW3_PS3_PC.exe'
+          if (-not (Test-Path $exe)) { throw "GOW3_PS3_PC.exe não está no ZIP" }
+          $extra = @()
+          if (-not (Test-Path "$env:SystemRoot\System32\vulkan-1.dll")) { $extra = @('--allow-missing-vulkan') }
+          $p = Start-Process $exe -ArgumentList (@('--selftest', '--report', 'C:\teste\selftest_clean.txt') + $extra) -Wait -PassThru
+          Get-Content C:\teste\selftest_clean.txt
+          Get-Content C:\teste\selftest_clean.txt | Out-File -Encoding utf8 $env:GITHUB_STEP_SUMMARY -Append
+          if ($p.ExitCode -ne 0) { throw "Autoteste reprovado (código $($p.ExitCode))" }
+
+      - name: Abrir a janela e fechar (teste de inicialização da interface)
+        shell: pwsh
+        run: |
+          $p = Start-Process 'C:\teste\GOW3_PS3_PC\GOW3_PS3_PC.exe' -PassThru
+          Start-Sleep -Seconds 15
+          if ($p.HasExited) { throw "A janela fechou sozinha (código $($p.ExitCode))" }
+          $p.Refresh()
+          Write-Host "Janela aberta: '$($p.MainWindowTitle)' (PID $($p.Id))"
+          if (-not $p.CloseMainWindow()) { Stop-Process $p }
+          $p.WaitForExit(15000) | Out-Null
+          Get-Content 'C:\teste\GOW3_PS3_PC\user\logs\GOW3_PS3_PC.log'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: selftest_clean_machine
+          path: C:\teste\selftest_clean.txt
+
+  release:
+    name: Publicar release (tags v*)
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [rpcs3, clean_test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Criar release com o ZIP, o código-fonte e o relatório
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --prerelease --title "GOW3 PS3 PC ${GITHUB_REF_NAME}" \
+            --notes "Versão alfa. Veja BUILD_REPORT.md. Não inclui jogo, firmware ou arquivos da Sony." \
+            artifacts/GOW3_PS3_PC_Windows_x64/GOW3_PS3_PC_Windows_x64.zip \
+            artifacts/GOW3_PS3_PC_source/* artifacts/BUILD_REPORT/BUILD_REPORT.md

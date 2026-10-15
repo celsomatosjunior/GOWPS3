@@ -1,5 +1,7 @@
 # Auditoria técnica: GOW3 PS3 PC
 
+> **Atualização (versão 0.2.0):** o protótipo em Python que dependia de um RPCS3 instalado à parte foi substituído pelo aplicativo `GOW3_PS3_PC.exe` (C++/Win32), que leva o RPCS3 compilado dentro do pacote. As referências abaixo à pasta `launcher/` descrevem a versão 0.1.0. A integração com o RPCS3 (linha de comando, `RPCS3_CONFIG_DIR`, chaves de configuração) foi mantida, e agora é conferida por `tools/check_rpcs3_contract.py`.
+
 **Data:** 15/10/2026
 **Código analisado:**
 - RPCS3, commit `4d5def5` (15/10/2026)

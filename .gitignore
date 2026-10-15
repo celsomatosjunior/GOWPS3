@@ -1,2 +1,7 @@
 __pycache__/
 *.pyc
+build*/
+dist/
+tools/fake_rpcs3/*.exe
+tools/fake_rpcs3/*.dll
+tools/fake_rpcs3/*.a
