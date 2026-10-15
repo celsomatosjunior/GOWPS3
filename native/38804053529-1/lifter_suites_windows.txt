@@ -1,0 +1,55 @@
+--- tools/test_audit_guest_ptrs.py
+ok: 4 positives caught, 6 correct forms ignored
+--- tools/test_dwarf.py
+ok: DWARF abbrev/form/DIE-tree parse and struct extraction pass
+--- tools/test_lifter_dedupe.py
+[ppu_lifter] symbol prefix 'libsre' has no trailing underscore; using 'libsre_'
+[spu_lifter] symbol prefix 'libsre' has no trailing underscore; using 'libsre_'
+ok: truncated duplicate dropped, widest extent kept, order preserved, symbol prefix normalised, import stubs stay callable
+--- tools/test_lifter_header_name.py
+PASS: custom module header in split and single-file output
+--- tools/test_milestone.py
+  ok   64-bit scalar survives
+
+[milestone] all checks passed
+--- tools/test_nid_from_protos.py
+ok: 379 proto-harvested NIDs all satisfy compute_nid(name)==nid and load into the database
+--- tools/test_objdump_audit.py
+ok: objdump line parser (incl. record-form '.') and decoder agreement pass
+--- tools/test_pkg_extract.py
+pkg_extract.out_path: OK
+--- tools/test_ppu_branches.py
+ok: blr returns; blrl/bnelrl dispatch via LR and continue; conditional branches fall through
+--- tools/test_ppu_cs_epilogue_restore.py
+ok test_epilogue_only_tail_entry_still_snapshots
+ok test_register_used_for_lr_is_a_plain_load
+ok test_is_epilogue_restore_helper
+--- tools/test_ppu_cs_restore.py
+PASS: second-slot reload stays a real load
+--- tools/test_ppu_fallthrough.py
+ok   function ending in bne records its fall-through
+ok   function ending in blr has no fall-through
+all fall-through checks passed
+--- tools/test_ppu_jumptables.py
+ok   non-constant base is not a constant-base jump
+ok   multi-TOC: near targets beat more targets far away
+all jump-table vectors passed
+--- tools/test_ppu_lift.py
+wrote D:\a\GOWPS3\GOWPS3\ps3recomp\scratch\ppu_conformance.cpp: 1202 cases (0 skipped at generation)
+  memory barriers lowered to fences in the driver: 5
+[ppu-conformance] 1533 checks passed, 0 FAILED, 0 skipped
+--- tools/test_ppu_vcmp_record_cr6.py
+  20 compare forms checked
+ok test_vcmp_record_sets_cr6
+ok test_non_record_compare_leaves_cr_alone
+--- tools/test_raw_prx_toc.py
+  1 functions lifted
+  0 unique call targets
+[raw-prx-toc] raw segment and module TOC reached jump-table discovery
+--- tools/test_spu_disasm_ri10.py
+all 29 RI10 forms decode, and the interpreter tables are current
+--- tools/test_spu_interpreter_ilh.py
+SKIP: fixture currently requires a POSIX C compiler
+--- tools/test_unfself.py
+[unfself] 1 segments, 3 non-alloc sections recovered
+ok: fSELF round-trip, retail rejection, and symbol recovery all pass
