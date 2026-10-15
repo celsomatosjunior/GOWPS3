@@ -1,0 +1,23 @@
+Test project D:/a/GOWPS3/GOWPS3/ps3recomp/build
+    Start 1: sync_stress
+1/6 Test #1: sync_stress ......................   Passed    7.68 sec
+    Start 2: cond_owner
+2/6 Test #2: cond_owner .......................   Passed    0.01 sec
+    Start 3: cond_recursive
+3/6 Test #3: cond_recursive ...................   Passed    0.04 sec
+    Start 4: cond_spurious
+4/6 Test #4: cond_spurious ....................   Passed    0.11 sec
+    Start 5: fiber_switch
+5/6 Test #5: fiber_switch .....................   Passed    0.01 sec
+    Start 6: vdec_stub
+6/6 Test #6: vdec_stub ........................   Passed    0.01 sec
+
+100% tests passed out of 6
+
+Label Time Summary:
+fiber      =   0.01 sec*proc (1 test)
+runtime    =   7.69 sec*proc (2 tests)
+stress     =   7.68 sec*proc (1 test)
+sync       =   7.68 sec*proc (1 test)
+
+Total Test time (real) =   7.93 sec
