@@ -57,6 +57,26 @@ def prune_zig(dst: Path):
     shutil.rmtree(dst / "__pycache__", ignore_errors=True)
 
 
+def disable_cfg(exe: Path) -> bool:
+    """Desliga o Control Flow Guard no cabeçalho PE do executável.
+
+    O carregador do PyInstaller vem com CFG ligado; com ele, o Windows encerra o processo
+    (0xC0000409) quando o Unicorn salta para o código que ele próprio gera em tempo de execução
+    (TCG do QEMU), que não está na lista de destinos válidos. O python.exe não usa CFG, por isso o
+    mesmo código funciona fora do pacote."""
+    import struct
+    data = bytearray(exe.read_bytes())
+    pe = struct.unpack_from("<I", data, 0x3C)[0]
+    assert data[pe:pe + 4] == b"PE\0\0"
+    off = pe + 24 + 0x46  # OptionalHeader.DllCharacteristics (PE32+)
+    dc = struct.unpack_from("<H", data, off)[0]
+    if not dc & 0x4000:
+        return False
+    struct.pack_into("<H", data, off, dc & ~0x4000)
+    exe.write_bytes(bytes(data))
+    return True
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ps3recomp", required=True)
@@ -107,6 +127,9 @@ def main():
     PyInstaller.__main__.run(cmd)
 
     app = out / NAME
+    exe = app / f"{NAME}.exe"
+    if exe.is_file():
+        print("Control Flow Guard desligado no .exe:", disable_cfg(exe))
     shutil.copy2(HERE / "LEIA-ME.txt", app / "LEIA-ME.txt")
     lic = app / "LICENCAS"
     lic.mkdir(exist_ok=True)
