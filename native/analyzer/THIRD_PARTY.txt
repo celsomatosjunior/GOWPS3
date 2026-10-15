@@ -6,7 +6,7 @@ ps3recomp (sp00nznet/ps3recomp) ............. MIT. Ferramentas Python em _intern
                                               commit fixado em PS3RECOMP_COMMIT.txt, com o patch
                                               ps3recomp-elfv1.patch (dentro de fonte_do_analisador.zip)
 Unicorn Engine 2.1.4 ........................ GPL-2.0 (baseado no QEMU). Código: https://github.com/unicorn-engine/unicorn
-Zig 0.17 (compilador, inclui clang/LLVM,
+Zig 0.16 (compilador, inclui clang/LLVM,
   libc++, libc++abi, libunwind, mingw-w64) .. MIT; LLVM: Apache-2.0 com exceção LLVM;
                                               mingw-w64: licenças em _internal\ziglang\lib\libc\mingw
                                               Código: https://ziglang.org

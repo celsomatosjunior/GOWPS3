@@ -83,7 +83,7 @@ jobs:
           python-version: '3.12'
       - name: Dependências (versões fixadas)
         run: |
-          pip install -q unicorn==2.1.4 ziglang==0.17.0 pyinstaller==6.22.3
+          pip install -q unicorn==2.1.4 ziglang==0.16.0 pyinstaller==6.22.3
           python -c "import unicorn, ziglang, PyInstaller, tkinter; print('unicorn', unicorn.__version__, '| PyInstaller', PyInstaller.__version__)" | tee toolchain.txt
           python -m ziglang version | tee -a toolchain.txt
       - uses: actions/download-artifact@v4
