@@ -16,6 +16,9 @@ on:
     branches: [native-recomp]
   workflow_dispatch:
 
+env:
+  PYTHONIOENCODING: utf-8   # acentos corretos na saída do Python no Windows
+
 defaults:
   run:
     shell: bash
