@@ -50,6 +50,11 @@ void Controller::log(const std::string& message)
 
 std::vector<std::pair<std::string, std::string>> Controller::rpcs3_environment() const
 {
+	// No Windows o RPCS3 NÃO cria a pasta de RPCS3_CONFIG_DIR (Utilities/File.cpp só chama create_path
+	// no Linux/macOS). Sem ela, não consegue criar RPCS3.buf nem log/RPCS3.log e para com "Fatal Error".
+	std::error_code ec;
+	fs::create_directories(layout_.profile_dir / "log", ec);
+	fs::create_directories(layout_.profile_dir / "config", ec);
 	return {{"RPCS3_CONFIG_DIR", layout_.config_dir_env()}};
 }
 
@@ -389,8 +394,9 @@ bool Controller::self_test(std::string& report, bool allow_missing_vulkan)
 					continue;
 				imports++;
 				// O processo roda a partir de runtime\rpcs3: plugins do Qt também enxergam essa pasta.
+				// Ordem do carregador do Windows: pasta da DLL, pasta do rpcs3.exe e só depois o System32.
 				win::DllLocation found = win::resolve_dll(dll, it->path().parent_path());
-				if (found.source == win::DllSource::not_found || found.source == win::DllSource::path) {
+				if (found.source != win::DllSource::local) {
 					const win::DllLocation root = win::resolve_dll(dll, layout_.runtime_dir);
 					if (root.source == win::DllSource::local)
 						found = root;

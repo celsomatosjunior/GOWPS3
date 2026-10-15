@@ -37,7 +37,11 @@ int wmain(int argc, wchar_t** argv)
 	} else {
 		dir = fs::path(argv[0]).parent_path().wstring() + L"/";
 	}
-	fs::create_directories(fs::path(dir) / "log");
+	// Como o RPCS3 real no Windows: não cria a pasta de dados nem log/ (Utilities/File.cpp).
+	if (!fs::is_directory(fs::path(dir) / "log")) {
+		std::fprintf(stderr, "Fatal Error: cannot create log (pasta inexistente)\n");
+		return 3;
+	}
 	std::ofstream log(fs::path(dir) / "log" / "RPCS3.log", std::ios::app);
 	log << "\xC2\xB7! 0:00:00.000000 SYS: RPCS3 FALSO (qt " << fake_qt_version() << ")\n";
 	std::ofstream args(fs::path(dir) / "fake_args.txt");

@@ -244,13 +244,11 @@ jobs:
 
       - name: Código-fonte correspondente (GPL)
         if: always() && steps.selftest.outcome == 'success'
+        continue-on-error: true
         run: |
           mkdir -p source
-          git -C gow3 archive --format=tar --prefix=gow3_ps3_pc/ HEAD | gzip -9 > source/gow3_ps3_pc-src.tar.gz
-          cd rpcs3
-          git ls-files --recurse-submodules > ../rpcs3_files.txt
-          tar -czf ../source/rpcs3-${RPCS3_COMMIT}-src.tar.gz --transform "s,^,rpcs3/," -T ../rpcs3_files.txt
-          cd ..
+          python gow3/tools/source_archive.py gow3 source/gow3_ps3_pc-src.tar.gz gow3_ps3_pc
+          python gow3/tools/source_archive.py rpcs3 "source/rpcs3-${RPCS3_COMMIT}-src.tar.gz" rpcs3
           echo "O LLVM entra no RPCS3 como bibliotecas pré-compiladas (RPCS3/llvm-mirror, versão ${LLVM_VER}, Apache-2.0)." > source/LEIA-ME.txt
           ls -la source
 
