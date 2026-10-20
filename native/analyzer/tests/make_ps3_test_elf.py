@@ -8,6 +8,9 @@ código e os dados do corpus.elf (gerado por native/ppu_diff/run.py) e acrescent
 no formato do PS3, para que o analisador seja testado no CI sem nenhum arquivo do jogo.
 
     python make_ps3_test_elf.py corpus.elf meta.json saida.elf
+    python make_ps3_test_elf.py corpus.elf --todas saida.elf   (descritor para TODAS as funções do
+        .opd, inclusive a glibc: ~900 funções, para testar a recompilação de poucas funções num
+        executável grande, como o do jogo)
 """
 
 import json
@@ -17,10 +20,34 @@ import sys
 OPD_BASE = 0x20000000
 
 
+def all_functions(d: bytes) -> dict:
+    """Funções a partir dos descritores ELFv1 (.opd, 24 bytes) que apontam para o .text."""
+    shoff, = struct.unpack_from(">Q", d, 0x28)
+    shentsize, shnum, shstrndx = struct.unpack_from(">HHH", d, 0x3A)
+    secs = [struct.unpack_from(">IIQQQQIIQQ", d, shoff + i * shentsize) for i in range(shnum)]
+    stroff = secs[shstrndx][4]
+
+    def name(s):
+        return d[stroff + s[0]:d.index(b"\0", stroff + s[0])].decode()
+
+    by = {name(s): s for s in secs}
+    opd, text = by[".opd"], by[".text"]
+    t_lo, t_hi = text[3], text[3] + text[5]
+    codes, toc = set(), None
+    for o in range(0, opd[5] - 23, 24):
+        code, t, _env = struct.unpack_from(">QQQ", d, opd[4] + o)
+        if t_lo <= code < t_hi:
+            codes.add(code)
+            toc = toc or t
+    codes = sorted(codes)
+    ends = codes[1:] + [t_hi]
+    return {f"f_{c:x}": {"code": c, "size": e - c, "toc": toc} for c, e in zip(codes, ends)}
+
+
 def main():
     src, meta_path, out_path = sys.argv[1:4]
     d = open(src, "rb").read()
-    meta = json.load(open(meta_path))["functions"]
+    meta = all_functions(d) if meta_path == "--todas" else json.load(open(meta_path))["functions"]
     phoff, = struct.unpack_from(">Q", d, 0x20)
     phentsize, phnum = struct.unpack_from(">HH", d, 0x36)
     loads = []

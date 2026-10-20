@@ -124,8 +124,12 @@ void reset_memory(uint64_t seed)
 	overlay.clear();
 	written.clear();
 	XorShift rng(seed ^ 0x5C3A7C4ULL);
+	const bool pointers = seed & 1; // igual a state.scratch_bytes
+	auto ptr = [](uint64_t v) { return kScratchBase + (v % kScratchSize) / 16 * 16; };
 	for (uint64_t off = 0; off < kScratchSize; off += 8) {
 		uint64_t v = rng.next();
+		if (pointers)
+			v = (ptr(v >> 32) << 32) | ptr(v & 0xFFFFFFFFULL);
 		for (int i = 7; i >= 0; i--) {
 			*write_slot(kScratchBase + off + i) = static_cast<uint8_t>(v);
 			v >>= 8;

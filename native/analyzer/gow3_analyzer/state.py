@@ -29,11 +29,23 @@ class XorShift:
         return (x * 0x2545F4914F6CDD1D) & MASK
 
 
+def scratch_word_pointer(v: int) -> int:
+    """Endereço válido (alinhado a 16) dentro da área de rascunho."""
+    return SCRATCH_BASE + (v % SCRATCH_SIZE) // 16 * 16
+
+
 def scratch_bytes(seed: int) -> bytes:
+    """Semente par: bytes aleatórios. Semente ímpar: cada palavra de 32 bits é um ponteiro válido
+    para dentro da própria área, para que funções que seguem ponteiros de estruturas (comuns no
+    jogo; os ponteiros do PS3 são de 32 bits) executem em vez de falhar no primeiro acesso."""
     rng = XorShift(seed ^ 0x5C3A7C4)
     out = bytearray(SCRATCH_SIZE)
+    pointers = seed & 1
     for i in range(0, SCRATCH_SIZE, 8):
-        out[i:i + 8] = rng.next().to_bytes(8, "big")
+        v = rng.next()
+        if pointers:
+            v = (scratch_word_pointer(v >> 32) << 32) | scratch_word_pointer(v & 0xFFFFFFFF)
+        out[i:i + 8] = v.to_bytes(8, "big")
     return bytes(out)
 
 
@@ -42,7 +54,9 @@ def make_cases(toc: int, count: int, base_seed: int) -> list[dict]:
     combinações. Assim funções que recebem ponteiros e funções que recebem números são exercitadas."""
     cases = []
     for k in range(count):
-        seed = (base_seed * 1000003 + k) & 0xFFFFFFFF
+        # bit 0 da semente = modo da área de rascunho (ver scratch_bytes): casos 4-7, 12-15... usam
+        # ponteiros, e cada variante de registradores aparece com os dois modos.
+        seed = (base_seed * 1000003 + 2 * k + ((k // 4) & 1)) & 0xFFFFFFFF
         rng = XorShift(seed)
         variant = k % 4
         gpr = [rng.next() for _ in range(32)]

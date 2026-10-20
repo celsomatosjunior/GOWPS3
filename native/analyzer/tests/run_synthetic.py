@@ -49,6 +49,7 @@ def main():
     ap.add_argument("fake_self")
     ap.add_argument("out")
     ap.add_argument("--exe", help="testar também o executável empacotado")
+    ap.add_argument("--grande", help="ELF com ~900 funções (make_ps3_test_elf.py --todas): recompilar 40 delas")
     ap.add_argument("--exe-extra", default="", help="argumentos extras para o executável (ex.: '--alvo x86_64-windows-gnu --executor wine')")
     args = ap.parse_args()
     out = Path(args.out)
@@ -67,6 +68,23 @@ def main():
     bad = sorted(f["func"] for f in rt["functions"] if f["status"] == "divergente")
     summary["mutation"] = {"divergent": bad, "totals": rt["totals"]}
     check(bad == [MUTANT], f"mutação: divergência detectada em {bad} (esperado [{MUTANT}])", failures)
+
+    if args.grande:
+        # Poucas funções escolhidas num executável grande, como no jogo (40 de 11.060). Antes da
+        # correção do lifter isso gerava centenas de MB (2,39 GB no God of War III).
+        repg = pipeline.run(args.grande, out / "grande", progress=lambda m: None)
+        rtg = repg.get("recompilation_test") or {}
+        tg = rtg.get("totals") or {}
+        lifted = out / "grande" / "recomp_test" / "lifted" / "ppu_recomp.c"
+        size = lifted.stat().st_size if lifted.is_file() else -1
+        summary["large"] = {"functions": repg["analysis"]["function_count"], "lifted_bytes": size, "totals": tg,
+                            "status": rtg.get("status"), "error": rtg.get("error")}
+        check(rtg.get("status") == "executado" and 0 < size < 32 * 1024 * 1024,
+              f"executável grande ({repg['analysis']['function_count']} funções): {tg.get('functions')} recompiladas, "
+              f"código gerado {size / 1e6:.1f} MB", failures)
+        check(tg.get("identical_functions", 0) >= 15 and tg.get("incomplete_translation_functions", 1) == 0,
+              f"executável grande: {tg.get('identical_functions')} idênticas, {tg.get('divergent_functions')} divergentes, "
+              f"{tg.get('inconclusive_functions')} inconclusivas", failures)
 
     rep2 = pipeline.run(args.fake_self, out / "self_varejo", progress=lambda m: None)
     summary["retail_self"] = {"encrypted": rep2["input"].get("encrypted"), "ready": rep2["input"].get("ready"),
@@ -91,6 +109,16 @@ def main():
               f"executável empacotado: código {proc.returncode}, {te.get('identical_functions')}/{te.get('functions')} "
               f"funções idênticas", failures)
         check((exe_out / "relatorio_gow3.html").is_file(), "executável empacotado: relatório HTML gerado", failures)
+        if args.grande:
+            proc = subprocess.run([args.exe, "analisar", args.grande, "--saida", str(out / "exe_grande")] +
+                                  args.exe_extra.split(), capture_output=True, text=True, timeout=3600)
+            rj = out / "exe_grande" / "relatorio_gow3.json"
+            jg = json.loads(rj.read_text(encoding="utf-8")) if rj.is_file() else {}
+            tg = (jg.get("recompilation_test") or {}).get("totals") or {}
+            summary["exe_large"] = tg or jg.get("recompilation_test")
+            check(proc.returncode == 0 and tg.get("identical_functions", 0) >= 15,
+                  f"executável empacotado, ELF grande: código {proc.returncode}, {tg.get('identical_functions')}/"
+                  f"{tg.get('functions')} idênticas", failures)
         proc = subprocess.run([args.exe, "analisar", args.fake_self, "--saida", str(out / "exe_self")],
                               capture_output=True, text=True, timeout=600)
         j = json.loads((out / "exe_self" / "relatorio_gow3.json").read_text(encoding="utf-8"))

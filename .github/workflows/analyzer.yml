@@ -99,6 +99,7 @@ jobs:
         run: |
           python gow3/native/analyzer/tests/make_ps3_test_elf.py corpus/corpus.elf corpus/meta.json ps3_test.elf
           python gow3/native/analyzer/tests/make_fake_self.py ps3_test.elf EBOOT_varejo_sintetico.BIN
+          python gow3/native/analyzer/tests/make_ps3_test_elf.py corpus/corpus.elf --todas ps3_grande.elf
       - name: Empacotar GOW3_Native_Analyzer.exe
         run: |
           set -o pipefail
@@ -109,6 +110,7 @@ jobs:
         run: |
           set -o pipefail
           python gow3/native/analyzer/tests/run_synthetic.py ps3_test.elf EBOOT_varejo_sintetico.BIN synth \
+            --grande ps3_grande.elf \
             --exe dist/GOW3_Native_Analyzer/GOW3_Native_Analyzer.exe 2>&1 | tee out/autoteste.txt
       - name: Informações do pacote
         if: always()
@@ -123,7 +125,7 @@ jobs:
           Copy-Item toolchain.txt out\ -ErrorAction SilentlyContinue
           Copy-Item synth\autoteste.json out\ -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force out\relatorios | Out-Null
-          foreach ($d in 'fonte','exe','self_varejo','mutacao') {
+          foreach ($d in 'fonte','exe','self_varejo','mutacao','grande','exe_grande') {
             if (Test-Path "synth\$d\relatorio_gow3.html") { Copy-Item "synth\$d\relatorio_gow3.html" "out\relatorios\$d.html" }
             if (Test-Path "synth\$d\relatorio_gow3.json") { Copy-Item "synth\$d\relatorio_gow3.json" "out\relatorios\$d.json" }
           }

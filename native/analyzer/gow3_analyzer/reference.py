@@ -119,7 +119,10 @@ class Reference:
         mu = self.mu
         for a in self.dirty:
             if not S.SCRATCH_BASE <= a < S.SCRATCH_BASE + S.SCRATCH_SIZE:
-                mu.mem_write(a, bytes([self._original_byte(a)]))
+                try:
+                    mu.mem_write(a, bytes([self._original_byte(a)]))
+                except UcError:
+                    pass  # o gancho de escrita dispara antes da falha: endereço não mapeado
         if self.dirty or self.seed != seed:
             mu.mem_write(S.SCRATCH_BASE, S.scratch_bytes(seed))
         self.seed = seed

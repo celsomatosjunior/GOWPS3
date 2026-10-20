@@ -30,6 +30,7 @@ VMX_EXTRA = {"lvx", "lvxl", "stvx", "stvxl", "lvebx", "lvehx", "lvewx", "stvebx"
 UNSAFE_FOR_REFERENCE = {"mftb", "mftbu", "mfspr", "mtspr", "mfmsr", "mtmsr", "mtmsrd", "tw", "twi", "td", "tdi", "trap",
                         "rfid", "lwbrx", "stwbrx", "lhbrx", "sthbrx", "ldbrx", "stdbrx", "dcbz"}
 SPU_HINTS = ("spu", "spurs", "sysspu")
+UNRECOGNIZED = re.compile(r"^op\d+(_|$)")
 
 
 class ElfImage:
@@ -152,6 +153,9 @@ def analyse(elf_path: Path, work: Path, progress=lambda msg: None) -> dict:
             "bctr": bctr, "syscalls": syscalls, "blr": blr, "loops": backward, "vmx": vmx, "fp": fp,
             "loads": loads, "stores": stores, "unsafe": unsafe, "tls_r13": r13,
             "unknown": sum(c for k, c in mn.items() if k.startswith(("???", ".word", "unknown"))),
+            # opcode que o disassembler do ps3recomp não reconhece (ex.: op31_x508 = cmpb, do POWER6, que o
+            # Cell não tem). O lifter troca esses por um comentário TODO, ou seja, a instrução some.
+            "unrecognized": sum(c for k, c in mn.items() if UNRECOGNIZED.match(k)),
         }
         if idx % 2000 == 0 and idx:
             progress(f"  {idx}/{len(functions)} funções")
@@ -212,6 +216,7 @@ def analyse(elf_path: Path, work: Path, progress=lambda msg: None) -> dict:
             "with_fp": sum(1 for i in func_info.values() if i["fp"]),
             "with_indirect_calls": sum(1 for i in func_info.values() if i["indirect_calls"]),
             "with_syscalls": sum(1 for i in func_info.values() if i["syscalls"]),
+            "with_unrecognized_opcodes": sum(1 for i in func_info.values() if i["unrecognized"]),
             "calls_to_unknown_targets": sum(1 for i in func_info.values() for c in i["calls"] if c not in starts),
         },
         "most_called": [{"func": f"func_{a:08X}", "callers": n} for a, n in callers.most_common(25)],
@@ -235,7 +240,7 @@ def select_candidates(func_info: dict, limit: int = 40) -> list[dict]:
         if i["calls"] or i["import_calls"] or i["indirect_calls"]:
             continue
         # ".word" (dados/preenchimento entre funções) não desqualifica: não é executado.
-        if i["syscalls"] or i["vmx"] or i["unsafe"] or not i["blr"]:
+        if i["syscalls"] or i["vmx"] or i["unsafe"] or i.get("unrecognized") or not i["blr"]:
             continue
         if not 4 <= i["insns"] <= 400:
             continue

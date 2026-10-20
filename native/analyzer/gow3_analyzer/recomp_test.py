@@ -55,18 +55,83 @@ def host_target() -> str:
     return {"x86_64": "x86_64-linux-gnu", "aarch64": "aarch64-linux-gnu"}.get(platform.machine(), "native")
 
 
-def lift(elf: Path, candidates: list[dict], toc: int | None, out: Path, code_end: int | None) -> str:
+MAX_LIFTED_BYTES = 64 * 1024 * 1024  # bem acima do esperado para dezenas de funções folha
+
+
+def masked_elf(elf: Path, analysis: dict, candidates: list[dict], dst: Path) -> dict:
+    """Cópia do ELF em que só o código das funções escolhidas permanece; o código das outras
+    funções vira zero. Dados, tabelas de salto e constantes ficam intactos.
+
+    Motivo: o lifter do ps3recomp estende os fragmentos que descobre (casos de switch, entradas no
+    meio de funções) até a próxima função da lista. Com uma lista esparsa (40 de 11.060 funções) cada
+    fragmento chega a megabytes e o resultado explode: 2,39 GB de C++ para 40 funções do God of War
+    III. Sem o código das outras funções não há o que estender."""
+    import struct
+    data = bytearray(elf.read_bytes())
+    phoff = struct.unpack_from(">Q", data, 0x20)[0]
+    phentsize, phnum = struct.unpack_from(">HH", data, 0x36)
+    segs = []
+    for i in range(phnum):
+        p_type, flags, off, vaddr, _pa, filesz, _m, _a = struct.unpack_from(">IIQQQQQQ", data, phoff + i * phentsize)
+        if p_type == 1 and flags & 1:
+            segs.append((vaddr, off, filesz))
+    keep = [(int(c["start"], 16), int(c["end"], 16)) for c in candidates]
+    zeroed = 0
+    for f in analysis.get("functions", []):
+        a, b = int(f["start"], 16), int(f["end"], 16)
+        if any(a < ke and b > ks for ks, ke in keep):
+            continue
+        for vaddr, off, filesz in segs:
+            lo, hi = max(a, vaddr), min(b, vaddr + filesz)
+            if lo < hi:
+                data[off + lo - vaddr:off + hi - vaddr] = bytes(hi - lo)
+                zeroed += hi - lo
+    dst.write_bytes(bytes(data))
+    return {"zeroed_code_bytes": zeroed, "kept_functions": len(keep)}
+
+
+def lift(elf: Path, candidates: list[dict], toc: int | None, out: Path, code_end: int | None,
+         analysis: dict | None = None) -> str:
     out.mkdir(parents=True, exist_ok=True)
     flist = out / "funcoes_escolhidas.json"
     flist.write_text(json.dumps([{"start": c["start"], "end": c["end"]} for c in candidates], indent=1))
-    argv = [elf, "--functions", flist, "--single-file", "--jobs", "1", "-o", out / "lifted"]
+    lift_input = elf
+    note = ""
+    if analysis and analysis.get("functions"):
+        lift_input = out / "entrada_lifter.elf"
+        info = masked_elf(elf, analysis, candidates, lift_input)
+        note = (f"entrada do lifter: código de {len(analysis['functions']) - info['kept_functions']} outras funções "
+                f"zerado ({info['zeroed_code_bytes']} bytes); só as {info['kept_functions']} escolhidas ficam\n")
+    argv = [lift_input, "--functions", flist, "--single-file", "--jobs", "1", "-o", out / "lifted"]
     if toc is not None:
         argv += ["--toc", hex(toc)]
     if code_end:
         argv += ["--code-end", hex(code_end)]
-    log = tools.run_tool("ppu_lifter", argv)
+    log = note + tools.run_tool("ppu_lifter", argv)
+    if lift_input != elf:
+        lift_input.unlink()  # cópia derivada do jogo: não fica no disco
     (out / "lifter.log").write_text(log, encoding="utf-8")
+    size = (out / "lifted" / "ppu_recomp.c").stat().st_size
+    if size > MAX_LIFTED_BYTES:
+        raise RuntimeError(f"o lifter gerou {size / 1e6:.0f} MB de C++ para {len(candidates)} funções; "
+                           "isso indica fragmentos estendidos além das funções escolhidas (veja lifter.log)")
     return log
+
+
+def lifter_todos(lifted_c: Path, funcs: list[str]) -> dict[str, int]:
+    """Quantas instruções de cada função o lifter deixou como comentário TODO (não traduzidas)."""
+    import re
+    text = lifted_c.read_text(encoding="latin-1")
+    out = {}
+    for name in funcs:
+        m = re.search(r"^void %s\(ppu_context\* ctx\)\s*\{" % name, text, re.M)
+        if not m:
+            continue
+        end = text.find("\n}\n", m.end())
+        body = text[m.end():end if end > 0 else len(text)]
+        # ".word" é dado/preenchimento depois do blr (nunca executado); o resto é instrução não traduzida
+        out[name] = sum(1 for t in re.findall(r"/\* TODO: (\S+)", body) if not t.startswith("."))
+    return out
 
 
 def compile_test_exe(out: Path, target: str, exe_name: str) -> Path:
@@ -184,10 +249,11 @@ def run(elf: Path, analysis: dict, work: Path, progress=lambda m: None, limit: i
     code_end = max((s["vaddr"] + s["filesz"] for s in image.loads if s["flags"] & 1), default=None)
 
     progress(f"Recompilando {len(candidates)} funções com o lifter do ps3recomp...")
-    lift(elf, candidates, toc, out, code_end)
+    lift(elf, candidates, toc, out, code_end, analysis)
     if mutate is not None:  # só para o autoteste: introduz um erro proposital no código gerado
         mutate(out / "lifted" / "ppu_recomp.c")
     exe_target = target or host_target()
+    todos = lifter_todos(out / "lifted" / "ppu_recomp.c", [c["func"] for c in candidates])
     progress(f"Compilando o código recompilado para {exe_target} (zig/clang)... na primeira vez leva alguns minutos")
     exe = compile_test_exe(out, exe_target, exe_name)
 
@@ -241,7 +307,10 @@ def run(elf: Path, analysis: dict, work: Path, progress=lambda m: None, limit: i
 
     functions = []
     for f in per_func.values():
-        if f["divergent"]:
+        f["lifter_todos"] = todos.get(f["func"], 0)
+        if f["lifter_todos"]:
+            f["status"] = "tradução incompleta"  # o lifter não traduziu alguma instrução
+        elif f["divergent"]:
             f["status"] = "divergente"
         elif f["identical"] == 0:
             f["status"] = "inconclusiva"  # todos os casos falharam igualmente nos dois lados
@@ -253,6 +322,7 @@ def run(elf: Path, analysis: dict, work: Path, progress=lambda m: None, limit: i
         "identical_functions": sum(1 for f in functions if f["status"] == "idêntica"),
         "divergent_functions": sum(1 for f in functions if f["status"] == "divergente"),
         "inconclusive_functions": sum(1 for f in functions if f["status"] == "inconclusiva"),
+        "incomplete_translation_functions": sum(1 for f in functions if f["status"] == "tradução incompleta"),
         "cases": len(plan),
         "identical_cases": sum(f["identical"] for f in functions),
         "both_faulted_cases": sum(f["both_faulted"] for f in functions),
@@ -282,6 +352,9 @@ def run(elf: Path, analysis: dict, work: Path, progress=lambda m: None, limit: i
             "parte (undefined_bits_only), não como igualdade plena nem como divergência.",
             "Correção na referência: o Unicorn 2.1 (QEMU 5) devolve 0x80000000 em todo fcti* fora do intervalo; "
             "nesses casos a referência aplica a saturação do ISA (Book I 4.6.7).",
+            "Metade dos casos usa uma área de rascunho em que cada palavra de 32 bits é um ponteiro válido para a "
+            "própria área, para exercitar funções que seguem ponteiros de estruturas.",
+            "'Tradução incompleta': o lifter deixou alguma instrução como comentário TODO (não traduzida).",
             "Uma função 'inconclusiva' falhou da mesma forma nos dois lados em todos os casos (ex.: precisa de "
             "ponteiros para estruturas reais do jogo).",
         ],

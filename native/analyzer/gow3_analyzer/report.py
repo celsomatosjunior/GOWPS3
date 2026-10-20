@@ -199,11 +199,12 @@ def write_html(report: dict, out: Path) -> Path:
                      f'{rt["cases_per_function"]} casos por função</p></div>')
         kp = [("Funções testadas", t["functions"]), ("Idênticas", t["identical_functions"]),
               ("Divergentes", t["divergent_functions"]), ("Inconclusivas", t["inconclusive_functions"]),
+              ("Tradução incompleta", t.get("incomplete_translation_functions", 0)),
               ("Casos", t["cases"]), ("Casos idênticos", t["identical_cases"]),
               ("Falharam igual nos dois", t["both_faulted_cases"]), ("Casos divergentes", t["divergent_cases"])]
         parts.append("<div class=grid>" + "".join(f'<div class="card kpi"><b>{v}</b><span class=muted>{_e(k)}</span></div>'
                                                   for k, v in kp) + "</div>")
-        cls = {"idêntica": "ok", "divergente": "blocked", "inconclusiva": "partial"}
+        cls = {"idêntica": "ok", "divergente": "blocked", "inconclusiva": "partial", "tradução incompleta": "blocked"}
         rows = []
         for f in rt["functions"]:
             div = ""
