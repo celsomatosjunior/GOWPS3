@@ -1,0 +1,3 @@
+Recompilado x PowerPC no QEMU: 97/97 casos idênticos
+(informativo) C nativo x PowerPC no QEMU: 97/97 idênticos (diferenças em ponto flutuante são esperadas: o PowerPC usa multiplicação-soma fundida)
+RESULTADO: APROVADO
