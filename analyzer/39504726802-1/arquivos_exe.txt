@@ -1,0 +1,21 @@
+
+FullName                                                            Length
+--------                                                            ------
+D:\a\GOWPS3\GOWPS3\synth\exe\recomp_test                            
+D:\a\GOWPS3\GOWPS3\synth\exe\analise.log                            693
+D:\a\GOWPS3\GOWPS3\synth\exe\funcoes_ppu.csv                        1426
+D:\a\GOWPS3\GOWPS3\synth\exe\relatorio_gow3.html                    17547
+D:\a\GOWPS3\GOWPS3\synth\exe\relatorio_gow3.json                    43980
+D:\a\GOWPS3\GOWPS3\synth\exe\recomp_test\lifted                     
+D:\a\GOWPS3\GOWPS3\synth\exe\recomp_test\casos.txt                  282613
+D:\a\GOWPS3\GOWPS3\synth\exe\recomp_test\compilacao.log             387
+D:\a\GOWPS3\GOWPS3\synth\exe\recomp_test\divergencias.txt           22
+D:\a\GOWPS3\GOWPS3\synth\exe\recomp_test\funcoes_escolhidas.json    931
+D:\a\GOWPS3\GOWPS3\synth\exe\recomp_test\GOW3_Native_RecompTest.exe 539648
+D:\a\GOWPS3\GOWPS3\synth\exe\recomp_test\GOW3_Native_RecompTest.pdb 4149248
+D:\a\GOWPS3\GOWPS3\synth\exe\recomp_test\lifter.log                 564
+D:\a\GOWPS3\GOWPS3\synth\exe\recomp_test\resultados_recompilado.txt 284174
+D:\a\GOWPS3\GOWPS3\synth\exe\recomp_test\resultados_referencia.txt  284326
+D:\a\GOWPS3\GOWPS3\synth\exe\recomp_test\lifted\ppu_recomp.c        38276
+D:\a\GOWPS3\GOWPS3\synth\exe\recomp_test\lifted\ppu_recomp.h        5494
+
