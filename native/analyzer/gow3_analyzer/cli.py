@@ -31,6 +31,8 @@ def main(argv=None) -> int:
     a.add_argument("--casos", type=int, default=16, help="casos por função")
     a.add_argument("--alvo", help="alvo do zig (padrão: o sistema atual)")
     a.add_argument("--executor", nargs="*", help="programa para rodar o executável de teste (ex.: wine)")
+    a.add_argument("--rpcs3", help="rpcs3.exe do seu computador, para gerar o EBOOT.ELF a partir do EBOOT.BIN")
+    a.add_argument("--sem-rpcs3", action="store_true", help="não chamar o RPCS3 para gerar o EBOOT.ELF")
     args = ap.parse_args(argv)
     if args.cmd == "analisar":
         out = Path(args.saida) if args.saida else default_output()
@@ -45,7 +47,8 @@ def main(argv=None) -> int:
 
         try:
             rep = pipeline.run(args.entrada, out, recompile=not args.sem_recompilar, limit=args.funcoes,
-                               cases=args.casos, target=args.alvo, runner=args.executor, progress=progress)
+                               cases=args.casos, target=args.alvo, runner=args.executor, progress=progress,
+                               rpcs3=args.rpcs3, use_rpcs3=not args.sem_rpcs3)
         except Exception:
             import traceback
             log.write(traceback.format_exc())

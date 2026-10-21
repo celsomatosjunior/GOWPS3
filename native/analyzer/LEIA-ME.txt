@@ -29,18 +29,30 @@ Como usar
    Na primeira recompilação o compilador prepara as bibliotecas do Windows (1 a 3 minutos);
    depois fica em cache.
 
-Se o EBOOT.BIN for o de varejo (cifrado)
-----------------------------------------
-O relatório mostra "SELF de varejo cifrado" e para por aí. Este programa não decifra o executável
-e não contorna nenhuma proteção. Para a análise das funções é preciso um EBOOT.ELF preparado
-legitimamente por você a partir da sua própria cópia do jogo. Coloque o EBOOT.ELF na mesma pasta
-do EBOOT.BIN (ou escolha-o diretamente) e rode de novo.
+Se o EBOOT.BIN for o de varejo (cifrado): o EBOOT.ELF é gerado automaticamente
+-----------------------------------------------------------------------------------
+O analisador pede ao RPCS3 que JÁ ESTÁ INSTALADO no seu computador para gerar o EBOOT.ELF a partir
+da sua cópia do jogo (é a mesma função "Utilities > Decrypt PS3 Binaries" do RPCS3, chamada como
+"rpcs3 --no-gui --decrypt"). Este programa não contém chaves, não decifra nada sozinho e não
+contorna proteções; o RPCS3 não vem no pacote.
+- O RPCS3 é procurado sozinho: pasta do GOW3_PS3_PC ao lado, Área de Trabalho, Downloads,
+  Documentos, Arquivos de Programas, pastas "RPCS3" na raiz dos discos (ou em Games/Jogos/
+  Emuladores) e o PATH. Se não for achado, clique em "Procurar…" na linha RPCS3 e escolha o
+  rpcs3.exe; a escolha fica salva em configuracoes.json.
+- O RPCS3 precisa abrir normalmente e ter o firmware do PS3 instalado (File > Install Firmware).
+- O EBOOT.BIN original não é alterado: o RPCS3 trabalha numa cópia, dentro da pasta de saída
+  (trabalho\rpcs3_conversao). O registro da conversão fica em trabalho\rpcs3_conversao.log.
+- God of War III BCES00510 versão 01.00: o relatório confere o SHA-256 do EBOOT.BIN e do EBOOT.ELF
+  gerado com os valores já verificados e diz se batem.
+- Se você já tem um EBOOT.ELF, coloque-o ao lado do EBOOT.BIN (ou escolha-o diretamente): ele é
+  usado e o RPCS3 não é chamado.
 
 Linha de comando
 ----------------
   GOW3_Native_Analyzer.exe analisar "D:\jogos\BCES00510\PS3_GAME\USRDIR\EBOOT.ELF" --saida C:\relatorio
-  Opções: --sem-recompilar, --funcoes N (padrão 40), --casos N (padrão 16).
-  Códigos de saída: 0 = ok, 3 = teste de recompilação falhou, 4 = executável cifrado/não analisável.
+  Opções: --sem-recompilar, --funcoes N (padrão 40), --casos N (padrão 16),
+          --rpcs3 "C:\RPCS3\rpcs3.exe" (onde está o RPCS3), --sem-rpcs3 (não gerar o EBOOT.ELF).
+  Códigos de saída: 0 = ok, 3 = teste de recompilação falhou, 4 = executável cifrado e EBOOT.ELF não gerado.
 
 O que este programa NÃO faz
 ---------------------------
@@ -52,6 +64,7 @@ Privacidade dos resultados
 --------------------------
 Os relatórios HTML/JSON/CSV contêm só metadados (endereços, tamanhos, contagens, nomes de
 bibliotecas). A pasta recomp_test\lifted contém código C++ gerado a partir do executável do jogo e
-o GOW3_Native_RecompTest.exe é derivado dele: não publique esses arquivos.
+o GOW3_Native_RecompTest.exe é derivado dele; a pasta trabalho contém o EBOOT.ELF gerado pelo
+RPCS3. Não publique esses arquivos. Para nos mandar o resultado, basta o relatorio_gow3.json.
 
 Licenças: veja a pasta LICENCAS. Código-fonte do analisador: fonte_do_analisador.zip.

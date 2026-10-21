@@ -10,7 +10,7 @@ set_source_files_properties(lifted/ppu_recomp.c PROPERTIES LANGUAGE CXX)
 add_executable(ppu_diff_lifted lifted/ppu_recomp.c driver.cpp guest_runtime.cpp)
 target_include_directories(ppu_diff_lifted PRIVATE lifted ${CMAKE_CURRENT_SOURCE_DIR})
 # Sem o atalho de leitura em linha do lifter: toda leitura passa por vm_read*, que confere a memória.
-target_compile_definitions(ppu_diff_lifted PRIVATE PPU_NO_INLINE_LOADS)
+target_compile_definitions(ppu_diff_lifted PRIVATE PPU_NO_INLINE_LOADS PPU_NO_INLINE_STORES)
 if(MSVC)
 	target_compile_options(ppu_diff_lifted PRIVATE /utf-8 /W1 /EHsc)
 	set_property(TARGET ppu_diff_lifted PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")

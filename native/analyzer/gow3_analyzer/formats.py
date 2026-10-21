@@ -148,7 +148,7 @@ def identify(path) -> dict:
         info["status"] = "fSELF de depuração (sem cifra): será desembrulhado para ELF e analisado."
     else:
         info["ready"] = False
-        info["status"] = ("SELF de varejo cifrado (revisão de chave 0x%04X). A análise de funções PPU precisa de um "
-                          "EBOOT.ELF preparado legitimamente por você a partir da sua cópia. Este programa não "
-                          "decifra e não contorna proteções." % key_rev)
+        info["status"] = ("SELF de varejo cifrado (revisão de chave 0x%04X). A análise precisa do EBOOT.ELF, que o "
+                          "analisador pede ao RPCS3 instalado no seu computador para gerar a partir da sua cópia. "
+                          "Este programa não decifra e não contorna proteções." % key_rev)
     return info

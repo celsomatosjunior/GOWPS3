@@ -21,12 +21,14 @@ Detalhes: [docs/AUDITORIA_PS3RECOMP.md](docs/AUDITORIA_PS3RECOMP.md). O relatór
 - `tools/analyze_gow3.py`: relatório do executável do jogo. Sem decifrar nada, lê PARAM.SFO e os cabeçalhos SELF. Com um `EBOOT.ELF` preparado pelo usuário, lista funções, importações por biblioteca com cobertura HLE, programas SPU e uma amostra recompilada.
 - `tools/make_report.py`: monta o relatório do CI.
 - `ps3recomp-elfv1.patch`: `--toc` explícito também para ELF (o corpus usa descritores ELFv1 de 64 bits). A correção de `lwax` em tabelas de salto já entrou no ps3recomp. Commit fixado: v0.16.0 (`749182e`); antes era `a2c2010`, cujo lifter truncava o CTR a 32 bits — divergência encontrada pelo analisador em funções do God of War III e corrigida no ps3recomp.
+- `ps3recomp-ascension.patch`: os 44 patches do God of War: Ascension para PC (arnaldolima1/gow-ascension-pc, MIT, licença em `LICENSE-ascension-MIT.txt`), escritos para o ps3recomp v0.15.0 e mesclados aqui sobre o v0.16.0, mais stubs de link para as suítes de teste. Verificado no Linux: 67/67 suítes do lifter, ctest 10/10, andaime PPU sem regressão, ppu_diff 97/97. Aplicar antes do `ps3recomp-elfv1.patch`.
 - `PS3RECOMP_COMMIT.txt`: commit fixado do ps3recomp.
 
 ## Rodar localmente
 
 ```sh
 git clone https://github.com/sp00nznet/ps3recomp && git -C ps3recomp checkout $(cat native/PS3RECOMP_COMMIT.txt)
+git -C ps3recomp apply ../native/ps3recomp-ascension.patch
 git -C ps3recomp apply ../native/ps3recomp-elfv1.patch
 pip install -r ps3recomp/requirements.txt
 
@@ -53,3 +55,7 @@ Programa Windows em `native/analyzer/` (veja o README de lá): identifica o EBOO
 código PPU do executável do jogo no computador do usuário e testa a recompilação das primeiras
 funções reais contra uma CPU de referência. Workflow: `.github/workflows/analyzer.yml`
 (ZIP `GOW3_Native_Analyzer_Windows_x64`).
+
+## Guarda contra dados do jogo
+
+`native/tools/check_no_game_data.py` (workflow `guard.yml`, em todo push) falha se algum arquivo versionado parecer dado do jogo: SELF/ELF de PS3, PSARC, PKG, EBOOT, PARAM.SFO, código gerado pelo lifter (`lifted/`, `ppu_recomp.c`), relatórios da análise local ou binários grandes.

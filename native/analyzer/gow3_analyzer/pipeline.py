@@ -6,7 +6,7 @@ from __future__ import annotations
 import traceback
 from pathlib import Path
 
-from . import __version__, analysis, formats, recomp_test, report, tools
+from . import __version__, analysis, decrypt, formats, recomp_test, report, tools
 
 ELF_NAMES = ("EBOOT.ELF", "EBOOT.elf", "eboot.elf", "EBOOT.BIN.elf", "EBOOT.BIN.ELF")
 
@@ -43,7 +43,8 @@ def find_sfo(exe: Path) -> dict:
 
 
 def run(path, out_dir, recompile: bool = True, limit: int = 40, cases: int = recomp_test.CASES_PER_FUNCTION,
-        progress=print, target: str | None = None, runner: list[str] | None = None) -> dict:
+        progress=print, target: str | None = None, runner: list[str] | None = None,
+        rpcs3: str | None = None, use_rpcs3: bool = True) -> dict:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     work = out / "trabalho"
@@ -66,6 +67,40 @@ def run(path, out_dir, recompile: bool = True, limit: int = 40, cases: int = rec
             progress("Reconstruindo o ELF do fSELF de depuração (unfself do ps3recomp, sem chaves)...")
             tools.run_tool("unfself", [exe, "-o", elf])
             rep["input"]["unwrapped_elf_sha256"] = formats.sha256_file(elf)
+
+    elif ident.get("encrypted") and ident.get("format") == "SELF" and use_rpcs3:
+        # SELF de varejo: o EBOOT.ELF é gerado pelo RPCS3 do próprio usuário (o analisador não decifra)
+        tool = decrypt.find_rpcs3(rpcs3)
+        conv = {"method": "rpcs3 --decrypt", "rpcs3": str(tool) if tool else None}
+        rep["input"]["conversion"] = conv
+        if tool is None:
+            conv["status"] = "RPCS3 não encontrado"
+            rep["input"]["status"] = ("SELF de varejo cifrado. Para gerar o EBOOT.ELF automaticamente, indique o rpcs3.exe "
+                                      "instalado no seu computador (botão RPCS3 na janela, ou --rpcs3 na linha de comando). "
+                                      "Este programa não decifra nada: quem converte é o seu RPCS3.")
+            progress(rep["input"]["status"])
+        else:
+            work.mkdir(parents=True, exist_ok=True)
+            try:
+                elf = decrypt.decrypt_with_rpcs3(exe, tool, work, progress)
+                decrypt.save_settings({"rpcs3": str(tool)})
+                elf_sha = formats.sha256_file(elf)
+                conv.update(status="ok", elf=str(elf), elf_sha256=elf_sha)
+                conv["version_check"] = decrypt.known_version(ident["sha256"], elf_sha)
+                vc = conv["version_check"]
+                if vc.get("known"):
+                    msg = (f"Versão reconhecida: {vc['title']} {vc['title_id']} {vc['version']}; EBOOT.ELF "
+                           + ("idêntico ao já verificado." if vc.get("elf_matches") else "DIFERENTE do verificado (confira a cópia)."))
+                else:
+                    msg = "EBOOT.ELF gerado; esta versão do EBOOT.BIN não está na lista de versões conferidas."
+                conv["message"] = msg
+                rep["input"]["ready"] = True
+                rep["input"]["status"] = "EBOOT.ELF gerado pelo seu RPCS3: pronto para análise. " + msg
+                progress(rep["input"]["status"])
+            except decrypt.DecryptError as error:
+                conv.update(status="falhou", error=str(error))
+                rep["input"]["status"] = "Não foi possível gerar o EBOOT.ELF: " + str(error)
+                progress(rep["input"]["status"])
 
     if elf is not None:
         rep["analysis"] = analysis.analyse(elf, work, progress)

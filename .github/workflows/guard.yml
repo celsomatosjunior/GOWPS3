@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Guarda: nenhum dado do jogo (EBOOT, SELF/ELF de PS3, PSARC, PKG, código gerado a partir do jogo,
+# relatórios da análise local) pode entrar no repositório. Roda em todo push e pull request.
+name: Sem dados do jogo
+
+on:
+  push:
+    branches-ignore: [ci-logs]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  guard:
+    name: Verificar arquivos versionados
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: check_no_game_data.py
+        run: |
+          if [ -f native/tools/check_no_game_data.py ]; then
+            python3 native/tools/check_no_game_data.py
+          else
+            echo "ramo sem o verificador (native/tools/check_no_game_data.py); nada a fazer"
+          fi

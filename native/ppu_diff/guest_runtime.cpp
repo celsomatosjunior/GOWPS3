@@ -123,6 +123,11 @@ uint8_t* vm_base = nullptr;
 int vm_inline_ok = 0;
 uint32_t ppu_vm_size = 0;
 uint32_t ppu_hle_inject_base = 0;
+// Atalho de escrita em linha (patches do God of War: Ascension): também desligado.
+int vm_store_inline_ok = 0;
+int g_spu_coh_armed = 0;
+unsigned char g_spu_coh_bitmap[1] = {0};
+uint32_t g_barrier_sync_watch = 0;
 void ps3_indirect_call_to(ppu_context* ctx, uint32_t target)
 {
 	// destino explícito (b<cond>lrl): o CTR do convidado não muda

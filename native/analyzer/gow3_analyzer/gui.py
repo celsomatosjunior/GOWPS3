@@ -13,13 +13,12 @@ from pathlib import Path
 from tkinter import BooleanVar, StringVar, Tk, filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
-from . import __version__, pipeline
+from . import __version__, decrypt, pipeline
 from .cli import default_output
 
-INTRO = ("Escolha o EBOOT.BIN do God of War III (PS3_GAME\\USRDIR\\EBOOT.BIN), um EBOOT.ELF preparado por você, "
-         "ou a pasta do jogo. O programa lê o arquivo no seu computador e gera relatórios JSON e HTML; nada é enviado "
-         "para a internet. Ele não decifra executáveis: um EBOOT.BIN de varejo cifrado é identificado, e a análise "
-         "das funções precisa de um EBOOT.ELF que você mesmo prepare a partir da sua cópia.")
+INTRO = ("Escolha a pasta do God of War III (a que contém PS3_GAME) ou o PS3_GAME\\USRDIR\\EBOOT.BIN. "
+         "O EBOOT.BIN de varejo é cifrado: o EBOOT.ELF é gerado automaticamente pelo RPCS3 instalado no seu "
+         "computador (este programa não decifra nada). Tudo roda localmente; nada é enviado para a internet.")
 
 
 class App:
@@ -31,6 +30,8 @@ class App:
         self.events: queue.Queue = queue.Queue()
         self.path = StringVar()
         self.out = StringVar(value=str(default_output()))
+        found = decrypt.find_rpcs3()
+        self.rpcs3 = StringVar(value=str(found) if found else "")
         self.recompile = BooleanVar(value=True)
         self.report_path = None
 
@@ -44,6 +45,16 @@ class App:
         ttk.Entry(row, textvariable=self.path).pack(side="left", fill="x", expand=True, padx=4)
         ttk.Button(row, text="Arquivo…", command=self.pick_file).pack(side="left")
         ttk.Button(row, text="Pasta…", command=self.pick_dir).pack(side="left", padx=(4, 0))
+
+        row_r = ttk.Frame(frm)
+        row_r.pack(fill="x", pady=2)
+        ttk.Label(row_r, text="RPCS3:", width=12).pack(side="left")
+        ttk.Entry(row_r, textvariable=self.rpcs3).pack(side="left", fill="x", expand=True, padx=4)
+        ttk.Button(row_r, text="Procurar…", command=self.pick_rpcs3).pack(side="left")
+        self.rpcs3_note = ttk.Label(frm, text=("RPCS3 encontrado automaticamente." if found else
+                                               "RPCS3 não encontrado: indique o rpcs3.exe para gerar o EBOOT.ELF."),
+                                    foreground="#2b6a2b" if found else "#9a6700")
+        self.rpcs3_note.pack(anchor="w", padx=(96, 0))
 
         row2 = ttk.Frame(frm)
         row2.pack(fill="x", pady=2)
@@ -81,6 +92,13 @@ class App:
         if p:
             self.path.set(p)
 
+    def pick_rpcs3(self):
+        p = filedialog.askopenfilename(title="Escolha o rpcs3.exe", filetypes=[("RPCS3", "rpcs3.exe"), ("Programas", "*.exe")])
+        if p:
+            self.rpcs3.set(p)
+            self.rpcs3_note.configure(text="RPCS3 escolhido.", foreground="#2b6a2b")
+            decrypt.save_settings({"rpcs3": p})
+
     def pick_out(self):
         p = filedialog.askdirectory(title="Pasta dos relatórios")
         if p:
@@ -110,6 +128,7 @@ class App:
     def work(self):
         try:
             rep = pipeline.run(self.path.get().strip(), self.out.get().strip(), recompile=self.recompile.get(),
+                               rpcs3=self.rpcs3.get().strip() or None,
                                progress=self.say)
             self.events.put(("done", rep))
         except Exception as error:

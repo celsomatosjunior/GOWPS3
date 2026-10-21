@@ -86,7 +86,7 @@ def main():
               f"executável grande: {tg.get('identical_functions')} idênticas, {tg.get('divergent_functions')} divergentes, "
               f"{tg.get('inconclusive_functions')} inconclusivas", failures)
 
-    rep2 = pipeline.run(args.fake_self, out / "self_varejo", progress=lambda m: None)
+    rep2 = pipeline.run(args.fake_self, out / "self_varejo", progress=lambda m: None, use_rpcs3=False)
     summary["retail_self"] = {"encrypted": rep2["input"].get("encrypted"), "ready": rep2["input"].get("ready"),
                               "status": rep2["input"].get("status")}
     check(rep2["input"].get("encrypted") is True and rep2["input"].get("ready") is False and rep2["analysis"] is None
@@ -119,7 +119,7 @@ def main():
             check(proc.returncode == 0 and tg.get("identical_functions", 0) >= 15,
                   f"executável empacotado, ELF grande: código {proc.returncode}, {tg.get('identical_functions')}/"
                   f"{tg.get('functions')} idênticas", failures)
-        proc = subprocess.run([args.exe, "analisar", args.fake_self, "--saida", str(out / "exe_self")],
+        proc = subprocess.run([args.exe, "analisar", args.fake_self, "--saida", str(out / "exe_self"), "--sem-rpcs3"],
                               capture_output=True, text=True, timeout=600)
         j = json.loads((out / "exe_self" / "relatorio_gow3.json").read_text(encoding="utf-8"))
         check(proc.returncode == 4 and j["input"]["encrypted"] and not j["input"]["ready"],

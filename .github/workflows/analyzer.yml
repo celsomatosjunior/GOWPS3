@@ -38,9 +38,11 @@ jobs:
           repository: sp00nznet/ps3recomp
           ref: ${{ env.PS3RECOMP_COMMIT }}
           path: ps3recomp
-      - name: Aplicar o patch do projeto
+      - name: Aplicar os patches (God of War Ascension + --toc para ELF)
         working-directory: ps3recomp
-        run: git apply ../gow3/native/ps3recomp-elfv1.patch
+        run: |
+          git apply ../gow3/native/ps3recomp-ascension.patch
+          git apply ../gow3/native/ps3recomp-elfv1.patch
       - name: gcc PowerPC, QEMU, clang
         run: |
           sudo apt-get update -qq
@@ -65,6 +67,8 @@ jobs:
     needs: corpus
     runs-on: windows-2025
     steps:
+      - name: Finais de linha como no repositório (os patches mantêm CRLF/LF originais)
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
         with:
           path: gow3
@@ -75,9 +79,11 @@ jobs:
           repository: sp00nznet/ps3recomp
           ref: ${{ env.PS3RECOMP_COMMIT }}
           path: ps3recomp
-      - name: Aplicar o patch do projeto
+      - name: Aplicar os patches (God of War Ascension + --toc para ELF)
         working-directory: ps3recomp
-        run: git apply ../gow3/native/ps3recomp-elfv1.patch
+        run: |
+          git apply ../gow3/native/ps3recomp-ascension.patch
+          git apply ../gow3/native/ps3recomp-elfv1.patch
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -112,6 +118,30 @@ jobs:
           python gow3/native/analyzer/tests/run_synthetic.py ps3_test.elf EBOOT_varejo_sintetico.BIN synth \
             --grande ps3_grande.elf \
             --exe dist/GOW3_Native_Analyzer/GOW3_Native_Analyzer.exe 2>&1 | tee out/autoteste.txt
+      - name: RPCS3 oficial para Windows (para testar a geração automática do EBOOT.ELF)
+        id: rpcs3
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          curl -sSfL -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/RPCS3/rpcs3-binaries-win/releases/latest > rpcs3_release.json
+          url=$(python -c "import json;r=json.load(open('rpcs3_release.json'));a=[x for x in r['assets'] if x['name'].endswith('.7z')];print(a[0]['browser_download_url'])")
+          echo "RPCS3: $url" | tee out/rpcs3_versao.txt
+          curl -sSfL -o rpcs3.7z "$url"
+          7z x -y -orpcs3 rpcs3.7z > /dev/null
+          ls rpcs3/rpcs3.exe
+      - name: Teste da geração do EBOOT.ELF com o RPCS3 de verdade
+        if: steps.rpcs3.outcome == 'success'
+        continue-on-error: true
+        env:
+          GOW3_PS3RECOMP: ${{ github.workspace }}/ps3recomp
+        run: |
+          set -o pipefail
+          python gow3/native/analyzer/tests/make_debug_self.py ps3_test.elf EBOOT_depuracao_sintetico.BIN
+          python gow3/native/analyzer/tests/test_rpcs3.py rpcs3/rpcs3.exe ps3_test.elf EBOOT_depuracao_sintetico.BIN EBOOT_varejo_sintetico.BIN synth_rpcs3 \
+            --exe dist/GOW3_Native_Analyzer/GOW3_Native_Analyzer.exe 2>&1 | tee out/teste_rpcs3.txt
+          cp -f synth_rpcs3/teste_rpcs3.json out/ || true
       - name: Informações do pacote
         if: always()
         shell: pwsh

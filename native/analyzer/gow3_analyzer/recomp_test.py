@@ -138,7 +138,7 @@ def compile_test_exe(out: Path, target: str, exe_name: str) -> Path:
     lifted = out / "lifted"
     exe = out / exe_name
     cmd = zig_command() + ["c++", "-target", target, "-std=c++20", "-O1", "-w", "-fno-strict-aliasing",
-                           "-DPPU_NO_INLINE_LOADS",
+                           "-DPPU_NO_INLINE_LOADS", "-DPPU_NO_INLINE_STORES",
                            "-I", str(lifted), "-I", str(tools.ps3recomp_root() / "runtime" / "ppu"), "-x", "c++", str(lifted / "ppu_recomp.c"),
                            str(runtime_source()), "-o", str(exe)]
     t0 = time.time()

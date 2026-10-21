@@ -117,6 +117,16 @@ def write_html(report: dict, out: Path) -> Path:
         rows.insert(1, ("Jogo (PARAM.SFO)", f"{_e(title)} — {_e(tid)} {_e(sfo.get('APP_VER', ''))}"))
     if ident.get("self_type"):
         rows.append(("Tipo de SELF", _e(ident["self_type"])))
+    conv = ident.get("conversion")
+    if conv:
+        rows.append(("EBOOT.ELF gerado pelo RPCS3", _e(conv.get("status", "?"))
+                     + (f" — {_e(conv['rpcs3'])}" if conv.get("rpcs3") else "")))
+        if conv.get("elf_sha256"):
+            rows.append(("SHA-256 do EBOOT.ELF", f"<code>{_e(conv['elf_sha256'])}</code>"))
+        vc = conv.get("version_check") or {}
+        if vc.get("known"):
+            rows.append(("Versão conferida", f"{_e(vc['title'])} {_e(vc['title_id'])} {_e(vc['version'])} — EBOOT.ELF "
+                         + ("idêntico ao verificado" if vc.get("elf_matches") else "DIFERENTE do verificado")))
     parts.append("<h2>Arquivo</h2><div class=card>" + _table(["", ""], rows) + "</div>")
     parts.append(f'<div class="note">{_e(ident.get("status", ""))}</div>')
     if tid and tid != TARGET_TITLE:

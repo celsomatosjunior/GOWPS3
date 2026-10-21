@@ -310,6 +310,11 @@ uint8_t* vm_base = nullptr; // acesso plano não é usado pelas funções testad
 int vm_inline_ok = 0;
 uint32_t ppu_vm_size = 0;
 uint32_t ppu_hle_inject_base = 0;
+// Atalho de escrita em linha (patches do God of War: Ascension): também desligado.
+int vm_store_inline_ok = 0;
+int g_spu_coh_armed = 0;
+unsigned char g_spu_coh_bitmap[1] = {0};
+uint32_t g_barrier_sync_watch = 0;
 uint8_t vm_read8(uint64_t a) { return static_cast<uint8_t>(read_be(a, 1)); }
 uint16_t vm_read16(uint64_t a) { return static_cast<uint16_t>(read_be(a, 2)); }
 uint32_t vm_read32(uint64_t a) { return static_cast<uint32_t>(read_be(a, 4)); }

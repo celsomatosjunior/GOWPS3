@@ -28,6 +28,8 @@ jobs:
     name: ps3recomp no Windows (clang-cl)
     runs-on: windows-2025
     steps:
+      - name: Finais de linha como no repositório (os patches mantêm CRLF/LF originais)
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
         with:
           path: gow3
@@ -38,9 +40,11 @@ jobs:
           repository: sp00nznet/ps3recomp
           ref: ${{ env.PS3RECOMP_COMMIT }}
           path: ps3recomp
-      - name: Aplicar o patch do projeto (--toc para ELF)
+      - name: Aplicar os patches (God of War Ascension + --toc para ELF)
         working-directory: ps3recomp
-        run: git apply ../gow3/native/ps3recomp-elfv1.patch
+        run: |
+          git apply ../gow3/native/ps3recomp-ascension.patch
+          git apply ../gow3/native/ps3recomp-elfv1.patch
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
@@ -53,23 +57,41 @@ jobs:
         working-directory: ps3recomp
         run: |
           clang-cl --version | tee ../toolchain.txt
-          cmake -S . -B build -G Ninja -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_BUILD_TYPE=Release -DPS3RECOMP_BUILD_TESTS=ON
-          cmake --build build 2>&1 | tail -5
+          # mesma configuração do windows.yml do próprio ps3recomp (os testes CMake são de POSIX)
+          cmake -S . -B build -G Ninja -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_BUILD_TYPE=Release > ../build_windows.txt 2>&1
+          cmake --build build >> ../build_windows.txt 2>&1 || { tail -60 ../build_windows.txt; exit 1; }
+          tail -3 ../build_windows.txt
           ls -la build/ps3recomp_runtime.lib
-      - name: Testes do runtime (ctest)
+          test -s build/ps3recomp_runtime.lib
+      - name: Testes autocontidos (SPU e RSX)
         working-directory: ps3recomp
-        run: ctest --test-dir build --output-on-failure 2>&1 | tee ../ctest_windows.txt
+        shell: pwsh
+        run: |
+          $out = "..\ctest_windows.txt"
+          "" | Set-Content $out
+          clang-cl /nologo /W0 /D_CRT_SECURE_NO_WARNINGS /I include /I runtime/spu /Fe:test_spu_helpers.exe runtime/spu/tests/test_spu_helpers.c *>> $out
+          if ($LASTEXITCODE -ne 0) { Get-Content $out -Tail 40; exit 1 }
+          .\test_spu_helpers.exe *>> $out
+          if ($LASTEXITCODE -ne 0) { Get-Content $out -Tail 40; exit 1 }
+          clang-cl /nologo /W0 /D_CRT_SECURE_NO_WARNINGS /I include /I libs/video /Fe:test_texture_layout.exe libs/video/tests/test_texture_layout.c libs/video/rsx_texture_layout.c *>> $out
+          if ($LASTEXITCODE -ne 0) { Get-Content $out -Tail 40; exit 1 }
+          .\test_texture_layout.exe *>> $out
+          if ($LASTEXITCODE -ne 0) { Get-Content $out -Tail 40; exit 1 }
+          Get-Content $out -Tail 6
       - name: Suítes do lifter (a de conformidade compila e executa as instruções traduzidas)
         working-directory: ps3recomp
         env:
           CI: "1"
         run: |
-          set -o pipefail
           : > ../lifter_suites_windows.txt
+          pass=0; fail=0
           for t in tools/test_*.py; do
-            echo "--- $t" | tee -a ../lifter_suites_windows.txt
-            python "$t" 2>&1 | tail -3 | tee -a ../lifter_suites_windows.txt
+            echo "--- $t" >> ../lifter_suites_windows.txt
+            if python "$t" > suite.txt 2>&1; then pass=$((pass+1)); else fail=$((fail+1)); echo "FALHOU $t"; fi
+            tail -3 suite.txt >> ../lifter_suites_windows.txt
           done
+          echo "suítes: $pass passaram, $fail falharam" | tee -a ../lifter_suites_windows.txt
+          test "$fail" -eq 0
       - name: Andaime de boot PPU (verificação do próprio ps3recomp)
         working-directory: ps3recomp
         run: python tools/check_ppu_scaffold.py 2>&1 | tail -5 | tee ../scaffold_windows.txt
@@ -79,6 +101,7 @@ jobs:
           name: ps3recomp_windows_logs
           path: |
             toolchain.txt
+            build_windows.txt
             ctest_windows.txt
             lifter_suites_windows.txt
             scaffold_windows.txt
@@ -97,9 +120,11 @@ jobs:
           repository: sp00nznet/ps3recomp
           ref: ${{ env.PS3RECOMP_COMMIT }}
           path: ps3recomp
-      - name: Aplicar o patch do projeto
+      - name: Aplicar os patches (God of War Ascension + --toc para ELF)
         working-directory: ps3recomp
-        run: git apply ../gow3/native/ps3recomp-elfv1.patch
+        run: |
+          git apply ../gow3/native/ps3recomp-ascension.patch
+          git apply ../gow3/native/ps3recomp-elfv1.patch
       - name: Compilador PowerPC (gcc -mcpu=cell), QEMU e Clang
         run: |
           sudo apt-get update -qq
@@ -135,6 +160,8 @@ jobs:
     needs: ppu_diff_generate
     runs-on: windows-2025
     steps:
+      - name: Finais de linha como no repositório (os patches mantêm CRLF/LF originais)
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
         with:
           path: gow3
