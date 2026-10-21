@@ -305,6 +305,11 @@ std::string run_line(const std::vector<std::string>& t)
 
 extern "C" {
 uint8_t* vm_base = nullptr; // acesso plano não é usado pelas funções testadas (elas são filtradas)
+// Atalho de leitura em linha do lifter (ps3recomp >= v0.16): desligado aqui, para que toda leitura
+// passe por vm_read*, que confere o mapa de memória e transforma acesso inválido em falha.
+int vm_inline_ok = 0;
+uint32_t ppu_vm_size = 0;
+uint32_t ppu_hle_inject_base = 0;
 uint8_t vm_read8(uint64_t a) { return static_cast<uint8_t>(read_be(a, 1)); }
 uint16_t vm_read16(uint64_t a) { return static_cast<uint16_t>(read_be(a, 2)); }
 uint32_t vm_read32(uint64_t a) { return static_cast<uint32_t>(read_be(a, 4)); }
@@ -330,6 +335,13 @@ int ppu_stdcx64(uint64_t a, uint64_t expected, uint64_t v)
 uint64_t ppu_timebase_now() { throw GuestFault{"cpu", 0}; }
 void lv2_syscall(ppu_context* ctx) { throw GuestFault{"cpu", ctx->gpr[11]}; }
 void ps3_hle_call(unsigned nid, ppu_context*) { throw GuestFault{"cpu", nid}; }
+void ps3_indirect_call_to(ppu_context* ctx, uint32_t target)
+{
+	auto it = funcs().by_addr.find(target);
+	if (it == funcs().by_addr.end())
+		throw GuestFault{"fetch", target};
+	it->second(ctx);
+}
 void ps3_indirect_call(ppu_context* ctx)
 {
 	auto it = funcs().by_addr.find(ctx->ctr);

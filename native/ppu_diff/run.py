@@ -18,6 +18,7 @@
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -64,7 +65,14 @@ def generate(ps3recomp, out, ppu_cc, qemu, host_cc):
     sh([python, os.path.join(HERE, "gen.py"), "driver", "--meta", os.path.join(out, "meta.json"), "--out", out])
     for name in ("guest_runtime.cpp", "guest_runtime.h", "CMakeLists.txt"):
         shutil.copy2(os.path.join(HERE, name), out)
-    todo = open(os.path.join(lifted, "ppu_recomp.c")).read().count("/* TODO")
+    # O código gerado pelo lifter (ps3recomp >= v0.16) inclui ppu_vmx.h do runtime do ps3recomp;
+    # vai junto do pacote para o job do Windows, que não tem o ps3recomp.
+    vmx_h = os.path.join(ps3recomp, "runtime", "ppu", "ppu_vmx.h")
+    if os.path.isfile(vmx_h):
+        shutil.copy2(vmx_h, lifted)
+    # ".word" depois do blr é dado/preenchimento (nunca executado); o resto seria instrução não traduzida
+    todo = sum(1 for t in re.findall(r"/\* TODO: (\S+)", open(os.path.join(lifted, "ppu_recomp.c")).read())
+               if not t.startswith("."))
     lines = sum(1 for _ in open(os.path.join(lifted, "ppu_recomp.c")))
     stats = {"functions": len(meta["functions"]), "lifted_c_lines": lines, "todo_markers": todo,
              "cases": len(ref.splitlines())}

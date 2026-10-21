@@ -93,6 +93,9 @@ def main():
         if f.is_file() and f.suffix in (".py", ".json", ".txt", ".toml"):
             shutil.copy2(f, tools_dst / f.name)
     shutil.copy2(ps3 / "LICENSE", res / "ps3recomp" / "LICENSE")
+    # cabeçalho que o código gerado pelo lifter inclui (semântica exata de VMX)
+    (res / "ps3recomp" / "runtime" / "ppu").mkdir(parents=True)
+    shutil.copy2(ps3 / "runtime" / "ppu" / "ppu_vmx.h", res / "ps3recomp" / "runtime" / "ppu" / "ppu_vmx.h")
 
     # NIDs que o runtime do ps3recomp implementa (calculado aqui, onde as fontes C existem)
     sys.path.insert(0, str(ps3 / "tools"))

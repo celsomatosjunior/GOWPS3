@@ -20,7 +20,7 @@ Detalhes: [docs/AUDITORIA_PS3RECOMP.md](docs/AUDITORIA_PS3RECOMP.md). O relatór
 - `ppu_diff/`: teste diferencial PPU. Compila código C nosso para PowerPC/Cell e executa no QEMU (referência). Depois recompila com o lifter do ps3recomp, compila para x86-64 e compara caso a caso.
 - `tools/analyze_gow3.py`: relatório do executável do jogo. Sem decifrar nada, lê PARAM.SFO e os cabeçalhos SELF. Com um `EBOOT.ELF` preparado pelo usuário, lista funções, importações por biblioteca com cobertura HLE, programas SPU e uma amostra recompilada.
 - `tools/make_report.py`: monta o relatório do CI.
-- `ps3recomp-elfv1.patch`: duas correções no lifter (`lwax` em tabelas de salto e `--toc` para ELF).
+- `ps3recomp-elfv1.patch`: `--toc` explícito também para ELF (o corpus usa descritores ELFv1 de 64 bits). A correção de `lwax` em tabelas de salto já entrou no ps3recomp. Commit fixado: v0.16.0 (`749182e`); antes era `a2c2010`, cujo lifter truncava o CTR a 32 bits — divergência encontrada pelo analisador em funções do God of War III e corrigida no ps3recomp.
 - `PS3RECOMP_COMMIT.txt`: commit fixado do ps3recomp.
 
 ## Rodar localmente

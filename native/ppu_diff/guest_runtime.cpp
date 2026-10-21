@@ -117,6 +117,23 @@ void ps3_indirect_call(ppu_context* ctx)
 	std::exit(5);
 }
 PPU_THREAD_LOCAL void (*g_trampoline_fn)(void*) = nullptr;
+// Símbolos que o código gerado pelo ps3recomp >= v0.16 referencia (atalho de leitura em linha,
+// desligado aqui; acesso plano por vm_base não é usado pelo corpus).
+uint8_t* vm_base = nullptr;
+int vm_inline_ok = 0;
+uint32_t ppu_vm_size = 0;
+uint32_t ppu_hle_inject_base = 0;
+void ps3_indirect_call_to(ppu_context* ctx, uint32_t target)
+{
+	// destino explícito (b<cond>lrl): o CTR do convidado não muda
+	for (uint64_t i = 0; i < function_table_count; i++)
+		if (function_table[i].addr == target) {
+			function_table[i].func(ctx);
+			return;
+		}
+	std::fprintf(stderr, "ERRO: chamada indireta para 0x%X, que não foi recompilada\n", target);
+	std::exit(5);
+}
 }
 
 bool guest_load_elf(const char* path)
