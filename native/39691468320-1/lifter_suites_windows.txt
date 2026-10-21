@@ -1,0 +1,178 @@
+--- tools/test_audit_guest_ptrs.py
+ok: 4 positives caught, 6 correct forms ignored
+--- tools/test_cellfs_vfs_root.py
+SKIP: fixture requires a POSIX C compiler and dead-section linker
+--- tools/test_dialog_abort.py
+SKIP: dialog abort fixture requires a POSIX C toolchain
+--- tools/test_dwarf.py
+ok: DWARF abbrev/form/DIE-tree parse and struct extraction pass
+--- tools/test_edat_guest_klicensee.py
+ok  : with the title's klicensee: 0, every block hash verified (got 0)
+ok  : plaintext: 2500 bytes, matches
+PASS (0 failed)
+--- tools/test_font_hle_nids.py
+PASS: test_nid_is_the_published_one
+PASS: test_cellfont_registers_it
+--- tools/test_gcm_flip_stream.py
+SKIP: the GCM flip fixture uses POSIX linking
+--- tools/test_gcm_get_on_jump.py
+SKIP: the GCM get fixture uses POSIX linking
+--- tools/test_gcm_io_mappings.py
+SKIP: fixture currently requires a POSIX C compiler
+--- tools/test_gcm_map_flags.py
+SKIP: mapping fixture currently uses POSIX linking; registration checked
+--- tools/test_hle_registration_dependencies.py
+PASS: real template incremental registration handles existing/new/deleted modules and NID database edits
+--- tools/test_http_response_getters.py
+SKIP: POSIX sockets only
+--- tools/test_http_uri_path.py
+SKIP: POSIX sockets only
+--- tools/test_lifter_dedupe.py
+[ppu_lifter] symbol prefix 'libsre' has no trailing underscore; using 'libsre_'
+[spu_lifter] symbol prefix 'libsre' has no trailing underscore; using 'libsre_'
+ok: truncated duplicate dropped, widest extent kept, order preserved, symbol prefix normalised, import stubs stay callable
+--- tools/test_lifter_header_name.py
+PASS: custom module header in split and single-file output
+--- tools/test_live_draw_sampler_key.py
+PASS: sampler_key separates every field decode_sampler reads and nothing else
+--- tools/test_lwcond_layout.py
+[PASS] create: nothing written past the 8-byte sys_lwcond_t
+[PASS] wait: uses lwmutex 0x00002468
+PASS: sys_lwcond_t is +0x00 lwmutex EA, +0x04 queue id
+--- tools/test_metal_frame_rate.py
+SKIP: Metal requires macOS
+--- tools/test_metal_independent_clears.py
+SKIP: Metal requires macOS
+--- tools/test_mfc_resume_elements.py
+Ran 4 tests in 5.407s
+
+OK
+--- tools/test_milestone.py
+  ok   64-bit scalar survives
+
+[milestone] all checks passed
+--- tools/test_mingw_tls.py
+ok   libs/system/cellSysutil.c:103 COMPLETION_TLS: thread-local
+9 qualifiers checked (x86_64-w64-mingw32-gcc)
+PASS
+--- tools/test_nid_from_protos.py
+ok: 379 proto-harvested NIDs all satisfy compute_nid(name)==nid and load into the database
+--- tools/test_np_basic_after_np_init.py
+[sceNpBasic] SetPresence()
+[PASS] after sceNpBasicTerm: SetPresence: 0x8002AA01 (want 0x8002AA01)
+PASS (0 failed)
+--- tools/test_objdump_audit.py
+ok: objdump line parser (incl. record-form '.') and decoder agreement pass
+--- tools/test_pkg_extract.py
+pkg_extract.out_path: OK
+--- tools/test_ppu_branches.py
+ok: blr returns; blrl/bnelrl dispatch via LR and continue; conditional branches fall through
+--- tools/test_ppu_cs_carry_forms.py
+PASS: test_carry_form_definition_is_seen
+PASS: test_plain_definition_unchanged
+--- tools/test_ppu_cs_epilogue_restore.py
+ok test_epilogue_only_tail_entry_still_snapshots
+ok test_register_used_for_lr_is_a_plain_load
+ok test_is_epilogue_restore_helper
+--- tools/test_ppu_cs_restore.py
+PASS: second-slot reload stays a real load
+--- tools/test_ppu_directory.py
+SKIP: PPU fixture requires the POSIX build toolchain
+--- tools/test_ppu_dispatch_depth.py
+SKIP: fixture uses POSIX ucontext
+--- tools/test_ppu_entry_arguments.py
+SKIP: standalone fixture currently uses the POSIX mmap/toolchain
+--- tools/test_ppu_fallthrough.py
+ok   function ending in sc records its fall-through
+ok   function ending in blr has no fall-through
+all fall-through checks passed
+--- tools/test_ppu_fs_aio.py
+[PASS] cellFsRead after it continues from the fd's position 0x40 (got word 0x00000040)
+[PASS] 8000 racing AIO reads over 4 threads, 0 returned the wrong bytes
+PASS (0 failed)
+--- tools/test_ppu_fs_imports.py
+[PASS] cellFsUtime returns 0x00000000 (want 0x00000000)
+[PASS] cellFsSdataOpenByFd returns 0x80010003 (want 0x80010003)
+PASS (0 failed)
+--- tools/test_ppu_fs_large_file.py
+[PASS] cellFsLseek(END) position 0x140000010 (want 0x140000010)
+[PASS] cellFsFstat size 0x140000010 (want 0x140000010)
+PASS (0 failed)
+--- tools/test_ppu_jumptables.py
+ok   non-constant base is not a constant-base jump
+ok   multi-TOC: near targets beat more targets far away
+all jump-table vectors passed
+--- tools/test_ppu_lift.py
+wrote D:\a\GOWPS3\GOWPS3\ps3recomp\scratch\ppu_conformance.cpp: 1202 cases (0 skipped at generation)
+  memory barriers lowered to fences in the driver: 5
+[ppu-conformance] 1533 checks passed, 0 FAILED, 0 skipped
+--- tools/test_ppu_lifter_chunks.py
+  9 of 9 source files changed
+ok   chunk membership follows addresses only (0 functions moved)
+PASS
+--- tools/test_ppu_tls_blocks.py
+SKIP: fixture currently requires a POSIX C++ compiler
+--- tools/test_ppu_vcmp_record_cr6.py
+  20 compare forms checked
+ok test_vcmp_record_sets_cr6
+ok test_non_record_compare_leaves_cr_alone
+--- tools/test_ppu_vmx_lanes.py
+  ok   vsrab
+  10 ops x 300 cases agree with the reference model
+ok test_vmx_big_endian_lanes
+--- tools/test_raw_prx_toc.py
+  1 functions lifted
+  0 unique call targets
+[raw-prx-toc] raw segment and module TOC reached jump-table discovery
+--- tools/test_rsx_immediate_vertices.py
+SKIP: neutral C fixture requires the POSIX toolchain; run on macOS/Linux
+--- tools/test_sail_boot_callback.py
+SKIP: standalone HLE bridge regression needs a POSIX toolchain
+--- tools/test_savedata_user_autosave.py
+ok  : cellSaveDataUserAutoSave: cbResult->userdata = 0x0001BEEF (want 0x0001BEEF)
+PASS (0 failed)
+PASS
+--- tools/test_socket_sigpipe.py
+SKIP: SIGPIPE is a POSIX host signal
+--- tools/test_spinlock_word_width.py
+SKIP: LP64 regression harness uses a POSIX compiler driver
+--- tools/test_spu_context_registries.py
+SKIP: SPU registry fixtures require POSIX pthreads
+--- tools/test_spu_disasm_ri10.py
+all 29 RI10 forms decode, and the interpreter tables are current
+--- tools/test_spu_interpreter_handoff.py
+SKIP: fixture currently requires the POSIX compiler/linker
+--- tools/test_spu_interpreter_ilh.py
+SKIP: fixture currently requires a POSIX C compiler
+--- tools/test_spu_machine_status.py
+SKIP: fixture requires the POSIX compiler/linker
+--- tools/test_spu_program_pipeline.py
+Ran 12 tests in 8.606s
+
+OK
+--- tools/test_spu_sdcrz.py
+SKIP: SDCRZ fixture currently requires a POSIX C compiler
+--- tools/test_spu_smc_lqa_stqa.py
+SKIP: fixture currently requires a POSIX C compiler
+--- tools/test_spu_taskset_elf_flags.py
+SKIP: fixture currently requires a POSIX C compiler
+--- tools/test_spurs_scheduler.py
+SKIP: POSIX fixture
+--- tools/test_spurs_task_exit_code_initialize.py
+SKIP: standalone fixture requires the POSIX C/C++ toolchain
+--- tools/test_spurs_taskset_size.py
+SKIP: standalone fixture requires POSIX C toolchain
+--- tools/test_sys_net.py
+SKIP: use the documented clang-cl fixture command on Windows
+--- tools/test_sysmodule_is_loaded_ex.py
+SKIP: C runtime fixture requires the POSIX toolchain; registration checked
+--- tools/test_sysmodule_load_module_ex.py
+SKIP: C runtime fixture requires the POSIX toolchain; registration checked
+--- tools/test_sysmodule_unload_module_ex.py
+SKIP: standalone HLE bridge regression needs a POSIX toolchain
+--- tools/test_time_timezone.py
+SKIP: timezone fixture requires the POSIX toolchain
+--- tools/test_unfself.py
+[unfself] 1 segments, 3 non-alloc sections recovered
+ok: fSELF round-trip, retail rejection, and symbol recovery all pass
+suítes: 67 passaram, 0 falharam
