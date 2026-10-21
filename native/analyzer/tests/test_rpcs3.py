@@ -50,8 +50,12 @@ def main():
     w.mkdir(parents=True, exist_ok=True)
     try:
         elf = decrypt.decrypt_with_rpcs3(Path(args.debug_self), Path(args.rpcs3), w, print)
-        same = elf.read_bytes() == Path(args.elf).read_bytes()
+        got, want = elf.read_bytes(), Path(args.elf).read_bytes()
+        same = got == want
         err = None
+        if not same:
+            first = next((i for i in range(min(len(got), len(want))) if got[i] != want[i]), min(len(got), len(want)))
+            err = f"ELF gerado com {len(got)} bytes (esperado {len(want)}), primeira diferença em 0x{first:X}"
     except decrypt.DecryptError as error:
         same, err = False, str(error)
     summary["debug_self"] = {"identical": same, "error": err}

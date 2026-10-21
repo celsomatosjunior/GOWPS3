@@ -147,7 +147,8 @@ def decrypt_with_rpcs3(self_path: Path, rpcs3: Path, work: Path, progress=lambda
     head = out_elf.read_bytes()[:64]
     hdr = formats.elf_header(head)
     if not hdr or "error" in hdr or hdr.get("machine_id") != 21:
-        raise DecryptError("o arquivo gerado pelo RPCS3 não é um ELF PPU válido; veja rpcs3_conversao.log")
+        raise DecryptError(f"o arquivo gerado pelo RPCS3 não é um ELF PPU válido ({out_elf.stat().st_size} bytes, "
+                           f"início {head[:4].hex()}); veja rpcs3_conversao.log")
     copy.unlink()  # a cópia do SELF não é mais necessária
     return out_elf
 
