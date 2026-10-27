@@ -141,7 +141,8 @@ class Reference:
                 out.append((a, w, width, toward_zero))
         return out
 
-    def run(self, code_addr: int, case: dict, code_end: int | None = None, reset: bool = True) -> dict:
+    def run(self, code_addr: int, case: dict, code_end: int | None = None, reset: bool = True,
+            limit: int | None = None) -> dict:
         """Executa a função a partir do estado `case`. Com reset=False a memória continua da chamada
         anterior, como num processo único (usado na validação contra o QEMU)."""
         if self.mu is None:
@@ -171,7 +172,7 @@ class Reference:
         self.written = set()
         self.exceptions = []
         try:
-            mu.emu_start(code_addr, S.RETURN_SENTINEL, count=S.INSTRUCTION_LIMIT)
+            mu.emu_start(code_addr, S.RETURN_SENTINEL, count=limit or S.INSTRUCTION_LIMIT)
         except UcError as error:
             msg = str(error).upper()
             kind = "read" if "READ" in msg else "write" if "WRITE" in msg else "fetch" if "FETCH" in msg else "cpu"

@@ -117,6 +117,10 @@ def write_html(report: dict, out: Path) -> Path:
         rows.insert(1, ("Jogo (PARAM.SFO)", f"{_e(title)} — {_e(tid)} {_e(sfo.get('APP_VER', ''))}"))
     if ident.get("self_type"):
         rows.append(("Tipo de SELF", _e(ident["self_type"])))
+    dvc = ident.get("version_check") or {}
+    if dvc.get("known"):
+        rows.append(("Versão conferida", f"{_e(dvc['title'])} {_e(dvc['title_id'])} {_e(dvc['version'])} — "
+                     "EBOOT.ELF idêntico ao verificado"))
     conv = ident.get("conversion")
     if conv:
         rows.append(("EBOOT.ELF gerado pelo RPCS3", _e(conv.get("status", "?"))
@@ -212,6 +216,8 @@ def write_html(report: dict, out: Path) -> Path:
               ("Tradução incompleta", t.get("incomplete_translation_functions", 0)),
               ("Casos", t["cases"]), ("Casos idênticos", t["identical_cases"]),
               ("Falharam igual nos dois", t["both_faulted_cases"]), ("Casos divergentes", t["divergent_cases"])]
+        if t.get("reference_limit_cases"):
+            kp.append(("Sem fim só na referência", t["reference_limit_cases"]))
         parts.append("<div class=grid>" + "".join(f'<div class="card kpi"><b>{v}</b><span class=muted>{_e(k)}</span></div>'
                                                   for k, v in kp) + "</div>")
         cls = {"idêntica": "ok", "divergente": "blocked", "inconclusiva": "partial", "tradução incompleta": "blocked"}
@@ -222,8 +228,8 @@ def write_html(report: dict, out: Path) -> Path:
                 div += f"caso {d['case']}: " + "; ".join(
                     f"{_e(x['campo'])} {_e(x.get('recompilado', ''))} ≠ {_e(x.get('referência', ''))}" for x in d["diffs"][:3]) + "<br>"
             rows.append((f"<code>{_e(f['func'])}</code>", f'<span class="badge {cls.get(f["status"], "todo")}">{_e(f["status"])}</span>',
-                         f"{f['identical']}/{f['cases']}", f["both_faulted"], f["divergent"], _e(f["why"]), div))
-        parts.append("<div class=card>" + _table(["Função", "Resultado", "Idênticos", "Falha igual", "Divergentes",
+                         f"{f['identical']}/{f['cases']}", f["both_faulted"] + f.get("reference_limit", 0), f["divergent"], _e(f["why"]), div))
+        parts.append("<div class=card>" + _table(["Função", "Resultado", "Idênticos", "Falha igual / sem fim", "Divergentes",
                                                   "Perfil", "Divergências (amostra)"], rows) + "</div>")
         parts.append("<div class=card><b>Limitações</b><ul>" + "".join(f"<li>{_e(x)}</li>" for x in rt["limitations"]) +
                      "</ul><p class=muted>Arquivos para repetir a comparação: " +

@@ -61,6 +61,7 @@ def run(path, out_dir, recompile: bool = True, limit: int = 40, cases: int = rec
     if ident.get("ready"):
         if ident["format"] == "ELF":
             elf = exe
+            rep["input"]["version_check"] = decrypt.known_elf(ident["sha256"])
         else:  # fSELF de depuração: o ELF é reconstruído sem chave nenhuma
             work.mkdir(parents=True, exist_ok=True)
             elf = work / (exe.stem + ".elf")

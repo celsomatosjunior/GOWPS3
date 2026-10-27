@@ -209,6 +209,10 @@ def compare(rec: dict, ref: dict, fctiw: bool = False) -> tuple[str, list[dict]]
             return "ambos-falharam", []
         if rec["status"] == "timeout" and ref["status"] == "fault" and ref["kind"] == "timeout":
             return "ambos-sem-fim", []
+        if rec["status"] == "ok" and ref["status"] == "fault" and ref["kind"] == "timeout":
+            # o recompilado terminou; a referência (muito mais lenta) não terminou nem com o limite longo:
+            # nada foi comparado, então não é divergência
+            return "limite-da-referência", []
         return "divergente", [{"campo": "execução", "recompilado": rec.get("kind", rec["status"]),
                                "referência": ref.get("kind", ref["status"])}]
     diffs = []
@@ -279,6 +283,15 @@ def run(elf: Path, analysis: dict, work: Path, progress=lambda m: None, limit: i
         ref_lines.append(reference_line(addr, case, ref.run(addr, case, code_end=int(c["end"], 16))))
         if n % 100 == 99:
             progress(f"  referência: {n + 1}/{len(plan)}")
+    # casos em que só a referência atingiu o limite de instruções: repetir com limite muito maior
+    retry = [n for n, (rl, fl) in enumerate(zip(rec_lines, ref_lines))
+             if parse_result(rl)["status"] == "ok" and parse_result(fl).get("kind") == "timeout"]
+    if retry:
+        progress(f"Repetindo {len(retry)} caso(s) na referência com limite de {S.INSTRUCTION_LIMIT_LONG // 1_000_000} milhões de instruções...")
+        for n in retry:
+            c, addr, case = plan[n]
+            ref_lines[n] = reference_line(addr, case, ref.run(addr, case, code_end=int(c["end"], 16),
+                                                              limit=S.INSTRUCTION_LIMIT_LONG))
     (out / "resultados_referencia.txt").write_text("\n".join(ref_lines) + "\n")
 
     progress("Comparando...")
@@ -288,7 +301,7 @@ def run(elf: Path, analysis: dict, work: Path, progress=lambda m: None, limit: i
     div_log = []
     for (c, addr, case), rl, fl in zip(plan, rec_lines, ref_lines):
         f = per_func.setdefault(addr, {"func": c["func"], "start": c["start"], "end": c["end"], "insns": c["insns"],
-                                       "why": c["why"], "cases": 0, "identical": 0, "both_faulted": 0, "undefined_bits_only": 0,
+                                       "why": c["why"], "cases": 0, "identical": 0, "both_faulted": 0, "undefined_bits_only": 0, "reference_limit": 0,
                                        "divergent": 0, "divergences": []})
         f["cases"] += 1
         verdict, diffs = compare(parse_result(rl), parse_result(fl), addr in fctiw_funcs)
@@ -298,6 +311,8 @@ def run(elf: Path, analysis: dict, work: Path, progress=lambda m: None, limit: i
                 f["undefined_bits_only"] += 1
         elif verdict in ("ambos-falharam", "ambos-sem-fim"):
             f["both_faulted"] += 1
+        elif verdict == "limite-da-referência":
+            f["reference_limit"] += 1
         else:
             f["divergent"] += 1
             if len(f["divergences"]) < 5:
@@ -329,6 +344,8 @@ def run(elf: Path, analysis: dict, work: Path, progress=lambda m: None, limit: i
         "both_faulted_cases": sum(f["both_faulted"] for f in functions),
         "divergent_cases": sum(f["divergent"] for f in functions),
         "cases_differing_only_in_isa_undefined_bits": sum(f["undefined_bits_only"] for f in functions),
+        "reference_limit_cases": sum(f["reference_limit"] for f in functions),
+        "reference_retried_cases": len(retry),
     }
     return {
         "status": "executado",
@@ -346,6 +363,9 @@ def run(elf: Path, analysis: dict, work: Path, progress=lambda m: None, limit: i
                   "lifter.log", "compilacao.log", "funcoes_escolhidas.json"],
         "limitations": [
             "Testa funções isoladas (folhas): sem chamadas a outras funções, ao sistema (syscalls/NIDs) ou VMX.",
+            "A referência executa até 5 milhões de instruções por caso. Se só ela atingir o limite (o recompilado "
+            "terminou), o caso é repetido com 400 milhões; se ainda assim não terminar, conta como 'sem fim só na "
+            "referência': nada foi comparado, não é divergência.",
             "Os estados iniciais são sintéticos (aleatórios com semente fixa); não reproduzem o estado do jogo em "
             "execução, então mostram equivalência do código traduzido, não que o jogo funcione.",
             "O FPSCR e os registradores vetoriais não são comparados (a referência não expõe VMX).",

@@ -159,3 +159,11 @@ def known_version(self_sha: str, elf_sha: str | None) -> dict:
         return {"known": False}
     return {"known": True, **{key: v for key, v in k.items() if key != "elf_sha256"},
             "elf_matches": elf_sha == k["elf_sha256"] if elf_sha else None}
+
+
+def known_elf(elf_sha: str) -> dict:
+    """Confere um EBOOT.ELF escolhido diretamente com os ELFs já verificados."""
+    for k in KNOWN.values():
+        if k["elf_sha256"] == elf_sha:
+            return {"known": True, "elf_matches": True, **{key: v for key, v in k.items() if key != "elf_sha256"}}
+    return {"known": False}

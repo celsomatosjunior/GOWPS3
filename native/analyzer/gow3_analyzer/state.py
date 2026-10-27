@@ -14,6 +14,8 @@ STACK_TOP = STACK_BASE + STACK_SIZE - 0x1000
 RETURN_SENTINEL = 0x0E000000
 TLS_POINTER = SCRATCH_BASE + 0x38000
 INSTRUCTION_LIMIT = 5_000_000
+# 2ª tentativa, só para os casos em que o recompilado terminou e a referência atingiu o limite
+INSTRUCTION_LIMIT_LONG = 400_000_000
 
 
 class XorShift:
