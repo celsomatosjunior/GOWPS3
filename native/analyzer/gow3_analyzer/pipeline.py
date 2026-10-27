@@ -6,7 +6,7 @@ from __future__ import annotations
 import traceback
 from pathlib import Path
 
-from . import __version__, analysis, decrypt, formats, recomp_test, report, tools
+from . import __version__, analysis, capture, decrypt, formats, recomp_test, report, tools
 
 ELF_NAMES = ("EBOOT.ELF", "EBOOT.elf", "eboot.elf", "EBOOT.BIN.elf", "EBOOT.BIN.ELF")
 
@@ -42,9 +42,39 @@ def find_sfo(exe: Path) -> dict:
     return {}
 
 
+def default_captures_dir() -> Path:
+    """Pasta fixa das capturas (ao lado do programa): análises seguintes do mesmo EBOOT.ELF as usam."""
+    return decrypt.settings_path().parent / "capturas"
+
+
+def decoder_warning(rpcs3_hint: str | None) -> str | None:
+    """O RPCS3 só para nos breakpoints com o PPU Decoder em Interpreter. Confere a configuração do
+    jogo (custom_configs) e a global; devolve um aviso se estiver em LLVM."""
+    tool = decrypt.find_rpcs3(rpcs3_hint)
+    if not tool:
+        return None
+    base = tool.parent
+    files = [base / "config" / "custom_configs" / "config_BCES00510.yml", base / "custom_configs" / "config_BCES00510.yml",
+             base / "config" / "config.yml", base / "config.yml"]
+    for f in files:
+        try:
+            for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
+                if line.strip().startswith("PPU Decoder:"):
+                    value = line.split(":", 1)[1].strip()
+                    if "llvm" in value.lower():
+                        return (f"Atenção: o PPU Decoder do RPCS3 está em '{value}' ({f.name}). Os breakpoints só funcionam "
+                                "com 'Interpreter (static)': no RPCS3, clique com o botão direito no jogo > Create Custom "
+                                "Configuration > CPU > PPU Decoder > Interpreter (static), e reinicie o jogo.")
+                    return None
+        except OSError:
+            continue
+    return None
+
+
 def run(path, out_dir, recompile: bool = True, limit: int = 40, cases: int = recomp_test.CASES_PER_FUNCTION,
         progress=print, target: str | None = None, runner: list[str] | None = None,
-        rpcs3: str | None = None, use_rpcs3: bool = True) -> dict:
+        rpcs3: str | None = None, use_rpcs3: bool = True, capture_minutes: float | None = None,
+        capture_states: int = 4, gdb_port: int = 2345, captures_dir: Path | None = None) -> dict:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     work = out / "trabalho"
@@ -106,10 +136,35 @@ def run(path, out_dir, recompile: bool = True, limit: int = 40, cases: int = rec
     if elf is not None:
         rep["analysis"] = analysis.analyse(elf, work, progress)
         progress(f"Análise: {rep['analysis']['function_count']} funções, {len(rep['analysis']['candidates'])} candidatas.")
+        cdir = Path(captures_dir) if captures_dir else default_captures_dir()
+        elf_sha = formats.sha256_file(elf)
+        if capture_minutes:
+            warn = decoder_warning(rpcs3)
+            if warn:
+                progress(warn)
+            try:
+                summary = capture.capture(elf, rep["analysis"]["candidates"][:limit], cdir, port=gdb_port,
+                                          minutes=capture_minutes, per_function=capture_states, progress=progress)
+                if warn:
+                    summary["decoder_warning"] = warn
+                progress(f"Captura: {summary['states']} estados reais de {summary['functions_captured']} funções.")
+                progress("Pode fechar o jogo no RPCS3 (e voltar o PPU Decoder para 'Recompiler (LLVM)').")
+                if summary["states"] == 0:
+                    progress("Nenhuma função parou. Confira se o PPU Decoder do RPCS3 está em 'Interpreter' e se você "
+                             "jogou durante a captura.")
+            except capture.GdbError as error:
+                rep["capture_error"] = str(error)
+                progress(f"Captura não feita: {error}")
+        captured = None
+        loaded = capture.load(cdir / capture.CAPTURE_FILE, elf_sha)
+        if loaded:
+            rep["captures"], captured = loaded[0], loaded[1]
+            progress(f"Usando {len(captured)} estados reais capturados em {rep['captures']['created']}.")
         if recompile:
             try:
                 rep["recompilation_test"] = recomp_test.run(elf, rep["analysis"], out, progress, limit=limit,
-                                                            cases_per_function=cases, target=target, runner=runner)
+                                                            cases_per_function=cases, target=target, runner=runner,
+                                                            captured=captured)
             except Exception as error:  # o relatório sai mesmo assim, com o erro registrado
                 rep["recompilation_test"] = {"status": "falhou", "error": str(error),
                                              "trace": traceback.format_exc()[-4000:]}

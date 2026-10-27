@@ -69,6 +69,11 @@ class App:
         row3.pack(fill="x", pady=4)
         self.run_btn = ttk.Button(row3, text="Analisar", command=self.start)
         self.run_btn.pack(side="left")
+        self.cap_btn = ttk.Button(row3, text="Capturar estados reais e analisar…", command=self.start_capture)
+        self.cap_btn.pack(side="left", padx=(6, 0))
+        self.cap_min = StringVar(value="5")
+        ttk.Spinbox(row3, from_=1, to=60, width=3, textvariable=self.cap_min).pack(side="left", padx=(4, 0))
+        ttk.Label(row3, text="min").pack(side="left", padx=(2, 6))
         self.open_btn = ttk.Button(row3, text="Abrir relatório", command=self.open_report, state="disabled")
         self.open_btn.pack(side="left", padx=6)
         self.folder_btn = ttk.Button(row3, text="Abrir pasta", command=self.open_folder, state="disabled")
@@ -114,11 +119,31 @@ class App:
         except OSError:
             pass
 
-    def start(self):
+    def start_capture(self):
+        if not self.path.get().strip():
+            messagebox.showwarning("GOW3 Native Analyzer", "Escolha primeiro a pasta do jogo (ou o EBOOT.BIN/EBOOT.ELF).")
+            return
+        ok = messagebox.askokcancel(
+            "Capturar estados reais",
+            "Antes de continuar:\n\n"
+            "1. No RPCS3, clique com o botão direito no God of War III > Create Custom Configuration > aba CPU > "
+            "PPU Decoder: Interpreter (static). Salve. (Só para este jogo; o jogo fica bem mais lento, é normal.)\n"
+            "2. Inicie o jogo no RPCS3 e chegue a uma parte jogável.\n"
+            "3. Clique OK aqui e continue jogando durante a captura.\n\n"
+            "O analisador primeiro analisa o executável (alguns minutos), depois se conecta ao RPCS3 "
+            "(servidor GDB, 127.0.0.1:2345), copia o estado de cada função testada quando o jogo passa por ela, "
+            "e no fim deixa o jogo continuar. Depois, feche o jogo no RPCS3 e volte o PPU Decoder para LLVM. "
+            "As capturas ficam só no seu computador.")
+        if ok:
+            self.start(capture=True)
+
+    def start(self, capture: bool = False):
+        self.capture = capture
         if not self.path.get().strip():
             messagebox.showwarning("GOW3 Native Analyzer", "Escolha primeiro o EBOOT.BIN, o EBOOT.ELF ou a pasta do jogo.")
             return
         self.run_btn.configure(state="disabled")
+        self.cap_btn.configure(state="disabled")
         self.open_btn.configure(state="disabled")
         self.folder_btn.configure(state="disabled")
         self.log.delete("1.0", "end")
@@ -127,8 +152,14 @@ class App:
 
     def work(self):
         try:
+            minutes = None
+            if getattr(self, "capture", False):
+                try:
+                    minutes = max(1.0, float(self.cap_min.get().replace(",", ".")))
+                except ValueError:
+                    minutes = 5.0
             rep = pipeline.run(self.path.get().strip(), self.out.get().strip(), recompile=self.recompile.get(),
-                               rpcs3=self.rpcs3.get().strip() or None,
+                               rpcs3=self.rpcs3.get().strip() or None, capture_minutes=minutes,
                                progress=self.say)
             self.events.put(("done", rep))
         except Exception as error:
@@ -146,6 +177,7 @@ class App:
                 elif kind == "error":
                     self.bar.stop()
                     self.run_btn.configure(state="normal")
+                    self.cap_btn.configure(state="normal")
                     self.log.insert("end", "\nERRO: " + data + "\n")
                     self.log.see("end")
                     messagebox.showerror("GOW3 Native Analyzer", data.split("\n")[0])
@@ -156,6 +188,7 @@ class App:
     def finish(self, rep: dict):
         self.bar.stop()
         self.run_btn.configure(state="normal")
+        self.cap_btn.configure(state="normal")
         self.report_path = rep["files"]["html"]
         self.open_btn.configure(state="normal")
         self.folder_btn.configure(state="normal")

@@ -129,9 +129,22 @@ def make_cases(toc: int, count: int, base_seed: int) -> list[dict]:
 
 
 def format_case(c: dict) -> str:
-    return (f"case {c['id']} seed {c['seed']:x} gpr " + " ".join(f"{v:x}" for v in c["gpr"]) +
+    line = (f"case {c['id']} seed {c['seed']:x} gpr " + " ".join(f"{v:x}" for v in c["gpr"]) +
             " fpr " + " ".join(f"{v:x}" for v in c["fpr"]) +
             f" cr {c['cr']:x} xer {c['xer']:x} ctr {c['ctr']:x} lr {c['lr']:x}")
+    if c.get("pages"):
+        line += f" pages {len(c['pages'])} " + " ".join(f"{a:x}:{d.hex()}" for a, d in sorted(c["pages"].items()))
+    return line
+
+
+def real_case(n: int, captured: dict) -> dict | None:
+    """Caso de teste a partir de um estado capturado do jogo (capture.py). Retorno vai para a
+    sentinela; XER entra zerado (o servidor GDB do RPCS3 não o informa), igual nos dois lados."""
+    pages = {int(a, 16): bytes.fromhex(d) for a, d in captured["pages"].items()}
+    if any(a <= RETURN_SENTINEL < a + 0x1000 for a in pages):
+        return None  # página do jogo coincide com a sentinela de retorno do teste
+    return {"id": f"r{n}", "seed": 0, "real": True, "gpr": list(captured["gpr"]), "fpr": list(captured["fpr"]),
+            "cr": captured["cr"], "xer": 0, "ctr": captured["ctr"], "lr": RETURN_SENTINEL, "pages": pages}
 
 
 def fnv1a(pairs) -> int:

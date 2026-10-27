@@ -47,11 +47,33 @@ contorna proteções; o RPCS3 não vem no pacote.
 - Se você já tem um EBOOT.ELF, coloque-o ao lado do EBOOT.BIN (ou escolha-o diretamente): ele é
   usado e o RPCS3 não é chamado.
 
+Estados reais do jogo (botão "Capturar estados reais e analisar…")
+------------------------------------------------------------------
+Os testes normais usam estados sintéticos (registradores e memória sorteados). Com a captura, o
+teste usa também o estado verdadeiro de cada função no momento em que o jogo a chama:
+1. No RPCS3: botão direito no God of War III > Create Custom Configuration > aba CPU >
+   PPU Decoder: "Interpreter (static)". Salve. (Só para este jogo. Ele fica bem mais lento: é
+   normal, e só é preciso durante a captura. Depois volte para "Recompiler (LLVM)".)
+2. Inicie o jogo no RPCS3 e chegue a uma parte jogável.
+3. No analisador, escolha a pasta do jogo, ajuste os minutos (padrão 5) e clique em
+   "Capturar estados reais e analisar…". Continue jogando durante a captura.
+   O analisador conecta ao servidor GDB do RPCS3 (127.0.0.1:2345, ligado por padrão), põe um
+   breakpoint na entrada de cada função testada e, a cada parada, copia os registradores e as
+   páginas de memória que a função usa. No fim, tira os breakpoints e o jogo continua.
+4. Terminada a captura, feche o jogo no RPCS3 e volte o PPU Decoder para "Recompiler (LLVM)".
+   (Depois que o analisador desconecta, o servidor GDB do RPCS3 fica ocupando um núcleo do
+   processador até o jogo ser fechado.)
+5. As capturas ficam em capturas\capturas_gow3.json.gz, ao lado do programa, e as análises
+   seguintes do mesmo EBOOT.ELF as usam sozinhas. O relatório mostra "Reais idênticos" por função.
+O arquivo de capturas contém memória do jogo em execução: não o publique.
+O RPCS3 não informa o XER e o FPSCR pelo GDB; eles entram zerados nos dois lados do teste.
+
 Linha de comando
 ----------------
   GOW3_Native_Analyzer.exe analisar "D:\jogos\BCES00510\PS3_GAME\USRDIR\EBOOT.ELF" --saida C:\relatorio
-  Opções: --sem-recompilar, --funcoes N (padrão 40), --casos N (padrão 16),
-          --rpcs3 "C:\RPCS3\rpcs3.exe" (onde está o RPCS3), --sem-rpcs3 (não gerar o EBOOT.ELF).
+  Opções: --sem-recompilar, --funcoes N (padrão 40), --casos N (padrão 64),
+          --rpcs3 "C:\RPCS3\rpcs3.exe" (onde está o RPCS3), --sem-rpcs3 (não gerar o EBOOT.ELF),
+          --capturar MIN (capturar estados reais do jogo rodando no RPCS3), --estados N (por função, padrão 4).
   Códigos de saída: 0 = ok, 3 = teste de recompilação falhou, 4 = executável cifrado e EBOOT.ELF não gerado.
 
 O que este programa NÃO faz

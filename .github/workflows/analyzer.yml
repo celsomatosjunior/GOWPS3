@@ -53,6 +53,14 @@ jobs:
       - run: pip install -q -r ps3recomp/requirements.txt
       - name: Corpus -> PowerPC -> QEMU
         run: python gow3/native/ppu_diff/run.py generate --ps3recomp ps3recomp --out bundle 2>&1 | tail -5
+      - name: Captura de estados reais pelo GDB (corpus rodando no QEMU, mesmo protocolo do RPCS3)
+        env:
+          GOW3_PS3RECOMP: ${{ github.workspace }}/ps3recomp
+        run: |
+          set -o pipefail
+          pip install -q unicorn==2.1.4
+          python gow3/native/analyzer/tests/make_ps3_test_elf.py bundle/corpus.elf bundle/meta.json bundle/ps3_test.elf
+          python gow3/native/analyzer/tests/capture_qemu.py bundle/corpus.elf bundle/ps3_test.elf bundle/captura 2>&1 | tail -8 | tee bundle/captura_qemu.txt
       - uses: actions/upload-artifact@v4
         with:
           name: corpus_ppc
@@ -60,6 +68,9 @@ jobs:
             bundle/corpus.elf
             bundle/meta.json
             bundle/ref_qemu.txt
+            bundle/ps3_test.elf
+            bundle/captura/capturas_gow3.json.gz
+            bundle/captura_qemu.txt
           if-no-files-found: error
 
   windows:
@@ -103,7 +114,7 @@ jobs:
           python gow3/native/analyzer/tests/validate_reference.py corpus/corpus.elf corpus/meta.json corpus/ref_qemu.txt out/unicorn_out.txt | tee out/validacao_referencia.txt
       - name: Entradas sintéticas (ELF no formato de EBOOT e SELF de varejo falso)
         run: |
-          python gow3/native/analyzer/tests/make_ps3_test_elf.py corpus/corpus.elf corpus/meta.json ps3_test.elf
+          cp corpus/ps3_test.elf ps3_test.elf   # o mesmo ELF usado na captura pelo GDB (job Linux)
           python gow3/native/analyzer/tests/make_fake_self.py ps3_test.elf EBOOT_varejo_sintetico.BIN
           python gow3/native/analyzer/tests/make_ps3_test_elf.py corpus/corpus.elf --todas ps3_grande.elf
       - name: Empacotar GOW3_Native_Analyzer.exe
@@ -116,7 +127,7 @@ jobs:
         run: |
           set -o pipefail
           python gow3/native/analyzer/tests/run_synthetic.py ps3_test.elf EBOOT_varejo_sintetico.BIN synth \
-            --grande ps3_grande.elf \
+            --grande ps3_grande.elf --capturas corpus/captura \
             --exe dist/GOW3_Native_Analyzer/GOW3_Native_Analyzer.exe 2>&1 | tee out/autoteste.txt
       - name: RPCS3 oficial para Windows (para testar a geração automática do EBOOT.ELF)
         id: rpcs3
@@ -153,6 +164,7 @@ jobs:
           $z = Get-Item dist\GOW3_Native_Analyzer_Windows_x64.zip -ErrorAction SilentlyContinue
           if ($z) { "ZIP: $($z.Length) bytes  sha256: $((Get-FileHash $z -Algorithm SHA256).Hash)" | Tee-Object -Append out\pacote.txt }
           Copy-Item toolchain.txt out\ -ErrorAction SilentlyContinue
+          Copy-Item corpus\captura_qemu.txt out\ -ErrorAction SilentlyContinue
           Copy-Item synth\autoteste.json out\ -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force out\relatorios | Out-Null
           foreach ($d in 'fonte','exe','self_varejo','mutacao','grande','exe_grande') {

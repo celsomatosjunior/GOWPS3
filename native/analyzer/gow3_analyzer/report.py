@@ -208,6 +208,15 @@ def write_html(report: dict, out: Path) -> Path:
     if rt and rt.get("status") == "executado":
         t = rt["totals"]
         parts.append("<h2>Teste da recompilação</h2>")
+        cap = report.get("captures")
+        if cap:
+            parts.append(f'<div class="card"><b>Estados reais do jogo</b>: {cap["states"]} estados de '
+                         f'{cap["functions_captured"]} funções, capturados em {_e(cap["created"])} pelo servidor GDB '
+                         f'({_e(cap["source"])}). Registradores e as páginas de memória que cada função usa vieram do jogo '
+                         'parado na entrada da função; XER e FPSCR não são informados pelo RPCS3 e entram zerados nos dois '
+                         'lados.</div>')
+        elif report.get("capture_error"):
+            parts.append(f'<div class="note">Captura de estados reais não feita: {_e(report["capture_error"])}</div>')
         parts.append(f'<div class=card><p>{_e(rt["method"])}</p><p class=muted>Referência: {_e(rt["reference"])} · '
                      f'executável de teste: <code>{_e(rt["test_executable"])}</code> ({_e(rt["target"])}) · '
                      f'{rt["cases_per_function"]} casos por função</p></div>')
@@ -218,6 +227,10 @@ def write_html(report: dict, out: Path) -> Path:
               ("Falharam igual nos dois", t["both_faulted_cases"]), ("Casos divergentes", t["divergent_cases"])]
         if t.get("reference_limit_cases"):
             kp.append(("Sem fim só na referência", t["reference_limit_cases"]))
+        if t.get("real_cases"):
+            kp += [("Casos com estado real do jogo", t["real_cases"]), ("Reais idênticos", t["real_identical_cases"]),
+                   ("Reais divergentes", t["real_divergent_cases"]),
+                   ("Funções com estado real idêntico", t["functions_with_real_identical"])]
         parts.append("<div class=grid>" + "".join(f'<div class="card kpi"><b>{v}</b><span class=muted>{_e(k)}</span></div>'
                                                   for k, v in kp) + "</div>")
         cls = {"idêntica": "ok", "divergente": "blocked", "inconclusiva": "partial", "tradução incompleta": "blocked"}
@@ -228,8 +241,9 @@ def write_html(report: dict, out: Path) -> Path:
                 div += f"caso {d['case']}: " + "; ".join(
                     f"{_e(x['campo'])} {_e(x.get('recompilado', ''))} ≠ {_e(x.get('referência', ''))}" for x in d["diffs"][:3]) + "<br>"
             rows.append((f"<code>{_e(f['func'])}</code>", f'<span class="badge {cls.get(f["status"], "todo")}">{_e(f["status"])}</span>',
-                         f"{f['identical']}/{f['cases']}", f["both_faulted"] + f.get("reference_limit", 0), f["divergent"], _e(f["why"]), div))
-        parts.append("<div class=card>" + _table(["Função", "Resultado", "Idênticos", "Falha igual / sem fim", "Divergentes",
+                         f"{f['identical']}/{f['cases']}", f"{f.get('real_identical', 0)}/{f.get('real_cases', 0)}",
+                         f["both_faulted"] + f.get("reference_limit", 0), f["divergent"], _e(f["why"]), div))
+        parts.append("<div class=card>" + _table(["Função", "Resultado", "Idênticos", "Reais idênticos", "Falha igual / sem fim", "Divergentes",
                                                   "Perfil", "Divergências (amostra)"], rows) + "</div>")
         parts.append("<div class=card><b>Limitações</b><ul>" + "".join(f"<li>{_e(x)}</li>" for x in rt["limitations"]) +
                      "</ul><p class=muted>Arquivos para repetir a comparação: " +

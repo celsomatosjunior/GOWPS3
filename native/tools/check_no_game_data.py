@@ -16,8 +16,9 @@ from pathlib import Path
 EXT_PROIBIDAS = {".self", ".sprx", ".prx", ".psarc", ".pkg", ".edat", ".sdat", ".pam", ".pup",
                  ".rap", ".ird", ".iso", ".elf", ".bin", ".sfo", ".trp", ".pak", ".wad", ".at3"}
 NOMES_PROIBIDOS = {"eboot.bin", "eboot.elf", "param.sfo", "ppu_recomp.c", "ppu_recomp.h", "ppu_main.c",
-                   "relatorio_gow3.json", "relatorio_gow3.html", "analise.log", "rpcs3_conversao.log"}
-PASTAS_PROIBIDAS = {"lifted", "ps3_game", "usrdir", "dev_hdd0", "dev_flash"}
+                   "relatorio_gow3.json", "relatorio_gow3.html", "analise.log", "rpcs3_conversao.log",
+                   "capturas_gow3.json.gz", "casos.txt", "rpcs3_saida.txt"}
+PASTAS_PROIBIDAS = {"lifted", "ps3_game", "usrdir", "dev_hdd0", "dev_flash", "capturas", "recomp_test", "trabalho"}
 LIMITE = 8 * 1024 * 1024  # nenhum arquivo do projeto chega perto disso
 
 

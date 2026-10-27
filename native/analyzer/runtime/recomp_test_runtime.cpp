@@ -305,7 +305,7 @@ std::vector<std::string> split(const std::string& s)
 
 uint64_t hex(const std::string& s) { return std::strtoull(s.c_str(), nullptr, 16); }
 
-// "run <addr> case <id> seed <s> gpr <32> fpr <32> cr <v> xer <v> ctr <v> lr <v>"
+// "run <addr> case <id> seed <s> gpr <32> fpr <32> cr <v> xer <v> ctr <v> lr <v> [pages <n> <addr:hex>...]"
 std::string run_line(const std::vector<std::string>& t)
 {
 	if (t.size() < 80 || t[0] != "run" || t[2] != "case" || t[6] != "gpr" || t[39] != "fpr")
@@ -331,6 +331,21 @@ std::string run_line(const std::vector<std::string>& t)
 	ctx.ctr = hex(t[77]);
 	ctx.lr = hex(t[79]);
 	reset_memory(seed);
+	// Caso capturado do jogo: "pages <n> <endereço>:<4096 bytes em hex> ..." sobrepostas à memória
+	if (t.size() > 81 && t[80] == "pages") {
+		const size_t n = static_cast<size_t>(std::strtoull(t[81].c_str(), nullptr, 10));
+		for (size_t k = 0; k < n && 82 + k < t.size(); k++) {
+			const std::string& tok = t[82 + k];
+			const size_t colon = tok.find(':');
+			if (colon == std::string::npos || tok.size() - colon - 1 != 2 * kPage)
+				return std::string(head) + "erro pagina-invalida";
+			const uint64_t page = hex(tok.substr(0, colon));
+			Page p(new uint8_t[kPage]);
+			for (uint64_t i = 0; i < kPage; i++)
+				p[i] = static_cast<uint8_t>(std::strtoul(tok.substr(colon + 1 + 2 * i, 2).c_str(), nullptr, 16));
+			overlay[page / kPage] = std::move(p);
+		}
+	}
 	char buf[4096];
 	try {
 		it->second(&ctx);

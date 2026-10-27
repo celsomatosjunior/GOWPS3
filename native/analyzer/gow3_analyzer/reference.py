@@ -163,6 +163,36 @@ class Reference:
 
     def run(self, code_addr: int, case: dict, code_end: int | None = None, reset: bool = True,
             limit: int | None = None) -> dict:
+        """Como _run; um caso capturado do jogo ("pages": {endereço: 4096 bytes}) tem essas páginas
+        sobrepostas à memória só durante a execução (mapeadas se preciso e desfeitas depois)."""
+        pages = case.get("pages")
+        if not pages:
+            return self._run(code_addr, case, code_end, reset, limit)
+        if self.mu is None:
+            self._create()
+            self.seed = None
+            self.bss_mode = 0
+            self._reset_memory(case.get("seed", 0))
+        elif reset:
+            self._reset_memory(case["seed"])
+        mapped = [(b, e) for b, e, _p in self.mu.mem_regions()]
+        temp = []
+        for page, data in pages.items():
+            if not any(b <= page and page + 0xFFF <= e for b, e in mapped):
+                self.mu.mem_map(page, 0x1000)
+                temp.append(page)
+            self.mu.mem_write(page, data)
+            if page not in temp:
+                self.dirty.update(range(page, page + 0x1000))  # volta ao original na próxima restauração
+        try:
+            return self._run(code_addr, case, code_end, reset=False, limit=limit)
+        finally:
+            for page in temp:
+                self.mu.mem_unmap(page, 0x1000)
+                self.dirty.difference_update(range(page, page + 0x1000))
+
+    def _run(self, code_addr: int, case: dict, code_end: int | None = None, reset: bool = True,
+             limit: int | None = None) -> dict:
         """Executa a função a partir do estado `case`. Com reset=False a memória continua da chamada
         anterior, como num processo único (usado na validação contra o QEMU)."""
         if self.mu is None:

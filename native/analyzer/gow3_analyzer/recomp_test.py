@@ -31,7 +31,7 @@ from . import tools
 from .analysis import ElfImage
 from .reference import Reference
 
-CASES_PER_FUNCTION = 16
+CASES_PER_FUNCTION = 64
 RUN_TIMEOUT = 60  # segundos por lote; um caso que trava é marcado e o lote continua do seguinte
 REGISTER_FIELDS = [f"r{i}" for i in range(32)] + [f"f{i}" for i in range(32)] + ["cr", "xer", "ctr", "lr", "mem"]
 
@@ -236,7 +236,7 @@ def reference_line(addr: int, case: dict, outcome: dict) -> str:
 
 def run(elf: Path, analysis: dict, work: Path, progress=lambda m: None, limit: int = 40,
         cases_per_function: int = CASES_PER_FUNCTION, target: str | None = None, runner: list[str] | None = None,
-        exe_name: str = "GOW3_Native_RecompTest.exe", mutate=None) -> dict:
+        exe_name: str = "GOW3_Native_RecompTest.exe", mutate=None, captured: list[dict] | None = None) -> dict:
     """Executa todo o teste e devolve a seção 'recompilation_test' do relatório."""
     out = work / "recomp_test"
     if out.exists():
@@ -270,6 +270,11 @@ def run(elf: Path, analysis: dict, work: Path, progress=lambda m: None, limit: i
         for case in S.make_cases(ctoc, cases_per_function, base_seed=addr):
             cases_lines.append(f"run {addr:08X} " + S.format_case(case))
             plan.append((c, addr, case))
+        for n, cap in enumerate(x for x in (captured or []) if x.get("addr") == addr):
+            case = S.real_case(n, cap)
+            if case is not None:
+                cases_lines.append(f"run {addr:08X} " + S.format_case(case))
+                plan.append((c, addr, case))
     cases_file = out / "casos.txt"
     cases_file.write_text("\n".join(cases_lines) + "\n")
 
@@ -302,9 +307,15 @@ def run(elf: Path, analysis: dict, work: Path, progress=lambda m: None, limit: i
     for (c, addr, case), rl, fl in zip(plan, rec_lines, ref_lines):
         f = per_func.setdefault(addr, {"func": c["func"], "start": c["start"], "end": c["end"], "insns": c["insns"],
                                        "why": c["why"], "cases": 0, "identical": 0, "both_faulted": 0, "undefined_bits_only": 0, "reference_limit": 0,
+                                       "real_cases": 0, "real_identical": 0, "real_both_faulted": 0, "real_divergent": 0,
                                        "divergent": 0, "divergences": []})
         f["cases"] += 1
         verdict, diffs = compare(parse_result(rl), parse_result(fl), addr in fctiw_funcs)
+        if case.get("real"):
+            f["real_cases"] += 1
+            key = ("real_identical" if verdict.startswith("idêntico") else "real_divergent" if verdict == "divergente"
+                   else "real_both_faulted")
+            f[key] += 1
         if verdict.startswith("idêntico"):
             f["identical"] += 1
             if verdict != "idêntico":
@@ -345,6 +356,10 @@ def run(elf: Path, analysis: dict, work: Path, progress=lambda m: None, limit: i
         "divergent_cases": sum(f["divergent"] for f in functions),
         "cases_differing_only_in_isa_undefined_bits": sum(f["undefined_bits_only"] for f in functions),
         "reference_limit_cases": sum(f["reference_limit"] for f in functions),
+        "real_cases": sum(f["real_cases"] for f in functions),
+        "real_identical_cases": sum(f["real_identical"] for f in functions),
+        "real_divergent_cases": sum(f["real_divergent"] for f in functions),
+        "functions_with_real_identical": sum(1 for f in functions if f["real_identical"]),
         "reference_retried_cases": len(retry),
     }
     return {
