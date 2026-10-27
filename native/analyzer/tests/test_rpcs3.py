@@ -86,7 +86,8 @@ def main():
         # o RPCS3 aberto pelo .exe empacotado tem de rodar de verdade: sem herdar as DLLs do pacote
         # (vcruntime140.dll do PyInstaller derruba o RPCS3 com uma janela de erro que trava até o limite)
         err = c.get("error", "")
-        check("não mostra a conversão começando" not in err and elapsed < 200,
+        check("não mostra a conversão começando" not in err and "não chegou a escrever o log" not in err
+              and elapsed < 120,
               f".exe: o RPCS3 iniciou a conversão de verdade ({elapsed:.0f} s; {err[:160]})", failures)
 
     (out / "teste_rpcs3.json").write_text(json.dumps(summary, indent=1, ensure_ascii=False), encoding="utf-8")

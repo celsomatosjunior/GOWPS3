@@ -15,6 +15,7 @@ import shutil
 import string
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from . import formats
@@ -153,6 +154,67 @@ class _NoBundleDllDirectory:
         return False
 
 
+FAIL_MARKS = ("Failed to load SELF", "Failed to decrypt", "Failed to create", "Failed to load")
+
+
+def _run_rpcs3(cmd, rpcs3: Path, work: Path, out_elf: Path, log_path: Path, t_start: float):
+    """Roda o RPCS3 e o encerra quando a conversão termina, falha ou ele fica pedindo a KLIC.
+
+    Com --decrypt o RPCS3 se liga ao console (AttachConsole/AllocConsole) e reabre o teclado (CONIN$):
+    quando a conversão falha ele pede a KLIC e espera digitação, ignorando a entrada que lhe damos.
+    Por isso o processo é acompanhado pelo arquivo gerado e pelo RPCS3.log, não pela saída."""
+    out_file = work / "rpcs3_saida.txt"
+    with open(out_file, "wb") as fo, _NoBundleDllDirectory():
+        proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=fo, stderr=subprocess.STDOUT,
+                                cwd=str(rpcs3.parent), env=clean_child_env(),
+                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    ended = "terminou sozinho"
+    fail_seen = None
+    elf_seen = None
+    while proc.poll() is None:
+        time.sleep(0.5)
+        now = time.time()
+        if out_elf.is_file():
+            elf_seen = elf_seen or now
+            if now - elf_seen > 30:  # o ELF já foi gravado; o RPCS3 só não fechou
+                ended = "encerrado depois de gravar o ELF"
+                break
+        if fail_seen is None:
+            try:
+                if log_path.stat().st_mtime >= t_start - 2:
+                    txt = log_path.read_text(encoding="utf-8", errors="replace")
+                    if any(m in txt for m in FAIL_MARKS):
+                        fail_seen = now
+            except OSError:
+                pass
+        elif now - fail_seen > 5:  # falhou e está esperando a KLIC no console
+            ended = "encerrado: a conversão falhou e o RPCS3 ficou esperando uma KLIC"
+            break
+        # parado: nem ELF nem log novo há 25 s (a conversão de um EBOOT leva poucos segundos)
+        try:
+            last = max(log_path.stat().st_mtime, t_start)
+        except OSError:
+            last = t_start
+        if elf_seen is None and now - t_start > 30 and now - last > 25:
+            ended = "encerrado: o RPCS3 ficou parado sem gerar o ELF (provavelmente esperando uma KLIC ou uma janela)"
+            break
+        if now - t_start > TIMEOUT:
+            ended = f"encerrado por tempo ({TIMEOUT} s)"
+            break
+    if proc.poll() is None:
+        proc.kill()
+        try:
+            proc.wait(10)
+        except subprocess.TimeoutExpired:
+            pass
+    try:
+        text = out_file.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        text = ""
+    log = f"$ {' '.join(cmd)}\n({ended}; código {proc.returncode}; {time.time() - t_start:.0f} s)\n{text}"
+    return log, ended
+
+
 def decrypt_with_rpcs3(self_path: Path, rpcs3: Path, work: Path, progress=lambda m: None) -> Path:
     """Copia o SELF para a pasta de trabalho, pede ao RPCS3 para convertê-lo e devolve o ELF."""
     # caminhos absolutos: o RPCS3 roda com a pasta dele como pasta de trabalho
@@ -166,22 +228,21 @@ def decrypt_with_rpcs3(self_path: Path, rpcs3: Path, work: Path, progress=lambda
     out_elf = copy.with_suffix(".elf")
     progress(f"Gerando o EBOOT.ELF com o seu RPCS3 ({rpcs3})...")
     cmd = [str(rpcs3), "--no-gui", "--decrypt", str(copy)]
+    log_path = rpcs3.parent / "log" / "RPCS3.log"
+    t_start = time.time()
     try:
-        with _NoBundleDllDirectory():
-            proc = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
-                                  errors="replace", timeout=TIMEOUT, cwd=str(rpcs3.parent), env=clean_child_env(),
-                                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        log = f"$ {' '.join(cmd)}\n(código {proc.returncode})\n{proc.stdout}\n{proc.stderr}"
-    except subprocess.TimeoutExpired:
-        log = f"$ {' '.join(cmd)}\n(tempo esgotado: {TIMEOUT} s)"
+        log, ended = _run_rpcs3(cmd, rpcs3, work, out_elf, log_path, t_start)
     except OSError as error:
         raise DecryptError(f"não foi possível executar o RPCS3 ({rpcs3}): {error}") from error
-    rlog = rpcs3_log(rpcs3)
+    rlog = rpcs3_log(rpcs3, since=t_start)
     log += "\n--- trechos do log do próprio RPCS3 (" + str(rpcs3.parent / "log" / "RPCS3.log") + ") ---\n"
     log += "\n".join(rlog["lines"]) if rlog["lines"] else "(log do RPCS3 não encontrado ou sem linhas relevantes)"
     (work / "rpcs3_conversao.log").write_text(log, encoding="utf-8")
     if not out_elf.is_file() or out_elf.stat().st_size < 64:
         hint = ""
+        if not rlog["fresh"]:
+            hint += (" O RPCS3 não chegou a escrever o log dele nesta tentativa: ele fechou logo ao abrir ou mostrou "
+                     "uma janela de erro. Abra o RPCS3 normalmente uma vez para ver se ele inicia.")
         if rlog["version"]:
             hint += f" Versão do RPCS3: {rlog['version']}."
         if rlog["lines"] and not rlog["started"]:
@@ -189,7 +250,7 @@ def decrypt_with_rpcs3(self_path: Path, rpcs3: Path, work: Path, progress=lambda
                      "(a opção de linha de comando --decrypt só existe nas versões recentes).")
         if rlog["reason"]:
             hint += f" O RPCS3 informou: {rlog['reason']}"
-        if "KLIC" in log:
+        if "Enter KLIC" in log.split("\n", 2)[-1]:  # o próprio RPCS3 pediu a KLIC na saída
             hint += " O executável pede uma licença digital (KLIC): é de um jogo da PSN, não do disco."
         raise DecryptError("o RPCS3 não gerou o EBOOT.ELF." + hint + " Veja rpcs3_conversao.log. Confira se o RPCS3 "
                            "abre normalmente e se o firmware do PS3 está instalado nele (File > Install Firmware).")
@@ -205,15 +266,18 @@ def decrypt_with_rpcs3(self_path: Path, rpcs3: Path, work: Path, progress=lambda
 LOG_KEYS = ("DEC:", "SELF:", "Decrypt", "decrypt", "KLIC", "unself", "Failed", "failed")
 
 
-def rpcs3_log(rpcs3: Path) -> dict:
+def rpcs3_log(rpcs3: Path, since: float | None = None) -> dict:
     """Linhas relevantes do RPCS3.log (o RPCS3 reescreve o log a cada execução, então é a da conversão).
     A saída de texto do `--decrypt` vai para o console do Windows e não chega ao analisador."""
-    out = {"lines": [], "version": None, "started": False, "reason": None}
+    out = {"lines": [], "version": None, "started": False, "reason": None, "fresh": False}
     p = rpcs3.parent / "log" / "RPCS3.log"
     try:
+        if since is not None and p.stat().st_mtime < since - 2:
+            return out  # log antigo: o RPCS3 não escreveu nada nesta tentativa
         text = p.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return out
+    out["fresh"] = True
     for line in text.splitlines():
         if out["version"] is None and "RPCS3 v" in line:
             i = line.index("RPCS3 v")
