@@ -137,11 +137,21 @@ def decrypt_with_rpcs3(self_path: Path, rpcs3: Path, work: Path, progress=lambda
         log = f"$ {' '.join(cmd)}\n(tempo esgotado: {TIMEOUT} s)"
     except OSError as error:
         raise DecryptError(f"não foi possível executar o RPCS3 ({rpcs3}): {error}") from error
+    rlog = rpcs3_log(rpcs3)
+    log += "\n--- trechos do log do próprio RPCS3 (" + str(rpcs3.parent / "log" / "RPCS3.log") + ") ---\n"
+    log += "\n".join(rlog["lines"]) if rlog["lines"] else "(log do RPCS3 não encontrado ou sem linhas relevantes)"
     (work / "rpcs3_conversao.log").write_text(log, encoding="utf-8")
     if not out_elf.is_file() or out_elf.stat().st_size < 64:
         hint = ""
+        if rlog["version"]:
+            hint += f" Versão do RPCS3: {rlog['version']}."
+        if rlog["lines"] and not rlog["started"]:
+            hint += (" O log do RPCS3 não mostra a conversão começando; se o seu RPCS3 for antigo, atualize-o "
+                     "(a opção de linha de comando --decrypt só existe nas versões recentes).")
+        if rlog["reason"]:
+            hint += f" O RPCS3 informou: {rlog['reason']}"
         if "KLIC" in log:
-            hint = " O executável pede uma licença digital (KLIC): é de um jogo da PSN, não do disco."
+            hint += " O executável pede uma licença digital (KLIC): é de um jogo da PSN, não do disco."
         raise DecryptError("o RPCS3 não gerou o EBOOT.ELF." + hint + " Veja rpcs3_conversao.log. Confira se o RPCS3 "
                            "abre normalmente e se o firmware do PS3 está instalado nele (File > Install Firmware).")
     head = out_elf.read_bytes()[:64]
@@ -151,6 +161,35 @@ def decrypt_with_rpcs3(self_path: Path, rpcs3: Path, work: Path, progress=lambda
                            f"início {head[:4].hex()}); veja rpcs3_conversao.log")
     copy.unlink()  # a cópia do SELF não é mais necessária
     return out_elf
+
+
+LOG_KEYS = ("DEC:", "SELF:", "Decrypt", "decrypt", "KLIC", "unself", "Failed", "failed")
+
+
+def rpcs3_log(rpcs3: Path) -> dict:
+    """Linhas relevantes do RPCS3.log (o RPCS3 reescreve o log a cada execução, então é a da conversão).
+    A saída de texto do `--decrypt` vai para o console do Windows e não chega ao analisador."""
+    out = {"lines": [], "version": None, "started": False, "reason": None}
+    p = rpcs3.parent / "log" / "RPCS3.log"
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return out
+    for line in text.splitlines():
+        if out["version"] is None and "RPCS3 v" in line:
+            i = line.index("RPCS3 v")
+            out["version"] = line[i:i + 60].split(" | ")[0].strip()
+        if any(k in line for k in LOG_KEYS) or line.startswith(("·E", "·F", "E ", "F ")):
+            out["lines"].append(line[:300])
+        if "Decrypting binaries" in line:
+            out["started"] = True
+        if out["reason"] is None and ("Failed to" in line or "failed to" in line):
+            for tag in ("SELF:", "DEC:"):
+                if tag in line:
+                    out["reason"] = line[line.index(tag):].strip()[:200]
+                    break
+    out["lines"] = out["lines"][-80:]
+    return out
 
 
 def known_version(self_sha: str, elf_sha: str | None) -> dict:
