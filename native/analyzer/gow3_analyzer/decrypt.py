@@ -229,6 +229,7 @@ def decrypt_with_rpcs3(self_path: Path, rpcs3: Path, work: Path, progress=lambda
     progress(f"Gerando o EBOOT.ELF com o seu RPCS3 ({rpcs3})...")
     cmd = [str(rpcs3), "--no-gui", "--decrypt", str(copy)]
     log_path = rpcs3.parent / "log" / "RPCS3.log"
+    running_before = rpcs3_running()
     t_start = time.time()
     try:
         log, ended = _run_rpcs3(cmd, rpcs3, work, out_elf, log_path, t_start)
@@ -241,8 +242,13 @@ def decrypt_with_rpcs3(self_path: Path, rpcs3: Path, work: Path, progress=lambda
     if not out_elf.is_file() or out_elf.stat().st_size < 64:
         hint = ""
         if not rlog["fresh"]:
-            hint += (" O RPCS3 não chegou a escrever o log dele nesta tentativa: ele fechou logo ao abrir ou mostrou "
-                     "uma janela de erro. Abra o RPCS3 normalmente uma vez para ver se ele inicia.")
+            if running_before:
+                hint += (" O RPCS3 já estava aberto: a conversão precisa dele fechado. Feche o RPCS3 e rode a análise "
+                         "uma vez; o EBOOT.ELF gerado fica guardado e as execuções seguintes (inclusive a captura, com "
+                         "o jogo aberto) não precisam mais converter.")
+            else:
+                hint += (" O RPCS3 não chegou a escrever o log dele nesta tentativa: ele fechou logo ao abrir ou "
+                         "mostrou uma janela de erro. Abra o RPCS3 normalmente uma vez para ver se ele inicia.")
         if rlog["version"]:
             hint += f" Versão do RPCS3: {rlog['version']}."
         if rlog["lines"] and not rlog["started"]:
@@ -309,3 +315,38 @@ def known_elf(elf_sha: str) -> dict:
         if k["elf_sha256"] == elf_sha:
             return {"known": True, "elf_matches": True, **{key: v for key, v in k.items() if key != "elf_sha256"}}
     return {"known": False}
+
+
+def cache_dir() -> Path:
+    return settings_path().parent / "cache"
+
+
+def cached_elf(self_sha: str) -> Path | None:
+    """EBOOT.ELF gerado antes pelo RPCS3 a partir do EBOOT.BIN com este SHA-256, se ainda válido."""
+    p = cache_dir() / f"EBOOT_{self_sha[:16]}.elf"
+    if not p.is_file():
+        return None
+    k = KNOWN.get(self_sha)
+    if k and formats.sha256_file(p) != k["elf_sha256"]:
+        return None  # cópia corrompida: gera de novo
+    hdr = formats.elf_header(p.read_bytes()[:64])
+    return p if hdr and hdr.get("machine_id") == 21 else None
+
+
+def store_elf(self_sha: str, elf: Path) -> None:
+    try:
+        cache_dir().mkdir(parents=True, exist_ok=True)
+        shutil.copy2(elf, cache_dir() / f"EBOOT_{self_sha[:16]}.elf")
+    except OSError:
+        pass
+
+
+def rpcs3_running() -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq rpcs3.exe", "/NH"], capture_output=True, text=True,
+                             timeout=15, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+        return "rpcs3.exe" in out.lower()
+    except (OSError, subprocess.SubprocessError):
+        return False

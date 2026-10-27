@@ -104,7 +104,18 @@ def run(path, out_dir, recompile: bool = True, limit: int = 40, cases: int = rec
         tool = decrypt.find_rpcs3(rpcs3)
         conv = {"method": "rpcs3 --decrypt", "rpcs3": str(tool) if tool else None}
         rep["input"]["conversion"] = conv
-        if tool is None:
+        cached = decrypt.cached_elf(ident["sha256"])
+        if cached is not None:
+            # EBOOT.ELF já gerado antes pelo RPCS3 deste usuário (mesmo EBOOT.BIN, SHA conferido):
+            # não precisa chamar o RPCS3 de novo (ele pode estar aberto rodando o jogo, para a captura)
+            elf_sha = formats.sha256_file(cached)
+            conv.update(method="EBOOT.ELF já gerado antes pelo seu RPCS3 (cache)", status="ok", elf=str(cached),
+                        elf_sha256=elf_sha, version_check=decrypt.known_version(ident["sha256"], elf_sha))
+            elf = cached
+            rep["input"]["ready"] = True
+            rep["input"]["status"] = "EBOOT.ELF reaproveitado (gerado antes pelo seu RPCS3): pronto para análise."
+            progress(rep["input"]["status"])
+        elif tool is None:
             conv["status"] = "RPCS3 não encontrado"
             rep["input"]["status"] = ("SELF de varejo cifrado. Para gerar o EBOOT.ELF automaticamente, indique o rpcs3.exe "
                                       "instalado no seu computador (botão RPCS3 na janela, ou --rpcs3 na linha de comando). "
@@ -115,6 +126,7 @@ def run(path, out_dir, recompile: bool = True, limit: int = 40, cases: int = rec
             try:
                 elf = decrypt.decrypt_with_rpcs3(exe, tool, work, progress)
                 decrypt.save_settings({"rpcs3": str(tool)})
+                decrypt.store_elf(ident["sha256"], elf)
                 elf_sha = formats.sha256_file(elf)
                 conv.update(status="ok", elf=str(elf), elf_sha256=elf_sha)
                 conv["version_check"] = decrypt.known_version(ident["sha256"], elf_sha)

@@ -44,6 +44,9 @@ contorna proteções; o RPCS3 não vem no pacote.
   (trabalho\rpcs3_conversao). O registro da conversão fica em trabalho\rpcs3_conversao.log.
 - God of War III BCES00510 versão 01.00: o relatório confere o SHA-256 do EBOOT.BIN e do EBOOT.ELF
   gerado com os valores já verificados e diz se batem.
+- O EBOOT.ELF gerado fica guardado na pasta "cache" ao lado do programa; as análises seguintes o
+  reaproveitam sem chamar o RPCS3. A conversão precisa do RPCS3 fechado: rode a primeira análise
+  com ele fechado (depois disso, a captura com o jogo aberto funciona).
 - Se você já tem um EBOOT.ELF, coloque-o ao lado do EBOOT.BIN (ou escolha-o diretamente): ele é
   usado e o RPCS3 não é chamado.
 
