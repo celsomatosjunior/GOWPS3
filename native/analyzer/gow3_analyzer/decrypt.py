@@ -115,6 +115,44 @@ def find_rpcs3(hint: str | os.PathLike | None = None) -> Path | None:
     return None
 
 
+def clean_child_env() -> dict:
+    """Ambiente para abrir um programa externo (o RPCS3) sem herdar nada do pacote do analisador.
+
+    O executável empacotado (PyInstaller) põe a pasta _internal no PATH e no caminho de DLLs; um filho
+    que herde isso carrega o VCRUNTIME140.dll do analisador em vez do instalado no Windows, e o RPCS3
+    para com "vcruntime140.dll was incorrectly installed"."""
+    env = dict(os.environ)
+    bundle = getattr(sys, "_MEIPASS", None)
+    if bundle:
+        b = os.path.normcase(os.path.abspath(bundle))
+        parts = [p for p in env.get("PATH", "").split(os.pathsep)
+                 if p and not os.path.normcase(os.path.abspath(p)).startswith(b)]
+        env["PATH"] = os.pathsep.join(parts)
+    for key in list(env):
+        if key.startswith(("_MEI", "_PYI", "PYI_")) or key in ("PYTHONHOME", "PYTHONPATH", "TCL_LIBRARY", "TK_LIBRARY",
+                                                            "SSL_CERT_FILE", "SSL_CERT_DIR"):
+            env.pop(key, None)
+    return env
+
+
+class _NoBundleDllDirectory:
+    """No Windows, desfaz por um momento o SetDllDirectory(_internal) do carregador do PyInstaller, que
+    os processos filhos herdam (documentado pelo PyInstaller), e o restaura depois."""
+
+    def __enter__(self):
+        self.k32 = None
+        if os.name == "nt" and getattr(sys, "frozen", False):
+            import ctypes
+            self.k32 = ctypes.windll.kernel32
+            self.k32.SetDllDirectoryW(None)
+        return self
+
+    def __exit__(self, *exc):
+        if self.k32 is not None:
+            self.k32.SetDllDirectoryW(getattr(sys, "_MEIPASS", None))
+        return False
+
+
 def decrypt_with_rpcs3(self_path: Path, rpcs3: Path, work: Path, progress=lambda m: None) -> Path:
     """Copia o SELF para a pasta de trabalho, pede ao RPCS3 para convertê-lo e devolve o ELF."""
     # caminhos absolutos: o RPCS3 roda com a pasta dele como pasta de trabalho
@@ -129,9 +167,10 @@ def decrypt_with_rpcs3(self_path: Path, rpcs3: Path, work: Path, progress=lambda
     progress(f"Gerando o EBOOT.ELF com o seu RPCS3 ({rpcs3})...")
     cmd = [str(rpcs3), "--no-gui", "--decrypt", str(copy)]
     try:
-        proc = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", timeout=TIMEOUT, cwd=str(rpcs3.parent),
-                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        with _NoBundleDllDirectory():
+            proc = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
+                                  errors="replace", timeout=TIMEOUT, cwd=str(rpcs3.parent), env=clean_child_env(),
+                                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         log = f"$ {' '.join(cmd)}\n(código {proc.returncode})\n{proc.stdout}\n{proc.stderr}"
     except subprocess.TimeoutExpired:
         log = f"$ {' '.join(cmd)}\n(tempo esgotado: {TIMEOUT} s)"

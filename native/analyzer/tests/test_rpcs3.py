@@ -72,14 +72,22 @@ def main():
           f"SELF de varejo sintético: conversão recusada e explicada ({conv.get('status')})", failures)
 
     if args.exe:
+        import time
+        t0 = time.time()
         proc = subprocess.run([args.exe, "analisar", args.fake_self, "--saida", str(out / "exe_varejo"),
                                "--rpcs3", args.rpcs3], capture_output=True, text=True, timeout=900)
+        elapsed = time.time() - t0
         j = json.loads((out / "exe_varejo" / "relatorio_gow3.json").read_text(encoding="utf-8"))
         c = j["input"].get("conversion") or {}
         summary["exe_retail_fake"] = {"returncode": proc.returncode, "conversion": c}
         check(proc.returncode == 4 and c.get("status") == "falhou",
               f".exe com --rpcs3 e SELF de varejo sintético: código {proc.returncode}, conversão {c.get('status')}",
               failures)
+        # o RPCS3 aberto pelo .exe empacotado tem de rodar de verdade: sem herdar as DLLs do pacote
+        # (vcruntime140.dll do PyInstaller derruba o RPCS3 com uma janela de erro que trava até o limite)
+        err = c.get("error", "")
+        check("não mostra a conversão começando" not in err and elapsed < 200,
+              f".exe: o RPCS3 iniciou a conversão de verdade ({elapsed:.0f} s; {err[:160]})", failures)
 
     (out / "teste_rpcs3.json").write_text(json.dumps(summary, indent=1, ensure_ascii=False), encoding="utf-8")
     print("\nTESTE RPCS3: " + ("tudo certo" if not failures else f"{len(failures)} falha(s)"))
