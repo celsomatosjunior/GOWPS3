@@ -17,11 +17,13 @@ from __future__ import annotations
 import math
 import struct
 
-from unicorn import UC_ARCH_PPC, UC_HOOK_CODE, UC_HOOK_INTR, UC_HOOK_MEM_WRITE, UC_MODE_BIG_ENDIAN, UC_MODE_PPC64, Uc, UcError
+from unicorn import (UC_ARCH_PPC, UC_HOOK_CODE, UC_HOOK_INTR, UC_HOOK_MEM_UNMAPPED, UC_HOOK_MEM_WRITE,
+                     UC_MODE_BIG_ENDIAN, UC_MODE_PPC64, Uc, UcError)
 from unicorn.unicorn_const import UC_TLB_VIRTUAL
 from unicorn import ppc_const as P
 
 from . import state as S
+from .guestmem import GuestMemory
 
 
 MSR_FP = 1 << 13
@@ -63,6 +65,7 @@ class Reference:
     def _create(self):
         mu = Uc(UC_ARCH_PPC, UC_MODE_PPC64 | UC_MODE_BIG_ENDIAN)
         mu.ctl_set_tlb_mode(UC_TLB_VIRTUAL)
+        gm = self.gm = GuestMemory(mu)  # endereços efetivos de 32 bits (ver guestmem.py)
         mapped = []
         for seg in self.image.loads:
             lo = seg["vaddr"] & ~0xFFF
@@ -72,27 +75,30 @@ class Reference:
                 if lo < b and hi > a:
                     lo = max(lo, b)
             if hi > lo:
-                mu.mem_map(lo, hi - lo)
+                gm.map(lo, hi - lo)
                 mapped.append((lo, hi))
             if seg["filesz"]:
                 mu.mem_write(seg["vaddr"], self.image.data[seg["offset"]:seg["offset"] + seg["filesz"]])
-        mu.mem_map(S.STACK_BASE, S.STACK_SIZE)
-        mu.mem_map(S.SCRATCH_BASE, S.SCRATCH_SIZE)
-        mu.mem_map(S.RETURN_SENTINEL, 0x1000)
+        gm.map(S.STACK_BASE, S.STACK_SIZE)
+        gm.map(S.SCRATCH_BASE, S.SCRATCH_SIZE)
+        gm.map(S.RETURN_SENTINEL, 0x1000)
         # sentinela: nop; mfxer r3 (leitura do XER completo); mtxer r3 (preparo do XER); nop
         mu.mem_write(S.RETURN_SENTINEL, bytes.fromhex("60000000" "7c6102a6" "7c6103a6" "60000000"))
         # Os callbacks ficam guardados no objeto: vivem tanto quanto a máquina.
         self._on_write_cb = self._on_write
         self._on_intr_cb = self._on_intr
         self._on_fcti_cb = self._on_fcti
+        self._on_unmapped_cb = lambda uc, access, address, size, value, data: address > 0xFFFFFFFF and gm.alias(address)
         mu.hook_add(UC_HOOK_MEM_WRITE, self._on_write_cb)
+        mu.hook_add(UC_HOOK_MEM_UNMAPPED, self._on_unmapped_cb)
         mu.hook_add(UC_HOOK_INTR, self._on_intr_cb)
         self.mu = mu
 
     def _on_write(self, uc, access, address, size, value, data):
         for k in range(size):
-            self.written.add(address + k)
-            self.dirty.add(address + k)
+            a = (address + k) & 0xFFFFFFFF  # espelhos acima de 4 GB são a mesma memória
+            self.written.add(a)
+            self.dirty.add(a)
 
     def _on_intr(self, uc, intno, data):
         # Qualquer exceção da CPU (instrução ilegal, trap, sc) encerra a execução como falha.
@@ -179,7 +185,7 @@ class Reference:
         temp = []
         for page, data in pages.items():
             if not any(b <= page and page + 0xFFF <= e for b, e in mapped):
-                self.mu.mem_map(page, 0x1000)
+                self.gm.map(page, 0x1000)
                 temp.append(page)
             self.mu.mem_write(page, data)
             if page not in temp:
@@ -188,7 +194,7 @@ class Reference:
             return self._run(code_addr, case, code_end, reset=False, limit=limit)
         finally:
             for page in temp:
-                self.mu.mem_unmap(page, 0x1000)
+                self.gm.unmap(page)
                 self.dirty.difference_update(range(page, page + 0x1000))
 
     def _run(self, code_addr: int, case: dict, code_end: int | None = None, reset: bool = True,

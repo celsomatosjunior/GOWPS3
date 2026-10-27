@@ -28,10 +28,10 @@ from unicorn import ppc_const as P
 
 from . import formats, state as S
 from .analysis import ElfImage
+from .guestmem import GuestMemory
 from .gdb_client import REG_CR, REG_CTR, REG_LR, REG_PC, GdbClient, GdbError
 
 PAGE = 0x1000
-_DEBUG = False
 CAPTURE_FILE = "capturas_gow3.json.gz"
 MSR_FP = 1 << 13
 
@@ -50,28 +50,36 @@ class LiveRunner:
     def run(self, regs: dict) -> tuple[str, dict[int, bytes]]:
         mu = Uc(UC_ARCH_PPC, UC_MODE_PPC64 | UC_MODE_BIG_ENDIAN)
         mu.ctl_set_tlb_mode(UC_TLB_VIRTUAL)
+        gm = GuestMemory(mu)  # endereços efetivos de 32 bits, como no RPCS3 (ver guestmem.py)
         for seg in self.image.loads:
             if seg["flags"] & 1:
                 lo, hi = seg["vaddr"] & ~0xFFF, (seg["vaddr"] + seg["memsz"] + 0xFFF) & ~0xFFF
-                mu.mem_map(lo, hi - lo)
+                gm.map(lo, hi - lo)
                 mu.mem_write(seg["vaddr"], self.image.data[seg["offset"]:seg["offset"] + seg["filesz"]])
-        mu.mem_map(S.RETURN_SENTINEL, PAGE)
+        gm.map(S.RETURN_SENTINEL, PAGE)
         mu.mem_write(S.RETURN_SENTINEL, bytes.fromhex("60000000" "7c6102a6" "7c6103a6" "60000000"))
         pages: dict[int, bytes] = {}
         failed: set[int] = set()
+        self.failed_addrs: list[int] = []
 
         def on_unmapped(uc, access, addr, size, value, data):
-            page = addr & ~0xFFF
-            if page in failed or page == S.RETURN_SENTINEL or len(pages) > 512:
-                return False
-            content = self.fetch(page)
-            if content is None:
-                failed.add(page)
-                return False
-            content = content[:PAGE].ljust(PAGE, b"\0")
-            uc.mem_map(page, PAGE)
-            uc.mem_write(page, content)
-            pages[page] = content
+            low = addr & 0xFFFFFFFF
+            page = low & ~0xFFF
+            if gm.find(page) is None:  # página de 32 bits ainda não trazida do jogo
+                if page in failed or page == S.RETURN_SENTINEL or len(pages) > 512:
+                    self.failed_addrs.append(addr)
+                    return False
+                content = self.fetch(page)
+                if content is None:
+                    failed.add(page)
+                    self.failed_addrs.append(addr)
+                    return False
+                content = content[:PAGE].ljust(PAGE, b"\0")
+                gm.map(page, PAGE)
+                uc.mem_write(page, content)
+                pages[page] = content
+            if addr > 0xFFFFFFFF:  # ponteiro estendido com sinal: espelho da página de 32 bits
+                return gm.alias(addr)
             return True
 
         exceptions = []
@@ -87,7 +95,8 @@ class LiveRunner:
         try:
             mu.emu_start(regs["pc"], S.RETURN_SENTINEL, count=S.INSTRUCTION_LIMIT)
         except UcError as error:
-            return f"falha ({error})", pages
+            where = f" em 0x{self.failed_addrs[-1]:X}" if self.failed_addrs else ""
+            return f"falha ({error}){where}", pages
         if exceptions:
             return f"exceção {exceptions[0]}", pages
         if mu.reg_read(P.UC_PPC_REG_PC) != S.RETURN_SENTINEL:
@@ -133,7 +142,9 @@ def capture(elf: Path, functions: list[dict], out_dir: Path, host: str = "127.0.
     hits = {a: 0 for a in addrs}
     refused = []
     t0 = time.time()
+    error = None
     try:
+      try:
         client.stop_reason()
         for a in list(addrs):
             if not client.set_breakpoint(a):
@@ -147,7 +158,6 @@ def capture(elf: Path, functions: list[dict], out_dir: Path, host: str = "127.0.
         while pending and time.time() < deadline:
             client.resume()
             reply = client.wait_stop(deadline - time.time())
-            if _DEBUG: print("reply", reply)
             if reply is None:  # tempo acabou: interrompe para poder tirar os breakpoints
                 client.interrupt()
                 break
@@ -170,6 +180,10 @@ def capture(elf: Path, functions: list[dict], out_dir: Path, host: str = "127.0.
                 pending.discard(pc)
         for a in pending:
             client.remove_breakpoint(a)
+      except (OSError, GdbError) as exc:  # TimeoutError é OSError
+        error = (f"o RPCS3 parou de responder durante a captura ({type(exc).__name__}: {exc}). "
+                 "Os estados capturados até aqui foram guardados.")
+        progress(error)
     finally:
         try:
             client.resume()  # o jogo continua rodando depois da captura
@@ -179,7 +193,8 @@ def capture(elf: Path, functions: list[dict], out_dir: Path, host: str = "127.0.
     summary = {"source": source, "created": dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %z"),
                "elf_sha256": formats.sha256_file(elf), "seconds": round(time.time() - t0),
                "functions": len(addrs), "functions_captured": sum(1 for v in hits.values() if v),
-               "states": len(cases), "breakpoints_refused": [f"{a:x}" for a in refused]}
+               "states": len(cases), "breakpoints_refused": [f"{a:x}" for a in refused],
+               "ok_states": sum(1 for c in cases if c["outcome_live"] == "ok"), "error": error}
     out_dir.mkdir(parents=True, exist_ok=True)
     with gzip.open(out_dir / CAPTURE_FILE, "wt", encoding="utf-8") as f:
         json.dump({"summary": summary, "cases": cases}, f)

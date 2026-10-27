@@ -37,7 +37,8 @@ def main():
         pipeline.analysis.ElfImage(args.corpus_elf).read(int(f["start"], 16), 16)
         == pipeline.analysis.ElfImage(args.test_elf).read(int(f["start"], 16), 16) for f in funcs)
     print(f"{len(funcs)} candidatas; código igual no corpus e no ELF de teste: {code_same}")
-    q = subprocess.Popen([args.qemu, "-g", str(args.porta), args.corpus_elf], stdout=subprocess.DEVNULL)
+    # -R: espaço de endereços abaixo de 4 GB, como no PS3 (a pilha do QEMU fica acima de 4 GB sem isso)
+    q = subprocess.Popen([args.qemu, "-R", "0xF0000000", "-g", str(args.porta), args.corpus_elf], stdout=subprocess.DEVNULL)
     try:
         time.sleep(1.5)
         summary = capture.capture(Path(args.test_elf), funcs, out, port=args.porta, minutes=2, per_function=4,
@@ -48,7 +49,8 @@ def main():
         except subprocess.TimeoutExpired:
             q.kill()
     print(summary)
-    ok = code_same and summary["functions_captured"] == len(funcs) and summary["states"] >= len(funcs)
+    ok = (code_same and summary["functions_captured"] == len(funcs) and summary["states"] >= len(funcs)
+          and summary["ok_states"] == summary["states"] and not summary["error"])
     print("CAPTURA QEMU: " + ("tudo certo" if ok else "falhou"))
     return 0 if ok else 1
 

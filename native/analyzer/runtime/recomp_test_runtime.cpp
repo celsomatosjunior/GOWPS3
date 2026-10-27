@@ -103,11 +103,15 @@ uint8_t* write_slot(uint64_t addr)
 	return &it->second[addr % kPage];
 }
 
+// Endereços efetivos de 32 bits, como no PS3 sob o RPCS3 e no runtime do ps3recomp (vm_* usam
+// (uint32_t)ea): um ponteiro estendido com sinal (0xFFFFFFFF_D0xxxxxx) acessa 0xD0xxxxxx.
+inline uint64_t ea32(uint64_t a) { return a & 0xFFFFFFFFULL; }
+
 uint64_t read_be(uint64_t addr, int size)
 {
 	uint64_t v = 0;
 	for (int i = 0; i < size; i++)
-		v = (v << 8) | read_byte(addr + i);
+		v = (v << 8) | read_byte(ea32(addr + i));
 	return v;
 }
 
@@ -115,10 +119,10 @@ void write_be(uint64_t addr, uint64_t v, int size)
 {
 	// Verifica o intervalo inteiro antes de escrever (uma escrita que falha não muda nada).
 	for (int i = 0; i < size; i++)
-		write_slot(addr + i);
+		write_slot(ea32(addr + i));
 	for (int i = size - 1; i >= 0; i--) {
-		*write_slot(addr + i) = static_cast<uint8_t>(v);
-		written.push_back(addr + i);
+		*write_slot(ea32(addr + i)) = static_cast<uint8_t>(v);
+		written.push_back(ea32(addr + i));
 		v >>= 8;
 	}
 }

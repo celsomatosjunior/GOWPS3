@@ -147,6 +147,9 @@ class GdbClient:
     def read_memory(self, addr: int, size: int, chunk: int = 0x400) -> bytes | None:
         """Lê `size` bytes. Devolve None se o primeiro bloco não puder ser lido; um final parcial
         (memória acaba no meio) volta mais curto."""
+        if addr < 0 or addr + size > 0x100000000:
+            # o RPCS3 lê o endereço como número de 32 bits; um maior derruba o servidor GDB dele
+            return None
         out = bytearray()
         a = addr
         while a < addr + size:
@@ -161,10 +164,10 @@ class GdbClient:
         return bytes(out)
 
     def set_breakpoint(self, addr: int) -> bool:
-        return self.command("Z0,%x,4" % addr) == "OK"
+        return addr <= 0xFFFFFFFF and self.command("Z0,%x,4" % addr) == "OK"
 
     def remove_breakpoint(self, addr: int) -> bool:
-        return self.command("z0,%x,4" % addr) == "OK"
+        return addr <= 0xFFFFFFFF and self.command("z0,%x,4" % addr) == "OK"
 
     def resume(self):
         """Continua todas as threads; não espera a parada (use wait_stop)."""

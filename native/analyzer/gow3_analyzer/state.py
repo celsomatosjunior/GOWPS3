@@ -106,6 +106,10 @@ def make_cases(toc: int, count: int, base_seed: int) -> list[dict]:
             v = rng.next()
             if variant == 0 or (variant == 3 and r == 3):
                 gpr[r] = SCRATCH_BASE + (v % (SCRATCH_SIZE // 2)) // 16 * 16
+                if (k // 16) % 2:
+                    # ponteiro com os 32 bits de cima preenchidos (como um estendido com sinal): no PS3
+                    # o endereço efetivo é de 32 bits, então acessa a mesma memória (ver guestmem.py)
+                    gpr[r] |= 0xFFFFFFFF00000000
             elif variant == 1:
                 gpr[r] = (v % 2001 - 1000) & MASK
             elif variant == 2:
