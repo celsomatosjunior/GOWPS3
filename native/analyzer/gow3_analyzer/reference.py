@@ -58,6 +58,7 @@ class Reference:
         self.exceptions: list = []
         self.fcti_hooked: set[int] = set()
         self.seed = None
+        self.bss_mode = 0  # a .bss recém-mapeada está zerada (modo 0)
 
     def _create(self):
         mu = Uc(UC_ARCH_PPC, UC_MODE_PPC64 | UC_MODE_BIG_ENDIAN)
@@ -109,7 +110,20 @@ class Reference:
             uc.reg_write(getattr(P, f"UC_PPC_REG_FPR{frt}"), fixed)
             uc.reg_write(P.UC_PPC_REG_PC, address + 4)
 
+    def _bss_ranges(self) -> list[tuple[int, int]]:
+        return [(seg["vaddr"] + seg["filesz"], seg["vaddr"] + seg["memsz"])
+                for seg in self.image.loads if seg["memsz"] > seg["filesz"]]
+
+    def _bss_content(self, mode: int) -> list[tuple[int, bytes]]:
+        cache = self.__dict__.setdefault("_bss_cache", {})
+        if mode not in cache:
+            cache[mode] = [(lo, S.bss_bytes(lo, hi, mode)) for lo, hi in self._bss_ranges()]
+        return cache[mode]
+
     def _original_byte(self, addr: int) -> int:
+        for lo, hi in self._bss_ranges():
+            if lo <= addr < hi:
+                return (S.bss_word(addr & ~3, self.bss_mode) >> (8 * (3 - (addr & 3)))) & 0xFF
         for seg in self.image.loads:
             if seg["vaddr"] <= addr < seg["vaddr"] + seg["filesz"]:
                 return self.image.data[seg["offset"] + addr - seg["vaddr"]]
@@ -117,12 +131,18 @@ class Reference:
 
     def _reset_memory(self, seed: int):
         mu = self.mu
+        mode = seed & 3
+        bss_changed = self.bss_mode != mode
+        self.bss_mode = mode  # os bytes sujos da .bss voltam ao conteúdo do modo deste caso
         for a in self.dirty:
             if not S.SCRATCH_BASE <= a < S.SCRATCH_BASE + S.SCRATCH_SIZE:
                 try:
                     mu.mem_write(a, bytes([self._original_byte(a)]))
                 except UcError:
                     pass  # o gancho de escrita dispara antes da falha: endereço não mapeado
+        if bss_changed:
+            for lo, data in self._bss_content(mode):
+                mu.mem_write(lo, data)
         if self.dirty or self.seed != seed:
             mu.mem_write(S.SCRATCH_BASE, S.scratch_bytes(seed))
         self.seed = seed
@@ -148,6 +168,7 @@ class Reference:
         if self.mu is None:
             self._create()
             self.seed = None
+            self.bss_mode = 0
             self._reset_memory(case.get("seed", 0))
         elif reset:
             self._reset_memory(case["seed"])

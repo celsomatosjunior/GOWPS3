@@ -373,8 +373,11 @@ def run(elf: Path, analysis: dict, work: Path, progress=lambda m: None, limit: i
             "parte (undefined_bits_only), não como igualdade plena nem como divergência.",
             "Correção na referência: o Unicorn 2.1 (QEMU 5) devolve 0x80000000 em todo fcti* fora do intervalo; "
             "nesses casos a referência aplica a saturação do ISA (Book I 4.6.7).",
-            "Metade dos casos usa uma área de rascunho em que cada palavra de 32 bits é um ponteiro válido para a "
-            "própria área, para exercitar funções que seguem ponteiros de estruturas.",
+            "Memória de teste em 4 modos (4 casos cada): bytes aleatórios; só ponteiros válidos; e dois mistos, em "
+            "que cada palavra de 32 bits é um ponteiro válido, um número pequeno (índice/contador) ou um float "
+            "pequeno. Nos modos com ponteiros, a área .bss (globais que o jogo preenche ao rodar) recebe palavras do "
+            "mesmo tipo em vez de zeros. É um estado sintético, idêntico nos dois lados: serve para comparar a "
+            "tradução, não reproduz o jogo.",
             "'Tradução incompleta': o lifter deixou alguma instrução como comentário TODO (não traduzida).",
             "Uma função 'inconclusiva' falhou da mesma forma nos dois lados em todos os casos (ex.: precisa de "
             "ponteiros para estruturas reais do jogo).",

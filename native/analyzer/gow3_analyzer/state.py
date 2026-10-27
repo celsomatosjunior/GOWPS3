@@ -36,19 +36,58 @@ def scratch_word_pointer(v: int) -> int:
     return SCRATCH_BASE + (v % SCRATCH_SIZE) // 16 * 16
 
 
+MODES = ("aleatória", "só ponteiros", "mista", "mista")
+
+
+def mixed_word(h: int) -> int:
+    """Palavra de 32 bits "realista": metade ponteiros válidos (para a 1ª metade da área de rascunho,
+    deixando espaço para deslocamentos), um quarto números pequenos (índices, contadores) e um quarto
+    floats pequenos. Funções que seguem um ponteiro e usam o valor lido como índice executam."""
+    sel, v = h & 3, h >> 2
+    if sel < 2:
+        return SCRATCH_BASE + (v % (SCRATCH_SIZE // 2)) // 16 * 16
+    if sel == 2:
+        return v % 16
+    import struct
+    return int.from_bytes(struct.pack(">f", (v % 17 - 8) / 2.0), "big")
+
+
+def word_for(mode: int, h: int) -> int:
+    return scratch_word_pointer(h) if mode == 1 else mixed_word(h)
+
+
 def scratch_bytes(seed: int) -> bytes:
-    """Semente par: bytes aleatórios. Semente ímpar: cada palavra de 32 bits é um ponteiro válido
-    para dentro da própria área, para que funções que seguem ponteiros de estruturas (comuns no
-    jogo; os ponteiros do PS3 são de 32 bits) executem em vez de falhar no primeiro acesso."""
+    """Modo = 2 bits baixos da semente. 0: bytes aleatórios; 1: cada palavra de 32 bits é um ponteiro
+    válido para a própria área (os ponteiros do PS3 são de 32 bits); 2 e 3: palavras mistas
+    (mixed_word)."""
     rng = XorShift(seed ^ 0x5C3A7C4)
     out = bytearray(SCRATCH_SIZE)
-    pointers = seed & 1
+    mode = seed & 3
     for i in range(0, SCRATCH_SIZE, 8):
         v = rng.next()
-        if pointers:
-            v = (scratch_word_pointer(v >> 32) << 32) | scratch_word_pointer(v & 0xFFFFFFFF)
+        if mode:
+            v = (word_for(mode, v >> 32) << 32) | word_for(mode, v & 0xFFFFFFFF)
         out[i:i + 8] = v.to_bytes(8, "big")
     return bytes(out)
+
+
+def bss_word(addr: int, mode: int) -> int:
+    """Conteúdo sintético da área .bss (variáveis globais que o jogo só preenche em execução) nos
+    modos 1-3; no modo 0 ela fica zerada, como na imagem do ELF. Depende só do endereço e do modo."""
+    if mode == 0:
+        return 0
+    h = XorShift((addr & ~3) ^ (mode << 40)).next() & 0xFFFFFFFF
+    return word_for(mode, h)
+
+
+def bss_bytes(lo: int, hi: int, mode: int) -> bytes:
+    """Bytes de [lo, hi) da .bss no modo dado (lo e hi quaisquer; palavras alinhadas a 4)."""
+    out = bytearray()
+    a = lo & ~3
+    while a < hi:
+        out += bss_word(a, mode).to_bytes(4, "big")
+        a += 4
+    return bytes(out[lo - (lo & ~3):lo - (lo & ~3) + (hi - lo)])
 
 
 def make_cases(toc: int, count: int, base_seed: int) -> list[dict]:
@@ -56,9 +95,10 @@ def make_cases(toc: int, count: int, base_seed: int) -> list[dict]:
     combinações. Assim funções que recebem ponteiros e funções que recebem números são exercitadas."""
     cases = []
     for k in range(count):
-        # bit 0 da semente = modo da área de rascunho (ver scratch_bytes): casos 4-7, 12-15... usam
-        # ponteiros, e cada variante de registradores aparece com os dois modos.
-        seed = (base_seed * 1000003 + 2 * k + ((k // 4) & 1)) & 0xFFFFFFFF
+        # 2 bits baixos da semente = modo da memória (scratch_bytes/bss_word): casos 0-3 aleatória,
+        # 4-7 só ponteiros, 8-15 mista; cada variante de registradores aparece em todos os modos
+        mode = (k // 4) % 4
+        seed = ((base_seed * 1000003 + k) * 4 + mode) & 0xFFFFFFFF
         rng = XorShift(seed)
         variant = k % 4
         gpr = [rng.next() for _ in range(32)]

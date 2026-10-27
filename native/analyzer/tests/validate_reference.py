@@ -37,7 +37,7 @@ def main():
         args, ret = parse(sig)
         m = meta[name]
         for inp in inputs:
-            case = {"seed": 1, "gpr": [0] * 32, "fpr": [0] * 32, "cr": 0, "xer": 0, "ctr": 0, "lr": S.RETURN_SENTINEL}
+            case = {"seed": 0, "gpr": [0] * 32, "fpr": [0] * 32, "cr": 0, "xer": 0, "ctr": 0, "lr": S.RETURN_SENTINEL}
             case["gpr"][1], case["gpr"][2] = S.STACK_TOP, m["toc"]
             fi = 1
             for position, (kind, value) in enumerate(zip(args, inp)):

@@ -45,7 +45,14 @@ using Page = std::unique_ptr<uint8_t[]>;
 std::unordered_map<uint64_t, Page> pristine; // imagem do ELF, nunca alterada
 std::unordered_map<uint64_t, Page> overlay;  // páginas escritas no caso atual
 std::vector<Region> regions;
+std::vector<Region> bss;     // [vaddr+filesz, vaddr+memsz) dos PT_LOAD: globais que o jogo preenche ao rodar
+int bss_mode = 0;            // modo da memória do caso atual (2 bits baixos da semente; state.py)
 std::vector<uint64_t> written;
+
+uint32_t bss_word(uint64_t addr, int mode); // definida abaixo (igual a state.bss_word)
+
+// Byte da memória "de fábrica" do caso: imagem do ELF ou, dentro da .bss, o conteúdo sintético do modo.
+bool base_byte(uint64_t addr, uint8_t* out);
 
 bool mapped(uint64_t addr)
 {
@@ -60,8 +67,9 @@ uint8_t read_byte(uint64_t addr)
 	const uint64_t pn = addr / kPage;
 	if (auto it = overlay.find(pn); it != overlay.end())
 		return it->second[addr % kPage];
-	if (auto it = pristine.find(pn); it != pristine.end())
-		return it->second[addr % kPage];
+	uint8_t v;
+	if (base_byte(addr, &v))
+		return v;
 	if (!mapped(addr))
 		throw GuestFault{"read", addr};
 	return 0;
@@ -79,6 +87,17 @@ uint8_t* write_slot(uint64_t addr)
 			std::memcpy(p.get(), src->second.get(), kPage);
 		else
 			std::memset(p.get(), 0, kPage);
+		if (bss_mode)
+			for (uint64_t i = 0; i < kPage; i++) {
+				uint8_t v;
+				const uint64_t a = pn * kPage + i;
+				for (const auto& r : bss)
+					if (a >= r.begin && a < r.end) {
+						base_byte(a, &v);
+						p[i] = v;
+						break;
+					}
+			}
 		it = overlay.emplace(pn, std::move(p)).first;
 	}
 	return &it->second[addr % kPage];
@@ -119,17 +138,59 @@ struct XorShift {
 	}
 };
 
+// Palavras da memória de teste: iguais a state.scratch_word_pointer / mixed_word / word_for.
+uint64_t scratch_word_pointer(uint64_t v) { return kScratchBase + (v % kScratchSize) / 16 * 16; }
+
+uint64_t mixed_word(uint64_t h)
+{
+	const uint64_t sel = h & 3, v = h >> 2;
+	if (sel < 2)
+		return kScratchBase + (v % (kScratchSize / 2)) / 16 * 16;
+	if (sel == 2)
+		return v % 16;
+	const float f = static_cast<float>(static_cast<int64_t>(v % 17) - 8) / 2.0f; // exato
+	uint32_t bits;
+	std::memcpy(&bits, &f, 4);
+	return bits;
+}
+
+uint64_t word_for(int mode, uint64_t h) { return mode == 1 ? scratch_word_pointer(h) : mixed_word(h); }
+
+uint32_t bss_word(uint64_t addr, int mode)
+{
+	if (!mode)
+		return 0;
+	XorShift rng((addr & ~3ULL) ^ (static_cast<uint64_t>(mode) << 40));
+	return static_cast<uint32_t>(word_for(mode, rng.next() & 0xFFFFFFFFULL));
+}
+
+bool base_byte(uint64_t addr, uint8_t* out)
+{
+	if (bss_mode)
+		for (const auto& r : bss)
+			if (addr >= r.begin && addr < r.end) {
+				*out = static_cast<uint8_t>(bss_word(addr, bss_mode) >> (8 * (3 - (addr & 3))));
+				return true;
+			}
+	const uint64_t pn = addr / kPage;
+	if (auto it = pristine.find(pn); it != pristine.end()) {
+		*out = it->second[addr % kPage];
+		return true;
+	}
+	return false;
+}
+
 void reset_memory(uint64_t seed)
 {
 	overlay.clear();
 	written.clear();
 	XorShift rng(seed ^ 0x5C3A7C4ULL);
-	const bool pointers = seed & 1; // igual a state.scratch_bytes
-	auto ptr = [](uint64_t v) { return kScratchBase + (v % kScratchSize) / 16 * 16; };
+	const int mode = static_cast<int>(seed & 3); // igual a state.scratch_bytes
+	bss_mode = mode;
 	for (uint64_t off = 0; off < kScratchSize; off += 8) {
 		uint64_t v = rng.next();
-		if (pointers)
-			v = (ptr(v >> 32) << 32) | ptr(v & 0xFFFFFFFFULL);
+		if (mode)
+			v = (word_for(mode, v >> 32) << 32) | word_for(mode, v & 0xFFFFFFFFULL);
 		for (int i = 7; i >= 0; i--) {
 			*write_slot(kScratchBase + off + i) = static_cast<uint8_t>(v);
 			v >>= 8;
@@ -176,6 +237,8 @@ bool load_elf(const char* path)
 			continue;
 		const uint64_t offset = be(ph + 8, 8), vaddr = be(ph + 16, 8), filesz = be(ph + 32, 8), memsz = be(ph + 40, 8);
 		add_region(vaddr, vaddr + memsz);
+		if (memsz > filesz)
+			bss.push_back({vaddr + filesz, vaddr + memsz});
 		for (uint64_t k = 0; k < filesz && offset + k < d.size(); k++) {
 			const uint64_t a = vaddr + k, pn = a / kPage;
 			auto it = pristine.find(pn);
