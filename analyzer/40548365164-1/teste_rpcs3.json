@@ -1,0 +1,21 @@
+{
+ "debug_self": {
+  "identical": true,
+  "error": null
+ },
+ "retail_fake": {
+  "method": "rpcs3 --decrypt",
+  "rpcs3": "D:\\a\\GOWPS3\\GOWPS3\\rpcs3\\rpcs3.exe",
+  "status": "falhou",
+  "error": "o RPCS3 não gerou o EBOOT.ELF. Versão do RPCS3: RPCS3 v0.0.43-20410-c365ea76 Alpha. O RPCS3 informou: SELF: Failed to load SELF file headers! Veja rpcs3_conversao.log. Confira se o RPCS3 abre normalmente e se o firmware do PS3 está instalado nele (File > Install Firmware)."
+ },
+ "exe_retail_fake": {
+  "returncode": 4,
+  "conversion": {
+   "method": "rpcs3 --decrypt",
+   "rpcs3": "D:\\a\\GOWPS3\\GOWPS3\\rpcs3\\rpcs3.exe",
+   "status": "falhou",
+   "error": "o RPCS3 não gerou o EBOOT.ELF. Versão do RPCS3: RPCS3 v0.0.43-20410-c365ea76 Alpha. O RPCS3 informou: SELF: Failed to load SELF file headers! Veja rpcs3_conversao.log. Confira se o RPCS3 abre normalmente e se o firmware do PS3 está instalado nele (File > Install Firmware)."
+  }
+ }
+}
