@@ -3,14 +3,10 @@ Componentes de terceiros do GOW3 Native Analyzer
 
 GOW3 Native Analyzer (este projeto) ........ GPL-2.0-only (fonte em fonte_do_analisador.zip)
 ps3recomp (sp00nznet/ps3recomp) ............. MIT. Ferramentas Python em _internal\ps3recomp\tools,
-                                              commit fixado em PS3RECOMP_COMMIT.txt, com os patches
-                                              ps3recomp-ascension.patch e ps3recomp-elfv1.patch
-                                              (dentro de fonte_do_analisador.zip)
-God of War: Ascension para PC
-  (arnaldolima1/gow-ascension-pc) ........... MIT, "Copyright (c) 2026 Ascension contributors".
-                                              Os 44 patches dele para o ps3recomp, mesclados sobre o
-                                              v0.16.0, estão em ps3recomp-ascension.patch.
-                                              Licença: LICENCAS\gow-ascension-pc-MIT.txt
+                                              commit fixado em PS3RECOMP_COMMIT.txt (v0.18.0), com o
+                                              patch ps3recomp-elfv1.patch (dentro de fonte_do_analisador.zip).
+                                              A v0.17/v0.18 já incorporam correções vindas dos ports de
+                                              God of War HD e God of War: Ascension.
 RPCS3 ....................................... NÃO faz parte deste pacote. O analisador apenas executa o
                                               RPCS3 que o usuário já tem instalado (rpcs3 --decrypt).
 Unicorn Engine 2.1.4 ........................ GPL-2.0 (baseado no QEMU). Código: https://github.com/unicorn-engine/unicorn

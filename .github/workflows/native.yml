@@ -40,10 +40,9 @@ jobs:
           repository: sp00nznet/ps3recomp
           ref: ${{ env.PS3RECOMP_COMMIT }}
           path: ps3recomp
-      - name: Aplicar os patches (God of War Ascension + --toc para ELF)
+      - name: Aplicar o patch do projeto (--toc para ELF)
         working-directory: ps3recomp
         run: |
-          git apply ../gow3/native/ps3recomp-ascension.patch
           git apply ../gow3/native/ps3recomp-elfv1.patch
       - uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -120,10 +119,9 @@ jobs:
           repository: sp00nznet/ps3recomp
           ref: ${{ env.PS3RECOMP_COMMIT }}
           path: ps3recomp
-      - name: Aplicar os patches (God of War Ascension + --toc para ELF)
+      - name: Aplicar o patch do projeto (--toc para ELF)
         working-directory: ps3recomp
         run: |
-          git apply ../gow3/native/ps3recomp-ascension.patch
           git apply ../gow3/native/ps3recomp-elfv1.patch
       - name: Compilador PowerPC (gcc -mcpu=cell), QEMU e Clang
         run: |

@@ -137,7 +137,6 @@ def main():
     lic = app / "LICENCAS"
     lic.mkdir(exist_ok=True)
     shutil.copy2(ps3 / "LICENSE", lic / "ps3recomp-MIT.txt")
-    shutil.copy2(REPO / "native" / "LICENSE-ascension-MIT.txt", lic / "gow-ascension-pc-MIT.txt")
     shutil.copy2(HERE / "THIRD_PARTY.txt", lic / "TERCEIROS.txt")
     if (REPO / "LICENSE").is_file():
         shutil.copy2(REPO / "LICENSE", lic / "GOW3_Native-GPL-2.0.txt")
@@ -147,9 +146,7 @@ def main():
             rel = f.relative_to(HERE)
             if f.is_file() and not any(p in ("build_pkg", "dist", "__pycache__") for p in rel.parts):
                 z.write(f, f"analyzer/{rel.as_posix()}")
-        z.write(REPO / "native" / "ps3recomp-ascension.patch", "ps3recomp-ascension.patch")
         z.write(REPO / "native" / "ps3recomp-elfv1.patch", "ps3recomp-elfv1.patch")
-        z.write(REPO / "native" / "LICENSE-ascension-MIT.txt", "LICENSE-ascension-MIT.txt")
         z.write(REPO / "native" / "PS3RECOMP_COMMIT.txt", "PS3RECOMP_COMMIT.txt")
 
     zip_path = out / f"{NAME}_Windows_x64.zip"

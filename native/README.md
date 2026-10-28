@@ -20,15 +20,13 @@ Detalhes: [docs/AUDITORIA_PS3RECOMP.md](docs/AUDITORIA_PS3RECOMP.md). O relatór
 - `ppu_diff/`: teste diferencial PPU. Compila código C nosso para PowerPC/Cell e executa no QEMU (referência). Depois recompila com o lifter do ps3recomp, compila para x86-64 e compara caso a caso.
 - `tools/analyze_gow3.py`: relatório do executável do jogo. Sem decifrar nada, lê PARAM.SFO e os cabeçalhos SELF. Com um `EBOOT.ELF` preparado pelo usuário, lista funções, importações por biblioteca com cobertura HLE, programas SPU e uma amostra recompilada.
 - `tools/make_report.py`: monta o relatório do CI.
-- `ps3recomp-elfv1.patch`: `--toc` explícito também para ELF (o corpus usa descritores ELFv1 de 64 bits). A correção de `lwax` em tabelas de salto já entrou no ps3recomp. Commit fixado: v0.16.0 (`749182e`); antes era `a2c2010`, cujo lifter truncava o CTR a 32 bits — divergência encontrada pelo analisador em funções do God of War III e corrigida no ps3recomp.
-- `ps3recomp-ascension.patch`: os 44 patches do God of War: Ascension para PC (arnaldolima1/gow-ascension-pc, MIT, licença em `LICENSE-ascension-MIT.txt`), escritos para o ps3recomp v0.15.0 e mesclados aqui sobre o v0.16.0, mais stubs de link para as suítes de teste. Verificado no Linux: 67/67 suítes do lifter, ctest 10/10, andaime PPU sem regressão, ppu_diff 97/97. Aplicar antes do `ps3recomp-elfv1.patch`.
+- `ps3recomp-elfv1.patch`: `--toc` explícito também para ELF (o corpus usa descritores ELFv1 de 64 bits). A correção de `lwax` em tabelas de salto já entrou no ps3recomp. Commit fixado: v0.18.0 (`4e8f3ca`; antes v0.16.0 `749182e`, com o merge manual dos patches do God of War: Ascension, que a v0.17/v0.18 incorporaram em boa parte); antes era `a2c2010`, cujo lifter truncava o CTR a 32 bits — divergência encontrada pelo analisador em funções do God of War III e corrigida no ps3recomp.
 - `PS3RECOMP_COMMIT.txt`: commit fixado do ps3recomp.
 
 ## Rodar localmente
 
 ```sh
 git clone https://github.com/sp00nznet/ps3recomp && git -C ps3recomp checkout $(cat native/PS3RECOMP_COMMIT.txt)
-git -C ps3recomp apply ../native/ps3recomp-ascension.patch
 git -C ps3recomp apply ../native/ps3recomp-elfv1.patch
 pip install -r ps3recomp/requirements.txt
 
@@ -59,3 +57,10 @@ funções reais contra uma CPU de referência. Workflow: `.github/workflows/anal
 ## Guarda contra dados do jogo
 
 `native/tools/check_no_game_data.py` (workflow `guard.yml`, em todo push) falha se algum arquivo versionado parecer dado do jogo: SELF/ELF de PS3, PSARC, PKG, EBOOT, PARAM.SFO, código gerado pelo lifter (`lifted/`, `ppu_recomp.c`), relatórios da análise local ou binários grandes.
+
+## GOW3 Native: o jogo inteiro (native/game)
+
+`native/game/gow3_build.py` traduz o EBOOT.ELF inteiro, monta o projeto-modelo do ps3recomp
+(templates/project: runtime, HLE do firmware, Direct3D 12 no Windows, SPUs embutidos), compila o
+executável GOW3Native e o roda por alguns segundos, com log e resumo por passo. Roda no computador do
+usuário, sobre a cópia dele do jogo; nada do jogo entra no repositório. Veja native/game/LEIA-ME.md.

@@ -38,10 +38,9 @@ jobs:
           repository: sp00nznet/ps3recomp
           ref: ${{ env.PS3RECOMP_COMMIT }}
           path: ps3recomp
-      - name: Aplicar os patches (God of War Ascension + --toc para ELF)
+      - name: Aplicar o patch do projeto (--toc para ELF)
         working-directory: ps3recomp
         run: |
-          git apply ../gow3/native/ps3recomp-ascension.patch
           git apply ../gow3/native/ps3recomp-elfv1.patch
       - name: gcc PowerPC, QEMU, clang
         run: |
@@ -90,10 +89,9 @@ jobs:
           repository: sp00nznet/ps3recomp
           ref: ${{ env.PS3RECOMP_COMMIT }}
           path: ps3recomp
-      - name: Aplicar os patches (God of War Ascension + --toc para ELF)
+      - name: Aplicar o patch do projeto (--toc para ELF)
         working-directory: ps3recomp
         run: |
-          git apply ../gow3/native/ps3recomp-ascension.patch
           git apply ../gow3/native/ps3recomp-elfv1.patch
       - uses: actions/setup-python@v5
         with:
@@ -187,10 +185,59 @@ jobs:
           name: analyzer_reports
           path: out/
 
+  game_windows:
+    name: GOW3 Native (orquestrador do jogo inteiro) no Windows, com o ELF de teste
+    needs: corpus
+    runs-on: windows-2025
+    steps:
+      - name: Finais de linha como no repositório
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+        with:
+          path: gow3
+      - name: Commit fixado do ps3recomp
+        run: echo "PS3RECOMP_COMMIT=$(tr -d '[:space:]' < gow3/native/PS3RECOMP_COMMIT.txt)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          repository: sp00nznet/ps3recomp
+          ref: ${{ env.PS3RECOMP_COMMIT }}
+          path: ps3recomp
+      - name: Aplicar o patch do projeto (--toc para ELF)
+        working-directory: ps3recomp
+        run: git apply ../gow3/native/ps3recomp-elfv1.patch
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Ninja e dependências do ps3recomp
+        run: |
+          choco install ninja -y --no-progress
+          pip install -q -r ps3recomp/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: corpus_ppc
+          path: corpus
+      - name: gow3_build.py (carregar, traduzir, projeto, compilar com clang-cl, rodar)
+        run: |
+          set -o pipefail
+          python gow3/native/game/gow3_build.py --elf corpus/ps3_test.elf --ps3recomp ps3recomp --trabalho jogo \
+            --toc 0x100e7a00 --arquivos 8 --segundos 20 2>&1 | tee jogo_resumo_console.txt
+      - name: Guardar o resumo
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out_jogo | Out-Null
+          Copy-Item jogo\resumo.txt, jogo\estado.json out_jogo\ -ErrorAction SilentlyContinue
+          foreach ($l in 'projeto','compilar','rodar') { if (Test-Path "jogo\logs\$l.log") { Get-Content "jogo\logs\$l.log" -Tail 200 | Set-Content "out_jogo\$l.log" } }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jogo_windows_logs
+          path: out_jogo/
+
   report:
     name: Publicar resultados
     if: always()
-    needs: [corpus, windows]
+    needs: [corpus, windows, game_windows]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -203,16 +250,22 @@ jobs:
           name: analyzer_reports
           path: out
         continue-on-error: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: jogo_windows_logs
+          path: out/jogo_windows
+        continue-on-error: true
       - name: Publicar no ramo ci-logs
         working-directory: gow3
         env:
           R_CORPUS: ${{ needs.corpus.result }}
           R_WINDOWS: ${{ needs.windows.result }}
+          R_GAME: ${{ needs.game_windows.result }}
         run: |
           git config user.name "gow3-ci" && git config user.email "gow3-ci@users.noreply.github.com"
           if git fetch --depth=1 origin ci-logs 2>/dev/null; then git checkout -f -B ci-logs FETCH_HEAD; else git checkout --orphan ci-logs && git rm -rqf --cached .; fi
           dest="analyzer/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           mkdir -p "$dest"
-          echo "corpus=$R_CORPUS windows=$R_WINDOWS" > "$dest/jobs.txt"
+          echo "corpus=$R_CORPUS windows=$R_WINDOWS jogo=$R_GAME" > "$dest/jobs.txt"
           [ -d ../out ] && cp -r ../out/. "$dest/" || true
           git add "$dest" && git commit -qm "Analisador ${GITHUB_RUN_ID}" && git push -q origin ci-logs
