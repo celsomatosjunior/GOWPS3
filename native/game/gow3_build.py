@@ -219,6 +219,10 @@ def step_projeto(args, work: Path, state: dict, progress):
     cm.write_text(cm.read_text(encoding="utf-8").replace("project(MyGameRecomp", "project(GOW3Native"), encoding="utf-8")
     if args.lle_libsre:
         add_libsre_lle(args, proj, cm)
+    # Diagnóstico do GOW3 (GOW3_WATCHDOG) e o .map do link para resolver os RVAs que ele imprime.
+    cm.write_text(cm.read_text(encoding="utf-8") + "\n# GOW3: watchdog e mapa do link\n"
+                  f'target_sources(${{PROJECT_NAME}} PRIVATE "{(HERE / "gow3_diag.cpp").as_posix()}")\n'
+                  "if(MSVC)\n    target_link_options(${PROJECT_NAME} PRIVATE /MAP)\nendif()\n", encoding="utf-8")
     build = work / "build"
     env = dict(os.environ)
     vs = vs_environment()

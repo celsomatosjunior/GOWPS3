@@ -113,6 +113,99 @@ index 07a3d2e4..8024c269 100644
  s32 cellSpursTasksetAttributeSetName(CellSpursTasksetAttribute* attr,
                                        const char* name);
  
+diff --git a/libs/video/cellGcmSys.c b/libs/video/cellGcmSys.c
+index 298ee7de..af705037 100644
+--- a/libs/video/cellGcmSys.c
++++ b/libs/video/cellGcmSys.c
+@@ -409,6 +409,23 @@ static int s_gcm_syscall_mode = 0;
+  * Internal helpers
+  * -----------------------------------------------------------------------*/
+ 
++/* The guest copy of the offset tables, once cellGcmGetOffsetTable has handed
++ * it out, has to stay live: libgcm's table pointers point at the very tables
++ * cellGcmMapEaIoAddress / UnmapIoAddress update. A snapshot taken at the call
++ * went stale on the next remap -- God of War III takes the table, unmaps and
++ * remaps its IO region, then flushes with an EA the stale copy still called
++ * unmapped and stores put = 0xFFFFFFFF, which no drain ever reaches. */
++static int s_offset_tables_published = 0;
++
++static void gcm_mirror_offset_entry(u32 ea_page, u32 io_page)
++{
++    if (!s_offset_tables_published) return;
++    if (ea_page < GCM_OFFSET_TABLE_PAGES)
++        vm_write16(GCM_OFFSET_TABLE_IO_ADDR + ea_page * 2, s_io_address_table[ea_page]);
++    if (io_page < GCM_OFFSET_TABLE_PAGES)
++        vm_write16(GCM_OFFSET_TABLE_EA_ADDR + io_page * 2, s_ea_address_table[io_page]);
++}
++
+ /* Populate the offset table entries for an IO mapping */
+ static void populate_offset_table(u32 ea, u32 io, u32 size)
+ {
+@@ -429,6 +446,7 @@ static void populate_offset_table(u32 ea, u32 io, u32 size)
+     for (u32 i = 0; i < pages && (ea_page + i) < 65536 && (io_page + i) < 65536; i++) {
+         s_io_address_table[ea_page + i] = (u16)(io_page + i);
+         s_ea_address_table[io_page + i] = (u16)(ea_page + i);
++        gcm_mirror_offset_entry(ea_page + i, io_page + i);
+     }
+ }
+ 
+@@ -442,6 +460,7 @@ static void clear_offset_table(u32 ea, u32 io, u32 size)
+     for (u32 i = 0; i < pages && (ea_page + i) < 65536 && (io_page + i) < 65536; i++) {
+         s_io_address_table[ea_page + i] = 0xFFFF;
+         s_ea_address_table[io_page + i] = 0xFFFF;
++        gcm_mirror_offset_entry(ea_page + i, io_page + i);
+     }
+ }
+ 
+@@ -2100,6 +2119,30 @@ static void gcm_rsx_process_fifo_unlocked(void)
+      * word that is not a command, and parks there forever. */
+     atomic_thread_fence(memory_order_acquire);
+ 
++    /* A `put` no IO page maps (God of War III leaves 0xFFFFFFFF there until its
++     * own ring is up) is not a position to chase. Walking toward it runs the
++     * walker over unwritten memory into a bogus JUMP, and the resync that
++     * follows sweeps get..put four bytes at a time -- ~1G iterations on the
++     * thread that also pumps the window, which Windows then reports as hung.
++     * The RSX cannot fetch from an unmapped offset either: wait for a real one.
++     * (A put exactly at the end of a mapping is valid, hence the -4.) */
++    { /* GCM_PUTLOG=1: every change of the guest `put`, with the last HLE call
++       * any thread made -- which boot phase moved it, and to what. */
++      static int on = -1; static u32 last = 0xFFFFFFFEu; static int n = 0;
++      if (on < 0) on = getenv("GCM_PUTLOG") ? 1 : 0;
++      if (on && put != last && n++ < 40) {
++          extern const char* g_last_hle_name; extern uint32_t g_last_hle_nid;
++          fprintf(stderr, "[PUTLOG] put 0x%08X -> 0x%08X get=0x%08X (last HLE %s 0x%08X)\n",
++                  last, put, s_fifo_getoff, g_last_hle_name ? g_last_hle_name : "", g_last_hle_nid);
++          last = put;
++      } }
++    if (put != s_fifo_getoff && !gcm_io2ea(put) && !(put >= 4 && gcm_io2ea(put - 4))) {
++        static int _n = 0;
++        if (PS3_LOG_FIRST(_n, 4))
++            fprintf(stderr, "[cellGcmSys] put=0x%08X is not a mapped IO offset; not draining until it is\n", put);
++        return;
++    }
++
+     /* GCM_CTXDBG=1: which context the title is actually driving. Ours is written
+      * once at init; if the title repoints gCellGcmCurrentContext at a buffer of
+      * its own, every field below moves with it and the FIFO the runtime walks
+@@ -3303,6 +3346,7 @@ static void gcm_publish_offset_tables(void)
+         vm_write16(GCM_OFFSET_TABLE_IO_ADDR + i * 2, s_io_address_table[i]);
+         vm_write16(GCM_OFFSET_TABLE_EA_ADDR + i * 2, s_ea_address_table[i]);
+     }
++    s_offset_tables_published = 1;   /* from now on every map/unmap mirrors its entries */
+ }
+ 
+ s32 cellGcmGetOffsetTable(CellGcmOffsetTable* table)
+@@ -4433,6 +4477,9 @@ void cellGcm_syscall_iounmap(u32 io, u32 size)
+  * from a stale offset through whatever the driver has since overwritten. */
+ void cellGcm_syscall_set_fifo(u32 put, u32 get)
+ {
++    { static int n = 0;
++      if (PS3_LOG_FIRST(n, 8))
++          fprintf(stderr, "[cellGcmSys] sys_rsx FIFO reset: put=0x%08X get=0x%08X\n", put, get); }
+     vm_write32(GCM_CONTROL_GUEST_ADDR + 0, put);
+     vm_write32(GCM_CONTROL_GUEST_ADDR + 4, get);
+     s_fifo_getoff  = get;
 diff --git a/tools/build_spu_workloads.py b/tools/build_spu_workloads.py
 index 2eef378b..5b7d4c00 100644
 --- a/tools/build_spu_workloads.py

@@ -92,8 +92,11 @@ static int image_path(char* out, size_t n)
 #endif
 }
 
+extern "C" void gow3_watch_install(void);   /* gow3_diag.cpp */
+
 extern "C" void ps3_load_prx_modules(void)
 {
+    gow3_watch_install();   /* depois do vm_base existir, antes do jogo rodar */
     if (getenv("GOW3_LIBSRE_OFF")) {
         fprintf(stderr, "[gow3-lle] GOW3_LIBSRE_OFF: LFQueue no HLE\n");
         return;

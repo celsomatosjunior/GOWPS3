@@ -1,4 +1,4 @@
-# GOW3 Native: o God of War III inteiro, traduzido e compilado
+﻿# GOW3 Native: o God of War III inteiro, traduzido e compilado
 
 `gow3_build.py` faz, no computador do usuário e sobre a cópia dele do jogo:
 
@@ -64,8 +64,12 @@ dali (ela não faz parte do jogo).
   janela D3D12. Os 8 SPUs e o PM foram resolvidos.
 - LFQueue resolvida com LLE seletivo da libsre (abaixo): o Edge Zlib descompacta (1.510 blocos em 77 s),
   o jogo cria as threads de áudio, adiciona 12 workloads Wws_Job e abre `CINEMATICS/SMLOGO.M2V`.
-- **Parada atual: a janela "não responde".** O Windows registra Application Hang e a fecha. A thread que
-  bombeia a janela também chama os tratadores de vblank/flip do jogo e fica presa dentro de um deles.
+- FIFO do RSX fluindo: o jogo grava `put` e o drenador o consome (o `put` alterna entre dois buffers).
+  Duas correções no `cellGcmSys` (no `ps3recomp-gow3.patch`): a cópia da tabela de offsets que
+  `cellGcmGetOffsetTable` entrega fica viva a cada map/unmap (antes o GOW3 lia uma cópia velha e gravava
+  `put = 0xFFFFFFFF`), e um `put` sem IO mapeado não é perseguido (antes a varredura de get..put com 4 GB
+  travava a thread da janela, e o Windows a fechava por Application Hang).
+- **Parada atual: nenhum flip ainda** (nenhum quadro apresentado).
 
 ## LLE seletivo da libsre (LFQueue)
 
