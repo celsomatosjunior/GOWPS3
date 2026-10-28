@@ -69,12 +69,12 @@ dali (ela não faz parte do jogo).
   `cellGcmGetOffsetTable` entrega fica viva a cada map/unmap (antes o GOW3 lia uma cópia velha e gravava
   `put = 0xFFFFFFFF`), e um `put` sem IO mapeado não é perseguido (antes a varredura de get..put com 4 GB
   travava a thread da janela, e o Windows a fechava por Application Hang).
-- Laço de quadros rodando: ~80 flips/s (`IntroLoaderThread` envia um CLEAR, o marcador de flip 0xFEAD e um`r
+- Laço de quadros rodando: ~80 flips/s (`IntroLoaderThread` envia um CLEAR, o marcador de flip 0xFEAD e um
   SEMAPHORE_ACQUIRE por quadro). A tela é preta: só limpezas.
 - **Parada atual:** a abertura não avança. O jogo lê `CINEMATICS/SMLOGO.M2V` mas nunca chama `cellVdecOpenEx`; a
-  thread principal espera a `IntroLoaderThread`. O RPCS3 (gabarito) não cria essa thread e vai direto para`r
-  `cellVdecQueryAttrEx/OpenEx`. Quem a cria é `func_001E5440`, quando o byte em `*(TOC-0x6C70)` não é zero:`r
-  próximo passo é descobrir quem liga esse byte.`r
+  thread principal espera a `IntroLoaderThread`. O RPCS3 (gabarito) não cria essa thread e vai direto para
+  `cellVdecQueryAttrEx/OpenEx`. Quem a cria é `func_001E5440`, quando o byte em `*(TOC-0x6C70)` não é zero:
+  próximo passo é descobrir quem liga esse byte.
 - Título: `gow3_libsre_lle.cpp` chama `cellGame_init_from_paramsfo` (antes o HLE respondia BLES00000).
 
 ## LLE seletivo da libsre (LFQueue)
