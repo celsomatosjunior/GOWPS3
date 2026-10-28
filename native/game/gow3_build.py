@@ -188,6 +188,28 @@ def step_traduzir(args, work: Path, state: dict, progress):
              f"{size / 1e6:.0f} MB, {todos} instruções não traduzidas (TODO)".replace(",", "."))
 
 
+def add_libsre_lle(args, proj: Path, cm: Path):
+    """LLE seletivo da libsre (gow3_libsre_lle.cpp): a libsre recompilada, o prx_loader do ps3recomp e
+    a ligação dos NIDs da LFQueue. A pasta --lle-libsre tem lifted/libsre_recomp.cpp e libsre_image.bin."""
+    lle = Path(args.lle_libsre).resolve()
+    lifted = lle / "lifted" / "libsre_recomp.cpp"
+    for p in (lifted, lle / "libsre_image.bin"):
+        if not p.is_file():
+            raise StepError(f"--lle-libsre: falta {p}")
+    stubs = proj / "stubs.cpp"
+    text, n = re.subn(r'extern "C" void ps3_load_prx_modules\(void\)\s*\{\s*\}', "", stubs.read_text(encoding="utf-8"))
+    if n != 1:
+        raise StepError("stubs.cpp do modelo mudou: não achei o ps3_load_prx_modules vazio")
+    stubs.write_text(text, encoding="utf-8")
+    ps3r = Path(args.ps3recomp).resolve()
+    srcs = [HERE / "gow3_libsre_lle.cpp", ps3r / "runtime" / "prx" / "prx_loader.c", lifted]
+    cm.write_text(cm.read_text(encoding="utf-8") + "\n# GOW3: LLE seletivo da libsre (LFQueue)\n"
+                  "target_sources(${PROJECT_NAME} PRIVATE\n" +
+                  "".join(f'    "{p.as_posix()}"\n' for p in srcs) + ")\n"
+                  f'target_include_directories(${{PROJECT_NAME}} PRIVATE "{(ps3r / "runtime" / "prx").as_posix()}")\n',
+                  encoding="utf-8")
+
+
 def step_projeto(args, work: Path, state: dict, progress):
     proj = work / "projeto"
     if proj.exists():
@@ -195,6 +217,8 @@ def step_projeto(args, work: Path, state: dict, progress):
     shutil.copytree(Path(args.ps3recomp) / "templates" / "project", proj)
     cm = proj / "CMakeLists.txt"
     cm.write_text(cm.read_text(encoding="utf-8").replace("project(MyGameRecomp", "project(GOW3Native"), encoding="utf-8")
+    if args.lle_libsre:
+        add_libsre_lle(args, proj, cm)
     build = work / "build"
     env = dict(os.environ)
     vs = vs_environment()
@@ -247,6 +271,8 @@ def step_compilar(args, work: Path, state: dict, progress):
     if exe is None:
         raise StepError("compilação terminou sem GOW3Native")
     state.update(exe=str(exe), exe_bytes=exe.stat().st_size)
+    if args.lle_libsre:
+        shutil.copy2(Path(args.lle_libsre) / "libsre_image.bin", exe.parent / "libsre_image.bin")
     progress(f"Executável: {exe} ({exe.stat().st_size / 1e6:.0f} MB) em {state['build_seconds'] // 60} min")
 
 
@@ -302,6 +328,8 @@ def main() -> int:
     ap.add_argument("--segundos", type=int, default=120, help="tempo de execução no passo rodar")
     ap.add_argument("--toc", help="TOC explícito (só para ELFs de teste com descritores ELFv1)")
     ap.add_argument("--sem-spu", action="store_true", help="não traduzir os programas SPU embutidos")
+    ap.add_argument("--lle-libsre", help="pasta da libsre relocada e recompilada (lifted/, libsre_image.bin): "
+                                         "a LFQueue passa a rodar o código real da Sony")
     ap.add_argument("--spu-dir", help="SPU_DIR já montada (programas SPU e policy modules recompilados por fora)")
     args = ap.parse_args()
     if not args.elf and not args.jogo:

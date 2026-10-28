@@ -62,11 +62,34 @@ dali (ela não faz parte do jogo).
   clang-cl em cerca de 5 minutos.
 - Inicialização: módulos do sistema, SPURS "Big"/"Little", threads FIOS, abertura dos PSARC, GCM e
   janela D3D12. Os 8 SPUs e o PM foram resolvidos.
-- **Parada atual: `_cellSpursLFQueuePushBody` (NID 0x8A85674D) não está implementada.** O PPU lê os
-  dados zlib e tenta empurrá-los para a tarefa SPU do Edge Zlib por um LFQueue. Sem o push, a tarefa
-  fica em WAIT_SIGNAL e o PPU fica em EventFlagWait. O consumidor é o próprio código SPU, que acessa a
-  linha de 128 bytes da fila por GETLLAR/PUTLLC; por isso o push precisa seguir exatamente o algoritmo
-  do CellSyncLFQueue em big-endian (push/pop, bs[], v1, eaSignal) e sinalizar a tarefa.
+- LFQueue resolvida com LLE seletivo da libsre (abaixo): o Edge Zlib descompacta (1.510 blocos em 77 s),
+  o jogo cria as threads de áudio, adiciona 12 workloads Wws_Job e abre `CINEMATICS/SMLOGO.M2V`.
+- **Parada atual: a janela "não responde".** O Windows registra Application Hang e a fecha. A thread que
+  bombeia a janela também chama os tratadores de vblank/flip do jogo e fica presa dentro de um deles.
+
+## LLE seletivo da libsre (LFQueue)
+
+O ps3recomp não tem `_cellSpursLFQueuePushBody`, e o caminho ANY2ANY do CellSyncLFQueue
+(`GetPushPointer2`/`CompletePushPointer2`) também não existe no RPCS3, que roda a libsre original. O
+consumidor é o código SPU do jogo, então a fila tem de ser exatamente a da Sony. A libsre do firmware do
+usuário é recompilada e só a LFQueue é ligada a ela; o resto do SPURS continua no HLE.
+
+```powershell
+# 1. o RPCS3 do usuário converte uma cópia de dev_flash\sys\external\libsre.sprx (gera libsre.prx)
+# 2. relocar em 0x30000000 e recompilar
+python ps3recomp\tools\lift_prx.py libsre.prx --base 0x30000000 --output <trabalho>\firmware\libsre_lle
+#    (converter libsre_imports.json para a lista [{library,nid,stub}] de --hle-stubs)
+python ps3recomp\tools\ppu_lifter.py <lle>\libsre_image.bin --raw --base 0x30000000 --toc 0x30039AB0 --functions <lle>\libsre_functions.json --hle-stubs <lle>\libsre_hle_stubs.json --symbol-prefix libsre_ --single-file --header-name libsre_recomp.h --source-name libsre_recomp.cpp --output <lle>\lifted
+# 3. compilar com a libsre
+python native\game\gow3_build.py ... --spu-dir <trabalho>\spu_dir --lle-libsre <lle>
+```
+
+`gow3_libsre_lle.cpp` carrega a imagem relocada de `libsre_image.bin`, ao lado do `.exe`, sem embuti-la
+no executável. Ele liga `_cellSpursLFQueueInitialize`, `_cellSpursLFQueuePushBody` e
+`_cellSpursLFQueuePopBody` à libsre real e troca só a função de sinal da fila (libsre 0x300127CC). Essa
+função procura o taskset nas estruturas internas do SPURS da libsre, que aqui não existem; a versão
+nossa entrega o sinal pelo runtime (`spurs_taskset_find` + `spu_taskset_signal_task`). Nada derivado do
+firmware vai para o repositório.
 
 ## O que esperar
 

@@ -1,8 +1,57 @@
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
-index 82ea66c6..dd0cc862 100644
+index 82ea66c6..4f4f2e2f 100644
 --- a/libs/spurs/cellSpurs.c
 +++ b/libs/spurs/cellSpurs.c
-@@ -937,6 +937,46 @@ s32 cellSpursCreateTasksetWithAttribute(CellSpurs* spurs,
+@@ -874,6 +874,40 @@ static int spurs_guest_range_valid(u32 ea, u32 bytes)
+  * Taskset
+  * =====================================================================*/
+ 
++/* Registry of the tasksets this HLE created, for callers that only know a
++ * (spurs, wid, taskId) triple -- the LFQueue signal function of a lifted
++ * libsre reaches a task that way. Every HLE taskset carries wid 0, so the
++ * triple can match several; the one where taskId is waiting wins, then one
++ * where it is enabled. */
++#define SPURS_TS_REG_MAX 64
++static u32 s_ts_reg[SPURS_TS_REG_MAX];
++static u32 s_ts_reg_n;
++
++static void spurs_taskset_registry_add(u32 taskset_ea)
++{
++    for (u32 i = 0; i < s_ts_reg_n; i++)
++        if (s_ts_reg[i] == taskset_ea) return;
++    if (s_ts_reg_n < SPURS_TS_REG_MAX) s_ts_reg[s_ts_reg_n++] = taskset_ea;
++}
++
++static int spurs_taskset_bit(u32 bitset_ea, u32 taskId)
++{
++    return (vm_read32(bitset_ea + (taskId >> 5) * 4) >> (31 - (taskId & 31))) & 1;
++}
++
++u32 spurs_taskset_find(u32 spurs_ea, u32 wid, u32 taskId)
++{
++    u32 enabled = 0;
++    if (taskId > 0x7F) return 0;
++    for (u32 i = s_ts_reg_n; i-- > 0;) {
++        u32 ts = s_ts_reg[i];
++        if ((u32)vm_read64(ts + CSTS_SPURS) != spurs_ea || vm_read32(ts + CSTS_WID) != wid) continue;
++        if (spurs_taskset_bit(ts + CSTS_WAITING, taskId)) return ts;
++        if (!enabled && spurs_taskset_bit(ts + CSTS_ENABLED, taskId)) enabled = ts;
++    }
++    return enabled;
++}
++
+ static s32 spurs_create_taskset(CellSpurs* spurs, CellSpursTaskset* taskset,
+                                 u64 args, const u8* priority, u32 maxContention,
+                                 u32 taskset_size)
+@@ -910,6 +944,7 @@ static s32 spurs_create_taskset(CellSpurs* spurs, CellSpursTaskset* taskset,
+     spurs_taskset_init(taskset_ea, spurs_ea, args, /*wid*/0,
+                        taskset_size, /*evf1*/0, /*evf2*/0);
+     g_ydkj_real_taskset_ea = taskset_ea;
++    spurs_taskset_registry_add(taskset_ea);
+ 
+     g_ydkj_real_spurs_ea = spurs_ea;   /* capture for the taskset-policy handoff (LS[0x1C0]) */
+     printf("[cellSpurs] CreateTaskset() ea=0x%08X spurs=0x%08X (real BE layout)\n", taskset_ea, spurs_ea);
+@@ -937,6 +972,46 @@ s32 cellSpursCreateTasksetWithAttribute(CellSpurs* spurs,
      return spurs_create_taskset(spurs, taskset, 0, NULL, 0, size);
  }
  
@@ -50,14 +99,16 @@ index 82ea66c6..dd0cc862 100644
  {
      taskset = GUEST_PTR(taskset, CellSpursTaskset*);
 diff --git a/libs/spurs/cellSpurs.h b/libs/spurs/cellSpurs.h
-index 07a3d2e4..47371eca 100644
+index 07a3d2e4..8024c269 100644
 --- a/libs/spurs/cellSpurs.h
 +++ b/libs/spurs/cellSpurs.h
-@@ -236,6 +236,8 @@ s32 cellSpursShutdownTaskset(CellSpursTaskset* taskset);
+@@ -236,6 +236,10 @@ s32 cellSpursShutdownTaskset(CellSpursTaskset* taskset);
  s32 cellSpursJoinTaskset(CellSpursTaskset* taskset);
  
  s32 cellSpursTasksetAttributeInitialize(CellSpursTasksetAttribute* attr);
 +s32 _cellSpursTasksetAttribute2Initialize(void* attr, u32 revision);
++/* The HLE taskset of (spurs, wid) holding taskId, preferring one where it waits; 0 if none. */
++u32 spurs_taskset_find(u32 spurs_ea, u32 wid, u32 taskId);
 +s32 cellSpursCreateTaskset2(CellSpurs* spurs, CellSpursTaskset* taskset, const void* attr);
  s32 cellSpursTasksetAttributeSetName(CellSpursTasksetAttribute* attr,
                                        const char* name);
