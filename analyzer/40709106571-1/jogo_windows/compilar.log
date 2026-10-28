@@ -1,0 +1,200 @@
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4074,17): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4075,30): warning: function 'strchr' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+ 4075 |                 char* semi = strchr(s, 59);   /* 59 = ; */
+      |                              ^~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4077,32): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+ 4077 |                 *semi = 0; s = semi + 1;
+      |                                ^~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4077,32): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4091,23): warning: function 'strlen' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+ 4091 |             bytes += (strlen(argp[a]) + 1u + 0xFu) & ~uint64_t(0xF);
+      |                       ^~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4091,30): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 4091 |             bytes += (strlen(argp[a]) + 1u + 0xFu) & ~uint64_t(0xF);
+      |                              ^~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4091,30): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4115,20): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 4115 |             for (; argp[a][j]; j++) vm_write8(sp_cur + j, (uint8_t)argp[a][j]);
+      |                    ^~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4115,20): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4115,20): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 4115 |             for (; argp[a][j]; j++) vm_write8(sp_cur + j, (uint8_t)argp[a][j]);
+      |                    ^~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4115,20): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4115,68): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 4115 |             for (; argp[a][j]; j++) vm_write8(sp_cur + j, (uint8_t)argp[a][j]);
+      |                                                                    ^~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4115,68): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4115,68): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 4115 |             for (; argp[a][j]; j++) vm_write8(sp_cur + j, (uint8_t)argp[a][j]);
+      |                                                                    ^~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4115,68): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4136,78): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+ 4136 |             uint32_t pa = __builtin_bswap32(*(uint32_t*)(vm_base + argv_base + a * 8u + 4));
+      |                                                          ~~~~~~~~~~~~~~~~~~~~^~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4136,78): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4136,66): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+ 4136 |             uint32_t pa = __builtin_bswap32(*(uint32_t*)(vm_base + argv_base + a * 8u + 4));
+      |                                                          ~~~~~~~~^~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4136,66): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4136,58): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+ 4136 |             uint32_t pa = __builtin_bswap32(*(uint32_t*)(vm_base + argv_base + a * 8u + 4));
+      |                                                          ^~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4136,58): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4138,35): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 4138 |             for (; k < 79; k++) { rb[k] = (char)vm_base[pa + k]; if (!rb[k]) break; }
+      |                                   ^~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4138,35): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4138,49): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 4138 |             for (; k < 79; k++) { rb[k] = (char)vm_base[pa + k]; if (!rb[k]) break; }
+      |                                                 ^~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4138,49): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4138,71): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 4138 |             for (; k < 79; k++) { rb[k] = (char)vm_base[pa + k]; if (!rb[k]) break; }
+      |                                                                       ^~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4138,71): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4140,13): warning: function 'fprintf' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+ 4140 |             fprintf(stderr, "[ppu] argv[%u] @0x%08X = \"%s\"\n", a, pa, rb);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4140,73): note: string argument is not guaranteed to be null-terminated
+ 4140 |             fprintf(stderr, "[ppu] argv[%u] @0x%08X = \"%s\"\n", a, pa, rb);
+      |                                                                         ^~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4160,27): warning: function 'snprintf' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+ 4160 |     char b[1800]; int p = snprintf(b, sizeof b, "[CHAIN:%s]", tag ? tag : "?");
+      |                           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4160,63): note: string argument is not guaranteed to be null-terminated
+ 4160 |     char b[1800]; int p = snprintf(b, sizeof b, "[CHAIN:%s]", tag ? tag : "?");
+      |                                                               ^~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4162,36): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 4162 |         uintptr_t tgt = (uintptr_t)bt[i]; uintptr_t bh = 0; uint32_t bg = 0;
+      |                                    ^~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4162,36): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4164,38): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 4164 |             uintptr_t h = (uintptr_t)function_table[k].func;
+      |                                      ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4164,38): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4165,62): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 4165 |             if (h <= tgt && h > bh) { bh = h; bg = (uint32_t)function_table[k].addr; }
+      |                                                              ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4165,62): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4168,18): warning: function 'snprintf' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+ 4168 |             p += snprintf(b + p, sizeof(b) - p, " %08X", bg);
+      |                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4168,27): note:  buffer pointer and size may not match
+ 4168 |             p += snprintf(b + p, sizeof(b) - p, " %08X", bg);
+      |                           ^~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4168,27): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+ 4168 |             p += snprintf(b + p, sizeof(b) - p, " %08X", bg);
+      |                           ^
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4168,27): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4170,5): warning: function 'fprintf' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+ 4170 |     fprintf(stderr, "%s\n", b);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4170,29): note: string argument is not guaranteed to be null-terminated
+ 4170 |     fprintf(stderr, "%s\n", b);
+      |                             ^
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4183,30): warning: function 'snprintf' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+ 4183 |     char line[1600]; int p = snprintf(line, sizeof line, "[HOSTBT %s]", tag ? tag : "");
+      |                              ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4183,73): note: string argument is not guaranteed to be null-terminated
+ 4183 |     char line[1600]; int p = snprintf(line, sizeof line, "[HOSTBT %s]", tag ? tag : "");
+      |                                                                         ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4185,36): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 4185 |         uintptr_t tgt = (uintptr_t)bt[i]; uint32_t bg = 0; uintptr_t bh = 0;
+      |                                    ^~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4185,36): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4187,38): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 4187 |             uintptr_t h = (uintptr_t)function_table[k].func;
+      |                                      ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4187,38): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4188,52): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 4188 |             if (h <= tgt && h > bh) { bh = h; bg = function_table[k].addr; }
+      |                                                    ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4188,52): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4190,45): warning: function 'snprintf' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+ 4190 |         if (bg && (tgt - bh) < 0x1400) p += snprintf(line + p, sizeof(line) - p, " %08X+%llX", bg, (unsigned long long)(tgt - bh));
+      |                                             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4190,54): note:  buffer pointer and size may not match
+ 4190 |         if (bg && (tgt - bh) < 0x1400) p += snprintf(line + p, sizeof(line) - p, " %08X+%llX", bg, (unsigned long long)(tgt - bh));
+      |                                                      ^~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4190,54): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+ 4190 |         if (bg && (tgt - bh) < 0x1400) p += snprintf(line + p, sizeof(line) - p, " %08X+%llX", bg, (unsigned long long)(tgt - bh));
+      |                                                      ^~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4190,54): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4192,5): warning: function 'fprintf' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+ 4192 |     fprintf(stderr, "%s\n", line); fflush(stderr);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4192,29): note: string argument is not guaranteed to be null-terminated
+ 4192 |     fprintf(stderr, "%s\n", line); fflush(stderr);
+      |                             ^~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4210,29): warning: function 'snprintf' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+ 4210 |     char gs[1500]; int gp = snprintf(gs, sizeof gs, "[GCS:%s] host-bt->guest:", tag ? tag : "?");
+      |                             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4210,81): note: string argument is not guaranteed to be null-terminated
+ 4210 |     char gs[1500]; int gp = snprintf(gs, sizeof gs, "[GCS:%s] host-bt->guest:", tag ? tag : "?");
+      |                                                                                 ^~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4213,36): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 4213 |         uintptr_t tgt = (uintptr_t)bt[i];
+      |                                    ^~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4213,36): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4216,38): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 4216 |             uintptr_t h = (uintptr_t)function_table[k].func;
+      |                                      ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4216,38): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4217,52): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 4217 |             if (h <= tgt && h > bh) { bh = h; bg = function_table[k].addr; }
+      |                                                    ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4217,52): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4220,19): warning: function 'snprintf' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+ 4220 |             gp += snprintf(gs+gp, sizeof(gs)-gp, " func_%08X+0x%llX", bg, (unsigned long long)(tgt-bh));
+      |                   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4220,28): note:  buffer pointer and size may not match
+ 4220 |             gp += snprintf(gs+gp, sizeof(gs)-gp, " func_%08X+0x%llX", bg, (unsigned long long)(tgt-bh));
+      |                            ^~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4220,28): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+ 4220 |             gp += snprintf(gs+gp, sizeof(gs)-gp, " func_%08X+0x%llX", bg, (unsigned long long)(tgt-bh));
+      |                            ^~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4220,28): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4229,30): warning: function 'snprintf' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+ 4229 |     { char rs[900]; int rp = snprintf(rs, sizeof rs, "[GCS:%s] host rva:", tag ? tag : "?");
+      |                              ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4229,76): note: string argument is not guaranteed to be null-terminated
+ 4229 |     { char rs[900]; int rp = snprintf(rs, sizeof rs, "[GCS:%s] host rva:", tag ? tag : "?");
+      |                                                                            ^~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4233,49): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 4233 |             uint32_t gf = ppu_prof_resolve_host(bt[q]);
+      |                                                 ^~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4233,49): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4234,19): warning: function 'snprintf' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+ 4234 |             rp += snprintf(rs+rp, sizeof(rs)-rp, gf ? " %llX(f_%08X)" : " %llX",
+      |                   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ 4235 |                            (unsigned long long)((char*)bt[q] - mb2), gf); }
+      |                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4234,28): note:  buffer pointer and size may not match
+ 4234 |             rp += snprintf(rs+rp, sizeof(rs)-rp, gf ? " %llX(f_%08X)" : " %llX",
+      |                            ^~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4234,28): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+ 4234 |             rp += snprintf(rs+rp, sizeof(rs)-rp, gf ? " %llX(f_%08X)" : " %llX",
+      |                            ^~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4234,28): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4235,56): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 4235 |                            (unsigned long long)((char*)bt[q] - mb2), gf); }
+      |                                                        ^~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4235,56): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4236,7): warning: function 'fprintf' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+ 4236 |       fprintf(stderr, "%s\n", rs); }
+      |       ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4236,31): note: string argument is not guaranteed to be null-terminated
+ 4236 |       fprintf(stderr, "%s\n", rs); }
+      |                               ^~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4237,5): warning: function 'fprintf' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+ 4237 |     fprintf(stderr, "%s\n", gs); fflush(stderr);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp(4237,29): note: string argument is not guaranteed to be null-terminated
+ 4237 |     fprintf(stderr, "%s\n", gs); fflush(stderr);
+      |                             ^~
+1999 warnings generated.
+[176/179] Building CXX object CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_007.cpp.obj
+[177/179] Building CXX object CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_006.cpp.obj
+[178/179] Linking CXX executable GOW3Native.exe
+(código 0)
