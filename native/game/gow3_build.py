@@ -213,7 +213,9 @@ def step_projeto(args, work: Path, state: dict, progress):
         raise StepError("faltam ferramentas: " + ", ".join(missing) + " (winget install Kitware.CMake Ninja-build.Ninja)")
     cmd = ["cmake", "-S", proj, "-B", build, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
            f"-DPS3RECOMP_DIR={Path(args.ps3recomp).resolve()}", f"-DRECOMP_DIR={state['recomp_dir']}"] + cc
-    if not args.sem_spu:
+    if args.spu_dir:
+        cmd.append(f"-DSPU_DIR={Path(args.spu_dir).resolve()}")
+    elif not args.sem_spu:
         cmd.append(f"-DPORT_SPU_INPUTS={state['elf']}")
     if build.exists():
         shutil.rmtree(build)
@@ -300,6 +302,7 @@ def main() -> int:
     ap.add_argument("--segundos", type=int, default=120, help="tempo de execução no passo rodar")
     ap.add_argument("--toc", help="TOC explícito (só para ELFs de teste com descritores ELFv1)")
     ap.add_argument("--sem-spu", action="store_true", help="não traduzir os programas SPU embutidos")
+    ap.add_argument("--spu-dir", help="SPU_DIR já montada (programas SPU e policy modules recompilados por fora)")
     args = ap.parse_args()
     if not args.elf and not args.jogo:
         ap.error("indique --jogo ou --elf")
