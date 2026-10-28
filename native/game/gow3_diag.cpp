@@ -114,12 +114,16 @@ static void dump(HMODULE self, int round)
     fflush(stderr);
 }
 
+extern "C" void ppu_report_guest_lrs(void);   /* ppu_loader.cpp: LR do PS3 de cada thread do jogo */
+
 static DWORD WINAPI watchdog(LPVOID arg)
 {
     int first = (int)(intptr_t)arg;
     HMODULE self = GetModuleHandleA(NULL);
     Sleep((DWORD)first * 1000);
     for (int round = 1; round <= 6; round++) {
+        fprintf(stderr, "[GOW3-WD] LRs do PS3 (rodada %d):\n", round);
+        ppu_report_guest_lrs();
         dump(self, round);
         Sleep(5000);
     }

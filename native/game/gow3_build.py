@@ -285,8 +285,9 @@ MARKERS = {
     "chamadas_indiretas_sem_destino": re.compile(r"unresolved indirect call"),
     "falhas_de_memoria": re.compile(r"(?i)access violation|segfault|guest fault|null read|bad address"),
     "erros": re.compile(r"(?i)\berror\b|fatal"),
-    "quadros": re.compile(r"(?i)\bflip\b"),
 }
+# Com GCM_FLIPCOUNT=1 o cellGcmSys registra "[flip] N at T ms" a cada flip (todos até 400, depois 1 em 10).
+FLIP_RE = re.compile(r"^\[flip\] (\d+) at (\d+) ms", re.M)
 
 
 def step_rodar(args, work: Path, state: dict, progress):
@@ -294,6 +295,7 @@ def step_rodar(args, work: Path, state: dict, progress):
     if not exe:
         raise StepError("compile antes (passo compilar)")
     env = dict(os.environ)
+    env.setdefault("GCM_FLIPCOUNT", "1")
     if args.jogo:
         root = Path(args.jogo)
         if (root / "PS3_GAME").is_dir():
@@ -313,6 +315,10 @@ def step_rodar(args, work: Path, state: dict, progress):
             ended = f"ainda rodando após {args.segundos} s (encerrado pelo script)"
     text = lp.read_text(encoding="utf-8", errors="replace")
     counts = {k: len(rx.findall(text)) for k, rx in MARKERS.items()}
+    flips = FLIP_RE.findall(text)
+    counts["flips"] = int(flips[-1][0]) if flips else 0
+    if len(flips) > 1 and int(flips[-1][1]) > 0:
+        counts["flips_por_s"] = round(int(flips[-1][0]) * 1000 / int(flips[-1][1]))
     nids = sorted(set(re.findall(r"NID (0x[0-9A-Fa-f]{8})[^\n]*?in module (\w+)", text)))[:60]
     state.update(run_seconds=round(time.time() - t0), run_end=ended, run_code=code, run_counts=counts,
                  run_missing_nids=[f"{m}:{n}" for n, m in nids], run_tail=text.splitlines()[-60:])

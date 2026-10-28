@@ -69,7 +69,11 @@ dali (ela não faz parte do jogo).
   `cellGcmGetOffsetTable` entrega fica viva a cada map/unmap (antes o GOW3 lia uma cópia velha e gravava
   `put = 0xFFFFFFFF`), e um `put` sem IO mapeado não é perseguido (antes a varredura de get..put com 4 GB
   travava a thread da janela, e o Windows a fechava por Application Hang).
-- **Parada atual: nenhum flip ainda** (nenhum quadro apresentado).
+- Laço de quadros rodando: ~80 flips/s (`IntroLoaderThread` envia um CLEAR, o marcador de flip 0xFEAD e um`r
+  SEMAPHORE_ACQUIRE por quadro). A tela é preta: só limpezas.
+- **Parada atual:** a abertura não avança. O jogo lê `CINEMATICS/SMLOGO.M2V` mas nunca chama `cellVdecOpenEx`; a
+  thread principal espera a `IntroLoaderThread`. Próximo passo: comparar a ordem das chamadas com o RPCS3
+  (`native/tools/rpcs3_gabarito.ps1`).
 
 ## LLE seletivo da libsre (LFQueue)
 
