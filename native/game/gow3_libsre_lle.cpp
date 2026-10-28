@@ -93,10 +93,21 @@ static int image_path(char* out, size_t n)
 }
 
 extern "C" void gow3_watch_install(void);   /* gow3_diag.cpp */
+extern "C" void cellGame_init_from_paramsfo(const char* sfo_path);
+extern "C" const char* ppu_vfs_root;
 
 extern "C" void ps3_load_prx_modules(void)
 {
     gow3_watch_install();   /* depois do vm_base existir, antes do jogo rodar */
+
+    /* O main.cpp do modelo nunca lê o PARAM.SFO, e sem isso o cellGame responde o título padrão
+     * BLES00000: cellGameDataCheck, o save (BLES00000-USERDATA) e o SysCacheMount usam o código errado e
+     * o God of War III segue outro caminho de boot (cria uma IntroLoaderThread que o RPCS3 não cria). */
+    if (ppu_vfs_root && *ppu_vfs_root) {
+        char sfo[1100];
+        snprintf(sfo, sizeof sfo, "%s/PS3_GAME/PARAM.SFO", ppu_vfs_root);
+        cellGame_init_from_paramsfo(sfo);
+    }
     if (getenv("GOW3_LIBSRE_OFF")) {
         fprintf(stderr, "[gow3-lle] GOW3_LIBSRE_OFF: LFQueue no HLE\n");
         return;

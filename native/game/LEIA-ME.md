@@ -72,8 +72,10 @@ dali (ela não faz parte do jogo).
 - Laço de quadros rodando: ~80 flips/s (`IntroLoaderThread` envia um CLEAR, o marcador de flip 0xFEAD e um`r
   SEMAPHORE_ACQUIRE por quadro). A tela é preta: só limpezas.
 - **Parada atual:** a abertura não avança. O jogo lê `CINEMATICS/SMLOGO.M2V` mas nunca chama `cellVdecOpenEx`; a
-  thread principal espera a `IntroLoaderThread`. Próximo passo: comparar a ordem das chamadas com o RPCS3
-  (`native/tools/rpcs3_gabarito.ps1`).
+  thread principal espera a `IntroLoaderThread`. O RPCS3 (gabarito) não cria essa thread e vai direto para`r
+  `cellVdecQueryAttrEx/OpenEx`. Quem a cria é `func_001E5440`, quando o byte em `*(TOC-0x6C70)` não é zero:`r
+  próximo passo é descobrir quem liga esse byte.`r
+- Título: `gow3_libsre_lle.cpp` chama `cellGame_init_from_paramsfo` (antes o HLE respondia BLES00000).
 
 ## LLE seletivo da libsre (LFQueue)
 
