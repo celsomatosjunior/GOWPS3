@@ -1,0 +1,8 @@
+  func_10001E78: estado 3/4 (1 páginas, ok)
+  func_10001E78: estado 4/4 (1 páginas, ok)
+  func_10001EA8: estado 1/4 (2 páginas, ok)
+  func_10001EA8: estado 2/4 (2 páginas, ok)
+  func_10001EA8: estado 3/4 (2 páginas, ok)
+  func_10001EA8: estado 4/4 (2 páginas, ok)
+{'source': 'qemu (corpus do projeto)', 'created': '2026-10-28 18:38:28 +0000', 'elf_sha256': '8f2c8df1f87ed51786b3568476ace74d7262bd8362a35c3570b38caaf9508698', 'seconds': 0, 'functions': 16, 'functions_captured': 16, 'states': 64, 'breakpoints_refused': [], 'ok_states': 64, 'error': None}
+CAPTURA QEMU: tudo certo
