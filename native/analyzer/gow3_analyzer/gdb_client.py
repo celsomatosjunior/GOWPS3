@@ -120,6 +120,10 @@ class GdbClient:
             reply = self.command("qsThreadInfo")
         return out
 
+    def current_thread(self) -> str | None:
+        r = self.command("qC")
+        return r[2:].split(";")[0] if r.startswith("QC") and len(r) > 2 else None
+
     def select_thread(self, tid: str) -> bool:
         return self.command("Hg" + tid) == "OK"
 

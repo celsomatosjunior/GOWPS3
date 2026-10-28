@@ -119,7 +119,17 @@ def read_state(client: GdbClient) -> dict | None:
 
 
 def stopped_thread(client: GdbClient, wanted: set[int]) -> tuple[str, int] | None:
-    for tid in client.threads():
+    """A thread que bateu no breakpoint. No RPCS3, logo depois da parada o `qC` devolve a thread que
+    pausou a emulação (pausedBy). Procurar pelo PC não basta: no Interpreter o RPCS3 só atualiza o
+    endereço atual (cia) nos desvios, então outra thread que acabou de chamar a mesma função mostra
+    o endereço de entrada dela estando já no meio da função, com registradores de outro momento."""
+    tid = client.current_thread()
+    if tid and client.select_thread(tid):
+        pc = client.read_register(REG_PC)
+        if pc in wanted:
+            return tid, pc
+        return None  # a parada não foi num dos nossos breakpoints
+    for tid in client.threads():  # servidores sem qC
         if client.select_thread(tid):
             pc = client.read_register(REG_PC)
             if pc in wanted:
