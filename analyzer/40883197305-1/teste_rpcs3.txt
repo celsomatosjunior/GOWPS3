@@ -1,0 +1,20 @@
+OK    RPCS3 localizado: D:\a\GOWPS3\GOWPS3\rpcs3\rpcs3.exe
+Gerando o EBOOT.ELF com o seu RPCS3 (D:\a\GOWPS3\GOWPS3\rpcs3\rpcs3.exe)...
+$ D:\a\GOWPS3\GOWPS3\rpcs3\rpcs3.exe --no-gui --decrypt D:\a\GOWPS3\GOWPS3\synth_rpcs3\rpcs3_debug\rpcs3_conversao\EBOOT_depuracao_sintetico.BIN
+(terminou sozinho; código 0; 1 s)
+Log file open failed: D:/a/GOWPS3/GOWPS3/rpcs3/log/RPCS3.log (error 0)
+Log file open failed: D:/a/GOWPS3/GOWPS3/rpcs3/log/RPCS3.log.gz (error 0)
+
+--- trechos do log do próprio RPCS3 (D:\a\GOWPS3\GOWPS3\rpcs3\log\RPCS3.log) ---
+(log do RPCS3 não encontrado ou sem linhas relevantes)
+OK    RPCS3 de verdade: SELF de depuração convertido em ELF idêntico ao original
+Identificando EBOOT_varejo_sintetico.BIN (SHA-256 de 33.384 bytes)...
+SELF de varejo cifrado (revisão de chave 0x001C). A análise precisa do EBOOT.ELF, que o analisador pede ao RPCS3 instalado no seu computador para gerar a partir da sua cópia. Este programa não decifra e não contorna proteções.
+Gerando o EBOOT.ELF com o seu RPCS3 (D:\a\GOWPS3\GOWPS3\rpcs3\rpcs3.exe)...
+Não foi possível gerar o EBOOT.ELF: o RPCS3 não gerou o EBOOT.ELF. Versão do RPCS3: RPCS3 v0.0.43-20504-cd0c200b Alpha. O RPCS3 informou: SELF: Failed to load SELF file headers! Veja rpcs3_conversao.log. Confira se o RPCS3 abre normalmente e se o firmware do PS3 está instalado nele (File > Install Firmware).
+Gravando relatórios...
+OK    SELF de varejo sintético: conversão recusada e explicada (falhou)
+OK    .exe com --rpcs3 e SELF de varejo sintético: código 4, conversão falhou
+OK    .exe: o RPCS3 iniciou a conversão de verdade (30 s; o RPCS3 não gerou o EBOOT.ELF. Versão do RPCS3: RPCS3 v0.0.43-20504-cd0c200b Alpha. O RPCS3 informou: SELF: Failed to load SELF file headers! Veja rpcs3_convers)
+
+TESTE RPCS3: tudo certo
