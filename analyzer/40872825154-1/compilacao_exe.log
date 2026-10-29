@@ -1,0 +1,4 @@
+D:\a\GOWPS3\GOWPS3\dist\GOW3_Native_Analyzer\_internal\ziglang\zig.exe c++ -target x86_64-windows-gnu -std=c++20 -O1 -w -fno-strict-aliasing -DPPU_NO_INLINE_LOADS -DPPU_NO_INLINE_STORES -I synth\exe\recomp_test\lifted -I D:\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu -x c++ synth\exe\recomp_test\lifted\ppu_recomp.c D:\a\GOWPS3\GOWPS3\dist\GOW3_Native_Analyzer\_internal\runtime\recomp_test_runtime.cpp -o synth\exe\recomp_test\GOW3_Native_RecompTest.exe
+
+
+(código 0, 54.6 s)
