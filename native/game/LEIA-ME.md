@@ -120,7 +120,18 @@ dali (ela não faz parte do jogo).
 
   Com isso o `SMLOGO.M2V` decodifica inteiro, e as imagens corretas chegam à memória (0x75200000, RGBA). Na
   tela, porém, ainda não aparecem.
-- **Parada atual: o quadro passa pela memória do PS3.** Por quadro, o jogo:
+- **Imagem na tela (29/10/2026): o logo da Santa Monica e a abertura da história, com as legendas em
+  português.** O que mudou:
+  - o passo `rodar` liga o motor "live draw" (`RSX_LIVE_DRAW=1`); `gow3_rsx.cpp` escolhe o motor em tempo de
+    execução e o `gow3_build.py` (`use_gow3_rsx`) troca os `rsx_backend_*` do `main.cpp` do modelo;
+  - com o fim do código pelas seções executáveis (PR #1 do Arnaldo), a tradução caiu de 1,3 GB para 73 MB de
+    C++ (11.482 funções, nenhuma instrução sem tradução), o executável de 119 para 58 MB e a compilação do zero
+    para ~3,5 min.
+
+  Numa execução de 120 s: 4.430 flips (~37/s) e 1.314 AUs de vídeo, sem erros. `LD_FRAME_DUMP=<pasta>`
+  (com `LD_FRAME_DUMP_EVERY`) salva os quadros do live draw.
+- Comparação com o ps3kit do Arnaldo: `native/docs/PS3KIT_COMPARACAO.md`.
+- **Com o backend D3D12 antigo (sem live draw) o quadro passava pela memória do PS3 e não aparecia:** Por quadro, o jogo:
   1. desenha no buffer de tela (local 0x0 / 0x384000 / 0x708000);
   2. copia-o com o NV3089 para a memória principal (0x70A80000), onde as tarefas MLAA filtram;
   3. compõe a tela a partir de uma textura em 0xC1194000.

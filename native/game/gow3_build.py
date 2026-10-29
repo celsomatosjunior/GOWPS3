@@ -242,6 +242,28 @@ def ffmpeg_cmake_args(args) -> list:
     return ["-DPS3RECOMP_FFMPEG_RUNTIME=ON", f"-DPS3RECOMP_FFMPEG_INCLUDE_DIR={inc}"]
 
 
+def use_gow3_rsx(proj: Path, cm: Path):
+    """No Windows, o main.cpp do modelo chama o motor de desenho por gow3_rsx.cpp, que escolhe em tempo de
+    execução entre o backend D3D12 (padrão) e o live draw (RSX_LIVE_DRAW=1)."""
+    main = proj / "main.cpp"
+    text = main.read_text(encoding="utf-8")
+    old = ("#  define rsx_backend_init    rsx_d3d12_backend_init\n"
+           "#  define rsx_backend_present rsx_d3d12_backend_present\n"
+           "#  define rsx_backend_pump    rsx_d3d12_backend_pump_messages\n")
+    if old not in text:
+        raise StepError("main.cpp do modelo mudou: não achei os rsx_backend_* do D3D12")
+    new = ('extern "C" int  gow3_rsx_init(uint32_t w, uint32_t h, const char* title);\n'
+           'extern "C" void gow3_rsx_present(void);\n'
+           'extern "C" int  gow3_rsx_pump(void);\n'
+           "#  define rsx_backend_init    gow3_rsx_init\n"
+           "#  define rsx_backend_present gow3_rsx_present\n"
+           "#  define rsx_backend_pump    gow3_rsx_pump\n")
+    main.write_text(text.replace(old, new), encoding="utf-8")
+    cm.write_text(cm.read_text(encoding="utf-8") + "\n# GOW3: motor de desenho escolhido em tempo de execução\n"
+                  f'target_sources(${{PROJECT_NAME}} PRIVATE "{(HERE / "gow3_rsx.cpp").as_posix()}")\n',
+                  encoding="utf-8")
+
+
 def step_projeto(args, work: Path, state: dict, progress):
     proj = work / "projeto"
     if proj.exists():
@@ -255,6 +277,7 @@ def step_projeto(args, work: Path, state: dict, progress):
     cm.write_text(cm.read_text(encoding="utf-8") + "\n# GOW3: watchdog e mapa do link\n"
                   f'target_sources(${{PROJECT_NAME}} PRIVATE "{(HERE / "gow3_diag.cpp").as_posix()}")\n'
                   "if(MSVC)\n    target_link_options(${PROJECT_NAME} PRIVATE /MAP)\nendif()\n", encoding="utf-8")
+    use_gow3_rsx(proj, cm)
     build = work / "build"
     env = dict(os.environ)
     vs = vs_environment()
@@ -341,6 +364,9 @@ def step_rodar(args, work: Path, state: dict, progress):
     # O player de vídeo do GOW3 pausa o envio de AUs por mais de 1,5 s; o "idle drain" do cellVdec
     # esvaziava o decodificador com flush nessa pausa e todas as AUs P/B seguintes saíam vazias.
     env.setdefault("VDEC_IDLE_DRAIN_MS", "0")
+    # Motor de desenho "live draw" (gow3_rsx.cpp): com ele aparecem o logo e a abertura; o backend
+    # D3D12 padrão grava os desenhos para o flip e não mostra o que o jogo compõe pela memória.
+    env.setdefault("RSX_LIVE_DRAW", "1")
     if args.jogo:
         root = Path(args.jogo)
         if (root / "PS3_GAME").is_dir():
