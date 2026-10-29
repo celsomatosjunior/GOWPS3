@@ -403,6 +403,35 @@ index 5fc50208..4a0d0deb 100644
                              ctx->gpr[0]._u32[0] & SPU_LS_MASK, (uint32_t)ea);
                int nb = s_af == 2 ? 128 : s_af ? 64 : 8;   /* 64 covers +0x30 pendingRecv; =2 the whole line */
                p += snprintf(buf + p, sizeof buf - p, " RAM=");
+diff --git a/runtime/spu/spu_dma.h b/runtime/spu/spu_dma.h
+index 8c4ccaa8..44b8e6d6 100644
+--- a/runtime/spu/spu_dma.h
++++ b/runtime/spu/spu_dma.h
+@@ -1573,6 +1573,24 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
+         }
+     }
+ 
++    /* SPU_DMA_IMG=<image id>: the first SPU_DMA_MAX (default 200) transfers of that
++     * image, to see where a task reads and writes (frame buffers, queues). */
++    { static int s_di = -2; static int s_dmax; static volatile long s_dn;
++      if (s_di == -2) { const char* e = getenv("SPU_DMA_IMG"); s_di = e ? atoi(e) : -1;
++                        const char* m = getenv("SPU_DMA_MAX"); s_dmax = m ? atoi(m) : 200; }
++      if (s_di >= 0 && spu->image_id == s_di && s_dn < s_dmax) {
++          s_dn++;
++          fprintf(stderr, "[spu-dma] img=%d cmd=0x%02X lsa=0x%05X ea=0x%09llX size=0x%X tag=%u",
++                  spu->image_id, cmd, lsa, (unsigned long long)ea, size, tag);
++          if (cmd & 0x04) {   /* list: EAL is the list in LS; show its first elements */
++              const uint8_t* l = spu->ls + ((uint32_t)ea & 0x3FFF8u);
++              for (int k = 0; k < 3 && (uint32_t)k * 8u < size; k++, l += 8)
++                  fprintf(stderr, " [%u:%08X]", ((uint32_t)l[2] << 8) | l[3],
++                          ((uint32_t)l[4] << 24) | ((uint32_t)l[5] << 16) | ((uint32_t)l[6] << 8) | l[7]);
++          }
++          fprintf(stderr, "\n");
++      } }
++
+     /* Execute the transfer.
+      * List commands (GETL/PUTL...): per CBEA the LIST's local-store address is
+      * carried in MFC_EAL (the PM writes EAL=list, LSA=dest) and each element
 diff --git a/runtime/spu/spu_workload.c b/runtime/spu/spu_workload.c
 index 3ce8d0d6..e0ce995c 100644
 --- a/runtime/spu/spu_workload.c

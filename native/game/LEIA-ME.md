@@ -100,6 +100,14 @@ dali (ela não faz parte do jogo).
 
   Resultado, em 3 de 3 execuções de 70 s: o jogo sai da espera, abre `CINEMATICS/SMLOGO.M2V` no `cellVdec`
   (330 unidades decodificadas) e os flips continuam.
+- Depois do logo, em execuções de 2–3 min, aparece uma imagem do jogo (nuvens, relevo e raios, com cores
+  erradas, rosadas), mas ela fica parada. O jogo segue a ~38 quadros/s (o label 0x480 do RSX sobe ~190 a
+  cada 5 s), porém o backend recebe só ~3 desenhos de tela inteira por quadro, sem geometria
+  (`PERF=1`: "0k verts"). Pontas a seguir:
+  - as tarefas MLAA leem e gravam o quadro na memória principal (EA 0x70A80000, 5120 bytes por linha;
+    `SPU_DMA_IMG=315634988` mostra as listas DMA), mas o backend D3D12 não grava nessa memória o que a GPU
+    desenha, nem relê o que os SPUs escreveram;
+  - os jobs Wws (Edge e os outros) são carregados em tempo de execução e rodam no interpretador SPU.
 - **Parada atual: o vídeo sai preto.** O `cellVdec` do ps3recomp só decodifica de verdade com o FFmpeg
   (`-DPS3RECOMP_FFMPEG_RUNTIME=ON`, que precisa dos cabeçalhos do FFmpeg na versão das DLLs: `avcodec-63.dll`
   e `avutil-61.dll`, as mesmas que o RPCS3 do usuário traz). Sem ele, cada AU vira uma imagem vazia.
