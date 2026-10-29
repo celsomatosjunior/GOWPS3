@@ -253,28 +253,29 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
 
 ## Ponto de retomada (atualizado a cada pausa)
 
-Estado em 29/10/2026, 17h50: versão reproduzível = tag `gow3-menu-v3` (menu com fundo, Novo Jogo até a
-introdução do Poseidon). Pasta de trabalho principal: `Projetos\GOW3_trabalho` (EBOOT com `--pular-videos`,
-`spu_jobs` com os 5 módulos de job traduzidos).
+Estado em 29/10/2026, 20h55: o Novo Jogo chega ao PSDNINT.M2V (fase do Poseidon) em 330 s, sem SPU parado.
+Pasta de trabalho principal: `Projetos\GOW3_trabalho`.
 
-**Feito em 29/10, 17h00:** a coleta com `SPU_INTERP_PCLOG` gravou 312 pcs, todos do PM, em
-`<trabalho>\interp_pcs_29out.txt` (só local). Semeados no `lift_jobmods.py`, levaram o módulo
-`jobmod_732253176fa6` (o de 0x4B5C00) até `code_end` 0x22110, sem nenhuma instrução sem suporte. Mas a ferramenta
-oferece cada semente a TODOS os módulos que contêm o endereço, e nos outros quatro dados viraram código (671,
-1491, 329 e 23 sem suporte). Por isso a pasta `spu_jobs` foi restaurada à tradução anterior (só 0x1EC0C).
+**Feito em 29/10 à noite:**
+- Os 24 módulos de job Wws do EBOOT são nativos: `lift_jobmods.py --engine-elf ... --base-zero` (19 deles têm
+  base 0 no cabeçalho e rodam em LS 0x4000, confirmado pelo cabeçalho em 0x4000 no `SPU_INTERP_PCLOG`).
+- Sementes por módulo: `native/tools/jobmod_seeds.py --trabalho <pasta> --manifesto <manifesto com --base-zero>
+  pcs1.txt pcs2.txt` divide os pcs do interpretador pelo módulo residente e imprime os `--module-funcs`. Duas
+  rodadas levaram de 504 para 407 pcs no interpretador; o que resta é quase todo do `jobmod_baf5d88ebb3b`:
+  cópias de 3 rotinas curtas (EA 0x52B720..0x52B860, logo antes do módulo) postas pelo job em vários endereços
+  de LS. Traduzir por endereço não resolve; ficou para depois (não é o gargalo, ver perfil).
+- Código SPU com SIMD do host (`--spu-simd avx2`, padrão): fase de ~1,7 q/s para ~3 q/s (picos de 4,2).
+- `GOW3_PROF=<início>,<segundos>` (perfil por amostragem do RIP). Resolver com o `.map` do build.
+- Atenção: sem `--lle-libsre` o título vira BLES00000 e o jogo não passa da inicialização; o `gow3_build.py`
+  agora usa `<trabalho>irmware\libsre_lle` sozinho quando existe.
 
-**Próxima ação exata:**
-0. Mudar o `ps3recomp/tools/lift_jobmods.py` para aceitar sementes por módulo (por exemplo
-   `--extra-funcs NOME=ADDR,...`, repetível) e aplicar os 311 pcs >= 0x4000 só ao `jobmod_732253176fa6`; depois
-   retraduzir, recompilar e seguir os passos abaixo (o passo 1 já foi feito).
-1. Compilar a pasta principal (o runtime ganhou `SPU_INTERP_PCLOG=<arquivo>`, que grava cada pc entregue ao
-   interpretador) e rodar o teste do Novo Jogo de 330 s com `SPU_INTERP_PCLOG=<trabalho>\interp_pcs.txt`
-   (mesmo `PAD_SCRIPT`: X em 15/30/45/60/75 s e de 100 a 220 s a cada 15 s; `PS3_JANELA_FUNDO=1`).
-2. Pegar os pcs da imagem 278921217 (o PM `pm_wwsjob`) com pc >= 0x4000 e passá-los em
-   `LBP_JOBMOD_EXTRA_FUNCS` ao `tools/lift_jobmods.py --engine-elf <trabalho>\EBOOT.ELF --out <trabalho>\spu_jobs
-   --symbol-prefix gow3`; recompilar e repetir até o arquivo parar de crescer.
-3. Medir na mesma cena (quadros/s do resumo do passo `rodar`, hoje ~8/s) e confirmar no watchdog que as threads do
-   PM saem de `spu_interp_run_until`.
+**Perfil da fase (AVX2, 260 a 310 s):** a thread principal do PPU fica ~81% fora do executável (esperando); uma
+thread SPU fica ~80% ocupada (`jobmod_14561cbb02eb` func 0x10E20, `mfc_for`, `spu_coh_notify_write`); as
+outras SPUs ficam quase paradas.
+
+**Próxima ação exata:** descobrir o que a thread principal espera (GOW3_WATCHDOG na fase: LRs do PS3) e se os
+jobs da fila ficam numa SPU só (contar por thread host os jobs/workloads despachados); se ficam, ver por que o
+SPURS do HLE não espalha os jobs pelas outras SPUs.
 
 ## LLE seletivo da libsre (LFQueue)
 
