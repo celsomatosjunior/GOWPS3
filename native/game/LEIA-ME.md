@@ -156,7 +156,11 @@ dali (ela não faz parte do jogo).
   1. compilar com `--pular-videos` (o patch "Disable Color Grading" já não é necessário);
   2. rodar com `PAD_SCRIPT` apertando X a cada 4 s entre 15 e 75 s.
 
-  O menu aparece com o fundo, e X leva até "Escolher Dificuldade". Versões: `gow3-menu-v1` (menu sem fundo),
+  O menu aparece com o fundo, e X leva até "Escolher Dificuldade". Com `cellSpursJoinTask2` implementado (o
+  jogo junta as 5 tarefas de um Taskset2 que reinicia a cada quadro; o import faltava) e os toques espaçados
+  de 15 s, a dificuldade é aceita e o jogo abre o `OPENINGINT.M2V`, a abertura do Novo Jogo. Atenção ao
+  `PAD_SCRIPT`: cada toque dura 40 leituras do controle, uns 6 s a 7 quadros/s; toques mais próximos que isso
+  viram um botão segurado, sem aperto novo. Versões: `gow3-menu-v1` (menu sem fundo),
   `gow3-menu-v2` (fundo com o patch de color grading) e `gow3-menu-v3` (fundo com a LUT 3D verdadeira).
 - Diagnóstico novo do live draw:
   - `LD_DRAWLOG=<quadro>,<n>`: o alvo e as texturas de cada desenho;

@@ -153,7 +153,7 @@ index 7e222c92..33b21296 100644
  }
  
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
-index 82ea66c6..15fd3c16 100644
+index 82ea66c6..ceb9146d 100644
 --- a/libs/spurs/cellSpurs.c
 +++ b/libs/spurs/cellSpurs.c
 @@ -560,6 +560,8 @@ static s32 spurs_initialize_common(u32 spurs_ea, u32 nspus, const char* prefix)
@@ -214,7 +214,7 @@ index 82ea66c6..15fd3c16 100644
  
      g_ydkj_real_spurs_ea = spurs_ea;   /* capture for the taskset-policy handoff (LS[0x1C0]) */
      printf("[cellSpurs] CreateTaskset() ea=0x%08X spurs=0x%08X (real BE layout)\n", taskset_ea, spurs_ea);
-@@ -937,6 +974,46 @@ s32 cellSpursCreateTasksetWithAttribute(CellSpurs* spurs,
+@@ -937,6 +974,84 @@ s32 cellSpursCreateTasksetWithAttribute(CellSpurs* spurs,
      return spurs_create_taskset(spurs, taskset, 0, NULL, 0, size);
  }
  
@@ -255,13 +255,51 @@ index 82ea66c6..15fd3c16 100644
 +    }
 +    printf("[cellSpurs] CreateTaskset2(attr=0x%08X args=0x%llX maxContention=%u)\n",
 +           attr_ea, (unsigned long long)args, max_contention);
-+    return spurs_create_taskset(spurs, taskset, args, priority, max_contention, CSTS2_SIZE);
++    const s32 rc = spurs_create_taskset(spurs, taskset, args, priority, max_contention, CSTS2_SIZE);
++    /* A Taskset2 carries task_exit_code[128] at +0x1980; registering it makes
++     * the runtime write each task's exit there (spu_taskset2_set_exit), which
++     * cellSpursJoinTask2 and the SPU-side join read. */
++    if (rc == CELL_OK) { extern void spu_taskset2_register(uint32_t); spu_taskset2_register((u32)(uintptr_t)taskset); }
++    return rc;
++}
++
++/* cellSpursJoinTask2(taskset2, taskId, &exitCode): wait for the task to exit
++ * and take its exit code. task_exit_code[taskId] (+0x1980, 16 bytes): exit
++ * code at +8, state in the low nibble of byte 15 -- 2 exited, 4 joined -- as
++ * the runtime writes it when a task's thread returns. God of War III joins
++ * the five tasks of a taskset it restarts every frame; with the import
++ * unresolved each join failed at once and the game never moved past its
++ * difficulty screen. A task that is neither exited nor enabled is ESRCH;
++ * joining twice is ESRCH as well. */
++s32 cellSpursJoinTask2(CellSpursTaskset* taskset, CellSpursTaskId taskId, s32* exitCode)
++{
++    const u32 ts = (u32)(uintptr_t)taskset, out = (u32)(uintptr_t)exitCode;
++    if (!ts) return CELL_SPURS_TASK_ERROR_NULL_POINTER;
++    if (taskId >= 128) return CELL_SPURS_TASK_ERROR_INVAL;
++    const u32 e = ts + 0x1980u + 16u * taskId;
++    for (unsigned waited = 0;; waited++) {
++        const u8 state = vm_read8(e + 15) & 0xF;
++        if (state == 2) {
++            vm_write8(e + 15, (u8)((vm_read8(e + 15) & 0xF0) | 4));
++            if (out) vm_write32(out, vm_read32(e + 8));
++            return CELL_OK;
++        }
++        if (state == 4) return CELL_SPURS_TASK_ERROR_SRCH;
++        const u32 enabled = vm_read32(ts + 0x30 + (taskId / 32) * 4) & ((1u << 31) >> (taskId % 32));
++        if (!enabled && state == 0) return CELL_SPURS_TASK_ERROR_SRCH;
++        if (waited == 2000) {
++            static int n = 0;
++            if (PS3_LOG_FIRST(n, 8))
++                printf("[cellSpurs] JoinTask2(taskset=0x%08X task=%u) still waiting after 2 s\n", ts, taskId);
++        }
++        Sleep(1);
++    }
 +}
 +
  s32 cellSpursDestroyTaskset(CellSpursTaskset* taskset)
  {
      taskset = GUEST_PTR(taskset, CellSpursTaskset*);
-@@ -1000,6 +1077,81 @@ s32 cellSpursTasksetAttributeSetName(CellSpursTasksetAttribute* attr,
+@@ -1000,6 +1115,81 @@ s32 cellSpursTasksetAttributeSetName(CellSpursTasksetAttribute* attr,
   * from an EA computed out of r3 = that argument (spu_0003 task main @0x17e70:
   * `wrch $ch18, f(r3.word3)`), so a zero argument makes it GET from EA 0 and
   * stall. lsPattern/argument arrive as guest EAs (generic adapter forwards r3..r10). */
@@ -343,7 +381,7 @@ index 82ea66c6..15fd3c16 100644
  s32 cellSpursCreateTask(CellSpursTaskset* taskset, CellSpursTaskId* taskId,
                          void* elf, void* context, u32 sizeContext,
                          u32 lsPattern_ea, u32 argument_ea)
-@@ -1729,10 +1881,20 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
+@@ -1729,10 +1919,20 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
              SleepConditionVariableSRW(&si->wake, &si->lock, INFINITE, 0);
          if (si->stopping && !slot->busy) break;
          ReleaseSRWLockExclusive(&si->lock);
@@ -364,7 +402,7 @@ index 82ea66c6..15fd3c16 100644
          AcquireSRWLockExclusive(&si->lock);
          u32 wid = slot->wid;
          if (si->active[wid]) si->active[wid]--;
-@@ -1779,6 +1941,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1779,6 +1979,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
          if (!kick_pass) si->pass_no++;
          u32 enabled = vm_read32(ea + SPURS_WKL_ENABLED);
          for (u32 sn = 0; sn < si->nspus; sn++) {
@@ -384,7 +422,7 @@ index 82ea66c6..15fd3c16 100644
              struct SpursPmSlot* slot = &si->slots[sn];
              if (slot->busy) continue;
              for (u32 checked = 0; checked < 16; checked++) {
-@@ -1796,7 +1971,11 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1796,7 +2009,11 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                  if (!pm) continue;
                  u32 signal = vm_read16(ea + SPURS_WKL_SIGNAL1);
                  u32 ready = vm_read8(ea + SPURS_WKL_READY1 + wid);
@@ -397,7 +435,7 @@ index 82ea66c6..15fd3c16 100644
                  if (kicked) si->idle[wid] = 0;
                  if (!kicked && (kick_pass || (si->pass_no & ((1u << si->idle[wid]) - 1))))
                      continue;
-@@ -1806,7 +1985,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1806,7 +2023,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                  if (ready) vm_base[ea + SPURS_WKL_READY1 + wid] = (u8)(ready - 1);
                  if (signal & (0x8000u >> wid))
                      ef_w16(ea + SPURS_WKL_SIGNAL1, (u16)(signal & ~(0x8000u >> wid)));
@@ -418,10 +456,10 @@ index 82ea66c6..15fd3c16 100644
                  slot->pm = vm_base + (u32)(uintptr_t)s_workloads[wid].pm;
                  slot->pm_size = s_workloads[wid].sizePm;
 diff --git a/libs/spurs/cellSpurs.h b/libs/spurs/cellSpurs.h
-index 07a3d2e4..5e490187 100644
+index 07a3d2e4..42cb7c8d 100644
 --- a/libs/spurs/cellSpurs.h
 +++ b/libs/spurs/cellSpurs.h
-@@ -236,6 +236,15 @@ s32 cellSpursShutdownTaskset(CellSpursTaskset* taskset);
+@@ -236,6 +236,16 @@ s32 cellSpursShutdownTaskset(CellSpursTaskset* taskset);
  s32 cellSpursJoinTaskset(CellSpursTaskset* taskset);
  
  s32 cellSpursTasksetAttributeInitialize(CellSpursTasksetAttribute* attr);
@@ -432,6 +470,7 @@ index 07a3d2e4..5e490187 100644
 +s32 _cellSpursTaskAttribute2Initialize(void* attr, u32 revision);
 +s32 cellSpursGetWorkloadFlag(CellSpurs* spurs, void* flag);
 +s32 _cellSpursWorkloadFlagReceiver(CellSpurs* spurs, u32 wid, u32 is_set);
++s32 cellSpursJoinTask2(CellSpursTaskset* taskset, CellSpursTaskId taskId, s32* exitCode);
 +s32 cellSpursCreateTask2(CellSpursTaskset* taskset, CellSpursTaskId* taskId, void* elf,
 +                         u32 argument_ea, u32 attr_ea);
  s32 cellSpursTasksetAttributeSetName(CellSpursTasksetAttribute* attr,
