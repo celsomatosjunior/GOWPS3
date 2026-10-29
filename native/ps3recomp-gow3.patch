@@ -1,5 +1,5 @@
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
-index 82ea66c6..cc2e9aef 100644
+index 82ea66c6..b91480fd 100644
 --- a/libs/spurs/cellSpurs.c
 +++ b/libs/spurs/cellSpurs.c
 @@ -560,6 +560,8 @@ static s32 spurs_initialize_common(u32 spurs_ea, u32 nspus, const char* prefix)
@@ -189,6 +189,50 @@ index 82ea66c6..cc2e9aef 100644
  s32 cellSpursCreateTask(CellSpursTaskset* taskset, CellSpursTaskId* taskId,
                          void* elf, void* context, u32 sizeContext,
                          u32 lsPattern_ea, u32 argument_ea)
+@@ -1779,6 +1931,17 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+         if (!kick_pass) si->pass_no++;
+         u32 enabled = vm_read32(ea + SPURS_WKL_ENABLED);
+         for (u32 sn = 0; sn < si->nspus; sn++) {
++        { static int dbg = -1; static unsigned long long last = 0;
++          if (dbg < 0) dbg = getenv("SPURS_FLAG_DBG") ? 1 : 0;
++          u32 rw = vm_read8(ea + 0x77);
++          if (dbg && rw < 16 && vm_read32(ea + 0x6C) == 0 && GetTickCount64() - last > 1000) {
++              last = GetTickCount64();
++              int free_lanes = 0; for (u32 k = 0; k < si->nspus; k++) free_lanes += !si->slots[k].busy;
++              fprintf(stderr, "[flagdbg] wid=%u enabled=%d state=%u in_use=%d same_spurs=%d prio0=%u maxcont=%u active=%u pm=%d free_lanes=%d\n",
++                      rw, !!(enabled & (0x80000000u >> rw)), vm_read8(ea + SPURS_WKL_STATE1 + rw), s_workloads[rw].in_use,
++                      s_workloads[rw].spurs_ea == ea, vm_read8(ea + SPURS_WKL_INFO1 + rw * SPURS_WKL_INFO_SZ + 0x18),
++                      vm_read8(ea + SPURS_WKL_MAXCONT + rw), si->active[rw], spurs_resolve_pm(rw) != NULL, free_lanes);
++          } }
+             struct SpursPmSlot* slot = &si->slots[sn];
+             if (slot->busy) continue;
+             for (u32 checked = 0; checked < 16; checked++) {
+@@ -1796,7 +1959,11 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+                 if (!pm) continue;
+                 u32 signal = vm_read16(ea + SPURS_WKL_SIGNAL1);
+                 u32 ready = vm_read8(ea + SPURS_WKL_READY1 + wid);
+-                int kicked = ready || (signal & (0x8000u >> wid));
++                /* The workload flag kicks its receiver too (RPCS3 spursKernel1SelectWorkload):
++                 * flag 0 with wklFlagReceiver == wid -- the RSX writes the 0 with a semaphore
++                 * release, which is how a title hands a finished frame to its SPU post-process. */
++                int flagged = vm_read32(ea + 0x6C) == 0 && vm_read8(ea + 0x77) == wid;
++                int kicked = ready || (signal & (0x8000u >> wid)) || flagged;
+                 if (kicked) si->idle[wid] = 0;
+                 if (!kicked && (kick_pass || (si->pass_no & ((1u << si->idle[wid]) - 1))))
+                     continue;
+@@ -1806,6 +1973,12 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+                 if (ready) vm_base[ea + SPURS_WKL_READY1 + wid] = (u8)(ready - 1);
+                 if (signal & (0x8000u >> wid))
+                     ef_w16(ea + SPURS_WKL_SIGNAL1, (u16)(signal & ~(0x8000u >> wid)));
++                if (vm_read32(ea + 0x6C) == 0 && vm_read8(ea + 0x77) == wid) {
++                    vm_write32(ea + 0x6C, 0xFFFFFFFFu);   /* consumed: back to "not set" */
++                    static int nf = 0;
++                    if (PS3_LOG_FIRST(nf, 8))
++                        printf("[cellSpurs] workload flag kicked wid=%u (spurs=0x%08X)\n", wid, ea);
++                }
+                 ef_line_end(ea);
+                 slot->fn = pm->fn; slot->image_id = pm->image_id;
+                 slot->pm = vm_base + (u32)(uintptr_t)s_workloads[wid].pm;
 diff --git a/libs/spurs/cellSpurs.h b/libs/spurs/cellSpurs.h
 index 07a3d2e4..5e490187 100644
 --- a/libs/spurs/cellSpurs.h

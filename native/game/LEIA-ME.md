@@ -81,8 +81,11 @@ dali (ela não faz parte do jogo).
   ``cellSpursCreateTask2``, ``cellSpursGetWorkloadFlag`` e ``_cellSpursWorkloadFlagReceiver`` (receptor 0xFF no init).
   A tela de boot termina aos ~13 s em todas as execuções (o receptor do workload flag usa uma troca atômica;
   com o lock global do lock-line a thread principal travava dentro dele).
-- **Parada atual:** os quadros apresentados são pretos e o jogo ainda não chama ``cellVdecOpenEx`` (o vídeo do logo,
-  ``SMLOGO.M2V``, é o próximo passo no RPCS3 sem patches).
+- **Parada atual:** depois da tela de boot a thread principal espera em ``func_0028DA14`` (sincronia de buffer
+  triplo): o contador de 16 bits do buffer da vez (``S+0x40+i*4``, ``S = *(TOC-0x4C64)``) não zera. As 5 tarefas
+  MLAA (taskset2) ficam em WAIT_SIGNAL. O jogo usa o workload flag (receptor wid 11, o PM ``pm_wwsjob``); o
+  kernel do HLE agora escala o receptor quando ``flag == 0`` (como o RPCS3), e ``SPURS_FLAG_DBG=1`` mostra as
+  condições. Falta achar quem devia zerar aquele contador (provavelmente um job Wws ao fim do quadro).
 - Título: `gow3_libsre_lle.cpp` chama `cellGame_init_from_paramsfo` (antes o HLE respondia BLES00000).
 
 ## LLE seletivo da libsre (LFQueue)
