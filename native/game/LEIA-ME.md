@@ -175,6 +175,15 @@ dali (ela não faz parte do jogo).
   4. generalizar no `spu_channels.c` o reconhecimento do módulo residente pela assinatura `ila`, que hoje só
      vale para o PM do LBP (`image_id == 2`).
 
+  **Feito (29/10/2026):** o `tools/lift_jobmods.py --engine-elf <EBOOT.ELF> --out <trabalho>\spu_jobs
+  --symbol-prefix gow3` acha 5 módulos embutidos no EBOOT, entre eles os dois que o PM carrega em LS 0x4000
+  (de 0x4B5C00 e 0x4EFA80), e os traduz sem perda (3 instruções sem suporte num deles). `gow3_build.py
+  --spu-jobs <pasta>` os compila no executável; eles se registram como regiões verificadas pelo EA de origem.
+  O jogo chega à abertura do Novo Jogo como antes, mas o ritmo não muda: o job do módulo de 0x4B5C00 salta
+  para código depois do `code_end` calculado (0x1EC00), alcançado só por salto indireto, e roda dali no
+  interpretador. Semear 0x1EC0C (`LBP_JOBMOD_EXTRA_FUNCS`) só levou o fim a 0x1EC28. Próximo passo: registrar
+  no runtime todos os pcs em que o interpretador entra e passá-los como sementes ao `lift_jobmods.py`.
+
   Referência de como o Ascension resolveu: `libs/spu_hle/gowa_drawcmd` e `GOWA_WWS_EXEC`, no ps3kit
   (ver `native/docs/PS3KIT_COMPARACAO.md`). Versões: `gow3-menu-v1` (menu sem fundo),
   `gow3-menu-v2` (fundo com o patch de color grading) e `gow3-menu-v3` (fundo com a LUT 3D verdadeira).

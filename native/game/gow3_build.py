@@ -295,6 +295,24 @@ def ffmpeg_cmake_args(args) -> list:
     return ["-DPS3RECOMP_FFMPEG_RUNTIME=ON", f"-DPS3RECOMP_FFMPEG_INCLUDE_DIR={inc}"]
 
 
+def add_spu_jobs(args, proj: Path, cm: Path):
+    """Os módulos de job Wws traduzidos por tools/lift_jobmods.py --engine-elf (um spu_recomp.c por módulo e o
+    jobmods_register.c, que os registra num construtor como regiões verificadas pelo EA de origem)."""
+    jobs = Path(args.spu_jobs).resolve()
+    rt = (Path(args.ps3recomp).resolve() / "runtime" / "spu").as_posix()
+    fontes = sorted(jobs.glob("jobmod_*/spu_recomp.c")) + [jobs / "jobmods_register.c"]
+    if len(fontes) < 2 or not fontes[-1].is_file():
+        raise StepError(f"--spu-jobs: {jobs} não tem jobmod_*/spu_recomp.c e jobmods_register.c")
+    for c in fontes[:-1]:   # o include relativo ao ps3recomp vira um include pelo caminho de busca
+        t = c.read_text(encoding="utf-8")
+        if '"../../runtime/spu/' in t:
+            c.write_text(t.replace('"../../runtime/spu/', '"'), encoding="utf-8")
+    lista = "\n".join(f'    "{c.as_posix()}"' for c in fontes)
+    cm.write_text(cm.read_text(encoding="utf-8") + "\n# GOW3: módulos de job Wws traduzidos (nativos)\n"
+                  f"target_sources(${{PROJECT_NAME}} PRIVATE\n{lista}\n)\n"
+                  f'target_include_directories(${{PROJECT_NAME}} PRIVATE "{rt}")\n', encoding="utf-8")
+
+
 def use_gow3_rsx(proj: Path, cm: Path):
     """No Windows, o main.cpp do modelo chama o motor de desenho por gow3_rsx.cpp, que escolhe em tempo de
     execução entre o backend D3D12 (padrão) e o live draw (RSX_LIVE_DRAW=1)."""
@@ -333,6 +351,8 @@ def step_projeto(args, work: Path, state: dict, progress):
                   f'target_sources(${{PROJECT_NAME}} PRIVATE "{(HERE / "gow3_diag.cpp").as_posix()}")\n'
                   "if(MSVC)\n    target_link_options(${PROJECT_NAME} PRIVATE /MAP)\nendif()\n", encoding="utf-8")
     use_gow3_rsx(proj, cm)
+    if args.spu_jobs:
+        add_spu_jobs(args, proj, cm)
     build = work / "build"
     env = dict(os.environ)
     vs = vs_environment()
@@ -477,6 +497,8 @@ def main() -> int:
                     help="aplica ao EBOOT (cópia local) um patch PPU do patch.yml do RPCS3, pelo nome do RPCS3 "
                          "(repetível). native/tools/rpcs3_patches.py --listar mostra os do GOW3 1.00")
     ap.add_argument("--patch-yml", help="patch.yml do RPCS3 (padrão: <pasta do rpcs3>/patches/patch.yml)")
+    ap.add_argument("--spu-jobs", help="pasta dos módulos de job Wws traduzidos por "
+                                       "tools/lift_jobmods.py --engine-elf (rodam nativos, não no interpretador)")
     ap.add_argument("--ffmpeg", help="FFmpeg LGPL compartilhado (pasta com include/ e bin/, mesma série das DLLs): "
                                      "o cellVdec decodifica os vídeos do jogo")
     ap.add_argument("--spu-dir", help="SPU_DIR já montada (programas SPU e policy modules recompilados por fora)")
