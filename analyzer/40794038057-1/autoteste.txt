@@ -1,0 +1,115 @@
+  Identificando ps3_test.elf (SHA-256 de 846.656 bytes)...
+  ELF PPU sem cifra: pronto para análise.
+  Lendo funções, TOC e importações (ps3recomp ppu_loader)...
+  Analisando 19 funções PPU...
+  Procurando programas SPU embutidos...
+  Análise: 19 funções, 16 candidatas.
+  Usando 64 estados reais capturados em 2026-10-29 00:27:01 +0000.
+  Recompilando 16 funções com o lifter do ps3recomp...
+  Compilando o código recompilado para x86_64-windows-gnu (zig/clang)... na primeira vez leva alguns minutos
+  Gerando estados iniciais...
+  Executando 1088 casos no executável recompilado...
+  Executando os mesmos 1088 casos na CPU de referência (código PowerPC original)...
+    referência: 100/1088
+    referência: 200/1088
+    referência: 300/1088
+    referência: 400/1088
+    referência: 500/1088
+    referência: 600/1088
+    referência: 700/1088
+    referência: 800/1088
+    referência: 900/1088
+    referência: 1000/1088
+  Comparando...
+  Gravando relatórios...
+OK    análise: 19 funções
+OK    recompilação: 16/16 funções idênticas, 1088/1088 casos
+OK    capturas do GDB carregadas: 64 estados
+OK    estados reais: 64/64 casos idênticos, 16/16 funções
+OK    mutação: divergência detectada em ['func_10001938'] (esperado [func_10001938])
+OK    mutação nos estados reais: divergência em ['func_10001938'] (esperado [func_10001938])
+OK    executável grande (892 funções): 40 recompiladas, código gerado 5.9 MB
+OK    executável grande: 23 idênticas, 1 divergentes, 16 inconclusivas
+OK    SELF de varejo: reconhecido como cifrado e não analisado
+código de saída do .exe: 0
+Identificando ps3_test.elf (SHA-256 de 846.656 bytes)...
+ELF PPU sem cifra: pronto para análise.
+Lendo funções, TOC e importações (ps3recomp ppu_loader)...
+Analisando 19 funções PPU...
+Procurando programas SPU embutidos...
+Análise: 19 funções, 16 candidatas.
+Usando 64 estados reais capturados em 2026-10-29 00:27:01 +0000.
+Recompilando 16 funções com o lifter do ps3recomp...
+Compilando o código recompilado para x86_64-windows-gnu (zig/clang)... na primeira vez leva alguns minutos
+Gerando estados iniciais...
+Executando 1088 casos no executável recompilado...
+Executando os mesmos 1088 casos na CPU de referência (código PowerPC original)...
+  referência: 100/1088
+  referência: 200/1088
+  referência: 300/1088
+  referência: 400/1088
+  referência: 500/1088
+  referência: 600/1088
+  referência: 700/1088
+  referência: 800/1088
+  referência: 900/1088
+  referência: 1000/1088
+Comparando...
+Gravando relatórios...
+{
+ "saida": "synth\\exe",
+ "pronto": true,
+ "funcoes": 19,
+ "teste": {
+  "functions": 16,
+  "identical_functions": 16,
+  "divergent_functions": 0,
+  "inconclusive_functions": 0,
+  "incomplete_translation_functions": 0,
+  "cases": 1088,
+  "identical_cases": 1088,
+  "both_faulted_cases": 0,
+  "divergent_cases": 0,
+  "cases_differing_only_in_isa_undefined_bits": 0,
+  "reference_limit_cases": 0,
+  "real_cases": 64,
+  "real_identical_cases": 64,
+  "real_divergent_cases": 0,
+  "functions_with_real_identical": 16,
+  "reference_retried_cases": 0
+ }
+}
+ 
+--- analise.log
+Identificando ps3_test.elf (SHA-256 de 846.656 bytes)...
+ELF PPU sem cifra: pronto para análise.
+Lendo funções, TOC e importações (ps3recomp ppu_loader)...
+Analisando 19 funções PPU...
+Procurando programas SPU embutidos...
+Análise: 19 funções, 16 candidatas.
+Usando 64 estados reais capturados em 2026-10-29 00:27:01 +0000.
+Recompilando 16 funções com o lifter do ps3recomp...
+Compilando o código recompilado para x86_64-windows-gnu (zig/clang)... na primeira vez leva alguns minutos
+Gerando estados iniciais...
+Executando 1088 casos no executável recompilado...
+Executando os mesmos 1088 casos na CPU de referência (código PowerPC original)...
+  referência: 100/1088
+  referência: 200/1088
+  referência: 300/1088
+  referência: 400/1088
+  referência: 500/1088
+  referência: 600/1088
+  referência: 700/1088
+  referência: 800/1088
+  referência: 900/1088
+  referência: 1000/1088
+Comparando...
+Gravando relatórios...
+
+OK    executável empacotado: código 0, 16/16 funções idênticas
+OK    executável empacotado: relatório HTML gerado
+OK    executável empacotado, estados reais: 64/64 casos idênticos
+OK    executável empacotado, ELF grande: código 0, 23/40 idênticas
+OK    executável empacotado com SELF de varejo: código 4 (esperado 4), sem análise
+
+AUTOTESTE: tudo certo
