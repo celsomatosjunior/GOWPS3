@@ -160,7 +160,9 @@ dali (ela não faz parte do jogo).
   jogo junta as 5 tarefas de um Taskset2 que reinicia a cada quadro; o import faltava) e os toques espaçados
   de 15 s, a dificuldade é aceita e o jogo abre o `OPENINGINT.M2V`, a abertura do Novo Jogo. Atenção ao
   `PAD_SCRIPT`: cada toque dura 40 leituras do controle, uns 6 s a 7 quadros/s; toques mais próximos que isso
-  viram um botão segurado, sem aperto novo. Versões: `gow3-menu-v1` (menu sem fundo),
+  viram um botão segurado, sem aperto novo. Numa execução de 9 min a abertura do Novo Jogo segue com a narração em
+  português ("Uma vitória que acabou com a 'Grande Guerra'...", "Nascido das profundezas do submundo"); falta
+  ver o fim dela e a primeira fase. Versões: `gow3-menu-v1` (menu sem fundo),
   `gow3-menu-v2` (fundo com o patch de color grading) e `gow3-menu-v3` (fundo com a LUT 3D verdadeira).
 - Diagnóstico novo do live draw:
   - `LD_DRAWLOG=<quadro>,<n>`: o alvo e as texturas de cada desenho;
