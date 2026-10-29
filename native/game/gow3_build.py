@@ -309,8 +309,26 @@ def add_spu_jobs(args, proj: Path, cm: Path):
             c.write_text(t.replace('"../../runtime/spu/', '"'), encoding="utf-8")
     lista = "\n".join(f'    "{c.as_posix()}"' for c in fontes)
     cm.write_text(cm.read_text(encoding="utf-8") + "\n# GOW3: módulos de job Wws traduzidos (nativos)\n"
-                  f"target_sources(${{PROJECT_NAME}} PRIVATE\n{lista}\n)\n"
+                  f"set(GOW3_SPU_JOBS\n{lista}\n)\n"
+                  "target_sources(${PROJECT_NAME} PRIVATE ${GOW3_SPU_JOBS})\n"
+                  "list(APPEND SPU_SOURCES ${GOW3_SPU_JOBS})\n"
                   f'target_include_directories(${{PROJECT_NAME}} PRIVATE "{rt}")\n', encoding="utf-8")
+
+
+def spu_simd(args, cm: Path):
+    """O modelo dá -O2 e SPU_USE_DISPATCH_MT só às imagens da SPU_DIR, e nenhuma fonte SPU recebe SIMD além do
+    SSE2: o spu_shufb do código traduzido fica no laço de 16 bytes e fa/fm/fma do SPU, uma faixa por vez (os
+    mais vistos no perfil da fase). Com --spu-simd avx2 (padrão) todas as fontes SPU, os módulos de job também,
+    ganham -O2 -mavx2 -mfma e usam o caminho de 4 faixas do spu_helpers.h (exato, com correção faixa a faixa);
+    sse41 deixa só o pshufb, para CPUs sem AVX2. -ffp-contract=off fica explícito."""
+    opts = "-O2;-ffp-contract=off;" + ("-mavx2;-mfma" if args.spu_simd == "avx2" else "-msse4.1")
+    cm.write_text(cm.read_text(encoding="utf-8") + "\n# GOW3: SIMD do host no código SPU traduzido\n"
+                  'if(SPU_SOURCES AND (NOT MSVC OR CMAKE_C_COMPILER_ID MATCHES "Clang"))\n'
+                  "    set_source_files_properties(${SPU_SOURCES} PROPERTIES\n"
+                  '        INCLUDE_DIRECTORIES "${PS3RECOMP_DIR}/runtime/spu"\n'
+                  "        COMPILE_DEFINITIONS SPU_USE_DISPATCH_MT\n"
+                  f'        COMPILE_OPTIONS "{opts}")\n'
+                  "endif()\n", encoding="utf-8")
 
 
 def use_gow3_rsx(proj: Path, cm: Path):
@@ -353,6 +371,7 @@ def step_projeto(args, work: Path, state: dict, progress):
     use_gow3_rsx(proj, cm)
     if args.spu_jobs:
         add_spu_jobs(args, proj, cm)
+    spu_simd(args, cm)
     build = work / "build"
     env = dict(os.environ)
     vs = vs_environment()
@@ -506,6 +525,8 @@ def main() -> int:
                                        "tools/lift_jobmods.py --engine-elf (rodam nativos, não no interpretador)")
     ap.add_argument("--ffmpeg", help="FFmpeg LGPL compartilhado (pasta com include/ e bin/, mesma série das DLLs): "
                                      "o cellVdec decodifica os vídeos do jogo")
+    ap.add_argument("--spu-simd", choices=["avx2", "sse41"], default="avx2",
+                    help="SIMD do host no código SPU traduzido: avx2 (padrão, com FMA3) ou sse41 (CPUs sem AVX2)")
     ap.add_argument("--spu-dir", help="SPU_DIR já montada (programas SPU e policy modules recompilados por fora)")
     args = ap.parse_args()
     if not args.elf and not args.jogo:

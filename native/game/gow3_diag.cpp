@@ -224,6 +224,91 @@ static int start_watchdog()
 
 static int s_started = start_watchdog();
 
+/* GOW3_PROF=<início s>,<duração s>: perfil por amostragem. A cada ~2 ms suspende cada thread e conta o RIP
+ * (deslocamento no executável, resolver com o GOW3Native.map); no fim imprime, por thread, as 40 posições
+ * mais vistas e o total de amostras. Só diagnóstico. */
+enum { PROF_SLOTS = 1 << 16, PROF_THREADS = 96 };
+struct prof_thread { DWORD tid; uint32_t total, outside; uint32_t key[PROF_SLOTS]; uint32_t n[PROF_SLOTS]; };
+static prof_thread* s_prof;
+
+static void prof_count(prof_thread* t, uint32_t off)
+{
+    t->total++;
+    uint32_t h = (off * 2654435761u) >> 16;
+    for (unsigned k = 0; k < PROF_SLOTS; k++, h = (h + 1) & (PROF_SLOTS - 1)) {
+        if (t->key[h] == off + 1) { t->n[h]++; return; }
+        if (!t->key[h]) { t->key[h] = off + 1; t->n[h] = 1; return; }
+    }
+}
+
+static DWORD WINAPI profiler(LPVOID arg)
+{
+    int start = (int)((intptr_t)arg >> 16), secs = (int)((intptr_t)arg & 0xFFFF);
+    HMODULE self = GetModuleHandleA(NULL);
+    uint64_t lo = (uint64_t)self;
+    IMAGE_NT_HEADERS* nt = (IMAGE_NT_HEADERS*)((uint8_t*)self + ((IMAGE_DOS_HEADER*)self)->e_lfanew);
+    uint64_t hi = lo + nt->OptionalHeader.SizeOfImage;
+    s_prof = (prof_thread*)calloc(PROF_THREADS, sizeof(prof_thread));
+    if (!s_prof) return 0;
+    Sleep((DWORD)start * 1000);
+    fprintf(stderr, "[GOW3-PROF] início (%d s)\n", secs);
+    DWORD me = GetCurrentThreadId(), pid = GetCurrentProcessId();
+    ULONGLONG fim = GetTickCount64() + (ULONGLONG)secs * 1000;
+    int nthreads = 0;
+    while (GetTickCount64() < fim) {
+        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+        THREADENTRY32 te;
+        te.dwSize = sizeof te;
+        if (snap != INVALID_HANDLE_VALUE && Thread32First(snap, &te)) {
+            do {
+                if (te.th32OwnerProcessID != pid || te.th32ThreadID == me) continue;
+                int i = 0;
+                while (i < nthreads && s_prof[i].tid != te.th32ThreadID) i++;
+                if (i == nthreads) { if (nthreads == PROF_THREADS) continue; s_prof[nthreads++].tid = te.th32ThreadID; }
+                HANDLE th = OpenThread(THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, te.th32ThreadID);
+                if (!th) continue;
+                SuspendThread(th);
+                CONTEXT c;
+                c.ContextFlags = CONTEXT_CONTROL;
+                if (GetThreadContext(th, &c)) {
+                    if (c.Rip >= lo && c.Rip < hi) prof_count(&s_prof[i], (uint32_t)(c.Rip - lo));
+                    else { s_prof[i].total++; s_prof[i].outside++; }
+                }
+                ResumeThread(th);
+                CloseHandle(th);
+            } while (Thread32Next(snap, &te));
+        }
+        if (snap != INVALID_HANDLE_VALUE) CloseHandle(snap);
+        Sleep(2);
+    }
+    for (int i = 0; i < nthreads; i++) {
+        prof_thread* t = &s_prof[i];
+        if (t->total - t->outside < 50) continue;
+        fprintf(stderr, "[GOW3-PROF] tid %lu amostras %u fora_do_exe %u\n", (unsigned long)t->tid, t->total, t->outside);
+        for (int r = 0; r < 40; r++) {
+            uint32_t best = 0, bk = 0;
+            for (unsigned k = 0; k < PROF_SLOTS; k++)
+                if (t->key[k] && t->n[k] > best) { best = t->n[k]; bk = k; }
+            if (!best) break;
+            fprintf(stderr, "[GOW3-PROF]   0x%X %u\n", t->key[bk] - 1, best);
+            t->n[bk] = 0;
+        }
+    }
+    fflush(stderr);
+    return 0;
+}
+
+static int start_profiler()
+{
+    const char* e = getenv("GOW3_PROF");
+    int start = 0, secs = 20;
+    if (!e || sscanf(e, "%d,%d", &start, &secs) < 1) return 0;
+    CreateThread(NULL, 0, profiler, (LPVOID)(((intptr_t)start << 16) | (secs & 0xFFFF)), 0, NULL);
+    return 1;
+}
+
+static int s_prof_started = start_profiler();
+
 /* GOW3_WATCH_EA=<ea hex>: armadilha de escrita na página do PS3 que contém <ea>. Cada escrita nela
  * gera uma linha com o RIP do código que escreveu (resolver com o .map) e o valor novo do u32 em <ea>,
  * lido depois da escrita. A página fica protegida contra escrita; o tratador libera, executa a
