@@ -1,8 +1,17 @@
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
-index 82ea66c6..4f4f2e2f 100644
+index 82ea66c6..40be55ae 100644
 --- a/libs/spurs/cellSpurs.c
 +++ b/libs/spurs/cellSpurs.c
-@@ -874,6 +874,40 @@ static int spurs_guest_range_valid(u32 ea, u32 bytes)
+@@ -560,6 +560,8 @@ static s32 spurs_initialize_common(u32 spurs_ea, u32 nspus, const char* prefix)
+     memset(vm_base + spurs_ea, 0, SPURS_INST_SIZE);
+     *(vm_base + spurs_ea + SPURS_NSPUS) = (u8)si->nspus;
+     vm_write64(spurs_ea + SPURS_WKL_FLAG, 0xFFFFFFFFFFFFFFFFull); /* no receiver */
++    vm_write32(spurs_ea + 0x6C, 0xFFFFFFFFu);   /* CellSpursWorkloadFlag.flag   */
++    *(vm_base + spurs_ea + 0x77) = 0xFF;        /* wklFlagReceiver: none (0xFF) */
+ 
+     s32 start_rc = spurs_scheduler_start(si);
+     AcquireSRWLockExclusive(&si->lock);
+@@ -874,6 +876,40 @@ static int spurs_guest_range_valid(u32 ea, u32 bytes)
   * Taskset
   * =====================================================================*/
  
@@ -43,7 +52,7 @@ index 82ea66c6..4f4f2e2f 100644
  static s32 spurs_create_taskset(CellSpurs* spurs, CellSpursTaskset* taskset,
                                  u64 args, const u8* priority, u32 maxContention,
                                  u32 taskset_size)
-@@ -910,6 +944,7 @@ static s32 spurs_create_taskset(CellSpurs* spurs, CellSpursTaskset* taskset,
+@@ -910,6 +946,7 @@ static s32 spurs_create_taskset(CellSpurs* spurs, CellSpursTaskset* taskset,
      spurs_taskset_init(taskset_ea, spurs_ea, args, /*wid*/0,
                         taskset_size, /*evf1*/0, /*evf2*/0);
      g_ydkj_real_taskset_ea = taskset_ea;
@@ -51,7 +60,7 @@ index 82ea66c6..4f4f2e2f 100644
  
      g_ydkj_real_spurs_ea = spurs_ea;   /* capture for the taskset-policy handoff (LS[0x1C0]) */
      printf("[cellSpurs] CreateTaskset() ea=0x%08X spurs=0x%08X (real BE layout)\n", taskset_ea, spurs_ea);
-@@ -937,6 +972,46 @@ s32 cellSpursCreateTasksetWithAttribute(CellSpurs* spurs,
+@@ -937,6 +974,46 @@ s32 cellSpursCreateTasksetWithAttribute(CellSpurs* spurs,
      return spurs_create_taskset(spurs, taskset, 0, NULL, 0, size);
  }
  
@@ -98,11 +107,93 @@ index 82ea66c6..4f4f2e2f 100644
  s32 cellSpursDestroyTaskset(CellSpursTaskset* taskset)
  {
      taskset = GUEST_PTR(taskset, CellSpursTaskset*);
+@@ -1000,6 +1077,81 @@ s32 cellSpursTasksetAttributeSetName(CellSpursTasksetAttribute* attr,
+  * from an EA computed out of r3 = that argument (spu_0003 task main @0x17e70:
+  * `wrch $ch18, f(r3.word3)`), so a zero argument makes it GET from EA 0 and
+  * stall. lsPattern/argument arrive as guest EAs (generic adapter forwards r3..r10). */
++s32 cellSpursCreateTask(CellSpursTaskset* taskset, CellSpursTaskId* taskId,
++                        void* elf, void* context, u32 sizeContext,
++                        u32 lsPattern_ea, u32 argument_ea);
++
++/* Workload flag (RPCS3 cellSpurs.h): the 16-byte CellSpursWorkloadFlag sits at +0x60
++ * of the instance with its u32 flag at +0x6C, and +0x77 holds the wid that receives it
++ * (0xFF = none). A workload sets the flag to -1 when it is armed; the receiver polls
++ * and clears it. */
++s32 cellSpursGetWorkloadFlag(CellSpurs* spurs, void* flag)
++{
++    u32 s = (u32)(uintptr_t)spurs, f = (u32)(uintptr_t)flag;
++    if (!s || !f) return (s32)0x80410711u;   /* CELL_SPURS_POLICY_MODULE_ERROR_NULL_POINTER */
++    if (s & 0x7Fu) return (s32)0x80410710u;   /* ..._ALIGN */
++    vm_write32(f, s + 0x60);
++    return CELL_OK;
++}
++
++s32 _cellSpursWorkloadFlagReceiver(CellSpurs* spurs, u32 wid, u32 is_set)
++{
++    u32 s = (u32)(uintptr_t)spurs;
++    if (!s) return (s32)0x80410711u;
++    if (s & 0x7Fu) return (s32)0x80410710u;
++    if (wid >= 32) return (s32)0x80410702u;   /* ..._INVAL */
++    u8* recv = vm_base + s + 0x77;
++    spu_lockline_lock();
++    s32 rc = CELL_OK;
++    if (is_set ? *recv != 0xFF : *recv != wid) {
++        rc = is_set ? (s32)0x8041070Au : (s32)0x80410709u;   /* ..._BUSY / ..._PERM */
++    } else {
++        vm_write32(s + 0x6C, 0xFFFFFFFFu);
++        *recv = is_set ? (u8)wid : 0xFF;
++    }
++    spu_lockline_unlock();
++    static int n = 0;
++    if (PS3_LOG_FIRST(n, 8))
++        printf("[cellSpurs] WorkloadFlagReceiver(spurs=0x%08X wid=%u set=%u) -> 0x%08X\n", s, wid, is_set, (u32)rc);
++    return rc;
++}
++
++/* CellSpursTaskAttribute2 (256 bytes), big-endian in guest memory:
++ *   +0x00 revision  +0x04 sizeContext  +0x08 eaContext (u64)  +0x10 lsPattern[16]  +0x20 name (ea) */
++#define CSTA2_SIZE 0x100u
++
++s32 _cellSpursTaskAttribute2Initialize(void* attr, u32 revision)
++{
++    u32 ea = (u32)(uintptr_t)attr;
++    if (!ea) return CELL_SPURS_TASK_ERROR_NULL_POINTER;
++    if (ea & 0xFu) return (s32)0x80410910u;   /* CELL_SPURS_TASK_ERROR_ALIGN */
++    memset(GUEST_PTR(attr, u8*), 0, CSTA2_SIZE);
++    vm_write32(ea + 0x00, revision);
++    return CELL_OK;
++}
++
++/* cellSpursCreateTask2(taskset2, taskId, elf, argument, attribute2): the context, its size and
++ * the LS pattern come from the attribute (all optional), the argument is the 16-byte
++ * CellSpursTaskArgument. Same task model as cellSpursCreateTask. */
++s32 cellSpursCreateTask2(CellSpursTaskset* taskset, CellSpursTaskId* taskId, void* elf,
++                         u32 argument_ea, u32 attr_ea)
++{
++    u32 size_ctx = 0, lsp_ea = 0;
++    u64 ea_ctx = 0;
++    if (attr_ea) {
++        size_ctx = vm_read32(attr_ea + 0x04);
++        ea_ctx   = ((u64)vm_read32(attr_ea + 0x08) << 32) | vm_read32(attr_ea + 0x0C);
++        lsp_ea   = attr_ea + 0x10;
++    }
++    static int n = 0;
++    if (PS3_LOG_FIRST(n, 16))
++        printf("[cellSpurs] CreateTask2(taskset=0x%08X elf=0x%08X arg=0x%08X attr=0x%08X ctx=0x%llX size=0x%X)\n",
++               (u32)(uintptr_t)taskset, (u32)(uintptr_t)elf, argument_ea, attr_ea,
++               (unsigned long long)ea_ctx, size_ctx);
++    return cellSpursCreateTask(taskset, taskId, elf, (void*)(uintptr_t)(u32)ea_ctx, size_ctx,
++                               lsp_ea, argument_ea);
++}
++
+ s32 cellSpursCreateTask(CellSpursTaskset* taskset, CellSpursTaskId* taskId,
+                         void* elf, void* context, u32 sizeContext,
+                         u32 lsPattern_ea, u32 argument_ea)
 diff --git a/libs/spurs/cellSpurs.h b/libs/spurs/cellSpurs.h
-index 07a3d2e4..8024c269 100644
+index 07a3d2e4..5e490187 100644
 --- a/libs/spurs/cellSpurs.h
 +++ b/libs/spurs/cellSpurs.h
-@@ -236,6 +236,10 @@ s32 cellSpursShutdownTaskset(CellSpursTaskset* taskset);
+@@ -236,6 +236,15 @@ s32 cellSpursShutdownTaskset(CellSpursTaskset* taskset);
  s32 cellSpursJoinTaskset(CellSpursTaskset* taskset);
  
  s32 cellSpursTasksetAttributeInitialize(CellSpursTasksetAttribute* attr);
@@ -110,6 +201,11 @@ index 07a3d2e4..8024c269 100644
 +/* The HLE taskset of (spurs, wid) holding taskId, preferring one where it waits; 0 if none. */
 +u32 spurs_taskset_find(u32 spurs_ea, u32 wid, u32 taskId);
 +s32 cellSpursCreateTaskset2(CellSpurs* spurs, CellSpursTaskset* taskset, const void* attr);
++s32 _cellSpursTaskAttribute2Initialize(void* attr, u32 revision);
++s32 cellSpursGetWorkloadFlag(CellSpurs* spurs, void* flag);
++s32 _cellSpursWorkloadFlagReceiver(CellSpurs* spurs, u32 wid, u32 is_set);
++s32 cellSpursCreateTask2(CellSpursTaskset* taskset, CellSpursTaskId* taskId, void* elf,
++                         u32 argument_ea, u32 attr_ea);
  s32 cellSpursTasksetAttributeSetName(CellSpursTasksetAttribute* attr,
                                        const char* name);
  

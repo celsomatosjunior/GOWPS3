@@ -76,8 +76,12 @@ dali (ela não faz parte do jogo).
 - **Atenção ao comparar com o RPCS3:** o RPCS3 do usuário tem patches da comunidade ligados para o GOW3
   ("Skip intro", "Skip any videos with X", "Disable MLAA" etc.). Para um gabarito fiel, rodar sem o
   ``config/patch_config.yml`` (guardar uma cópia e restaurar depois), como faz a sessão de 28/10.
-- **Parada atual:** depois da tela de boot a thread principal espera em ``lr=0x2622EC`` e o jogo ainda não chama
-  ``cellVdecOpenEx`` (no RPCS3 sem patches o vídeo do logo começa logo após a tela de boot).
+- Depois da tela de boot: o jogo registra os tratadores de vblank e de usuário, lê o controle e desenha
+  (shaders do jogo, render-to-texture 1280x720). ``ps3recomp-gow3.patch`` traz ``_cellSpursTaskAttribute2Initialize``,
+  ``cellSpursCreateTask2``, ``cellSpursGetWorkloadFlag`` e ``_cellSpursWorkloadFlagReceiver`` (receptor 0xFF no init).
+  Roda estável a ~80 flips/s.
+- **Parada atual:** os quadros apresentados são pretos e o jogo ainda não chama ``cellVdecOpenEx`` (o vídeo do logo,
+  ``SMLOGO.M2V``, é o próximo passo no RPCS3 sem patches).
 - Título: `gow3_libsre_lle.cpp` chama `cellGame_init_from_paramsfo` (antes o HLE respondia BLES00000).
 
 ## LLE seletivo da libsre (LFQueue)
