@@ -257,7 +257,16 @@ Estado em 29/10/2026, 17h50: versão reproduzível = tag `gow3-menu-v3` (menu co
 introdução do Poseidon). Pasta de trabalho principal: `Projetos\GOW3_trabalho` (EBOOT com `--pular-videos`,
 `spu_jobs` com os 5 módulos de job traduzidos).
 
+**Feito em 29/10, 17h00:** a coleta com `SPU_INTERP_PCLOG` gravou 312 pcs, todos do PM, em
+`<trabalho>\interp_pcs_29out.txt` (só local). Semeados no `lift_jobmods.py`, levaram o módulo
+`jobmod_732253176fa6` (o de 0x4B5C00) até `code_end` 0x22110, sem nenhuma instrução sem suporte. Mas a ferramenta
+oferece cada semente a TODOS os módulos que contêm o endereço, e nos outros quatro dados viraram código (671,
+1491, 329 e 23 sem suporte). Por isso a pasta `spu_jobs` foi restaurada à tradução anterior (só 0x1EC0C).
+
 **Próxima ação exata:**
+0. Mudar o `ps3recomp/tools/lift_jobmods.py` para aceitar sementes por módulo (por exemplo
+   `--extra-funcs NOME=ADDR,...`, repetível) e aplicar os 311 pcs >= 0x4000 só ao `jobmod_732253176fa6`; depois
+   retraduzir, recompilar e seguir os passos abaixo (o passo 1 já foi feito).
 1. Compilar a pasta principal (o runtime ganhou `SPU_INTERP_PCLOG=<arquivo>`, que grava cada pc entregue ao
    interpretador) e rodar o teste do Novo Jogo de 330 s com `SPU_INTERP_PCLOG=<trabalho>\interp_pcs.txt`
    (mesmo `PAD_SCRIPT`: X em 15/30/45/60/75 s e de 100 a 220 s a cada 15 s; `PS3_JANELA_FUNDO=1`).
