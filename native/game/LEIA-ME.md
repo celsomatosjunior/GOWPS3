@@ -161,8 +161,10 @@ dali (ela não faz parte do jogo).
   de 15 s, a dificuldade é aceita e o jogo abre o `OPENINGINT.M2V`, a abertura do Novo Jogo. Atenção ao
   `PAD_SCRIPT`: cada toque dura 40 leituras do controle, uns 6 s a 7 quadros/s; toques mais próximos que isso
   viram um botão segurado, sem aperto novo. Numa execução de 9 min a abertura do Novo Jogo segue com a narração em
-  português ("Uma vitória que acabou com a 'Grande Guerra'...", "Nascido das profundezas do submundo"); falta
-  ver o fim dela e a primeira fase. Versões: `gow3-menu-v1` (menu sem fundo),
+  português ("Uma vitória que acabou com a 'Grande Guerra'...", "Nascido das profundezas do submundo"); numa
+  execução de 15 min ela termina (close do Kratos desenhado pelo motor), vem a tela de carregamento e o jogo
+  abre o `PSDNINT.M2V`, a introdução do Poseidon que abre a primeira fase. Nesse ponto o ritmo cai para ~3
+  quadros/s; o próximo alvo é o desempenho (os jobs Wws ainda rodam no interpretador SPU). Versões: `gow3-menu-v1` (menu sem fundo),
   `gow3-menu-v2` (fundo com o patch de color grading) e `gow3-menu-v3` (fundo com a LUT 3D verdadeira).
 - Diagnóstico novo do live draw:
   - `LD_DRAWLOG=<quadro>,<n>`: o alvo e as texturas de cada desenho;
