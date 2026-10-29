@@ -164,7 +164,19 @@ dali (ela não faz parte do jogo).
   português ("Uma vitória que acabou com a 'Grande Guerra'...", "Nascido das profundezas do submundo"); numa
   execução de 15 min ela termina (close do Kratos desenhado pelo motor), vem a tela de carregamento e o jogo
   abre o `PSDNINT.M2V`, a introdução do Poseidon que abre a primeira fase. Nesse ponto o ritmo cai para ~3
-  quadros/s; o próximo alvo é o desempenho (os jobs Wws ainda rodam no interpretador SPU). Versões: `gow3-menu-v1` (menu sem fundo),
+  quadros/s; o próximo alvo é o desempenho (os jobs Wws ainda rodam no interpretador SPU).
+- **Plano para o desempenho (jobs Wws nativos).** O EBOOT traz 25 módulos de job SPU, ~2,3 MB de LS no
+  total. Cada módulo começa com 4 instruções `ila` (a assinatura), seguidas de `entryOffset` e do tamanho na LS,
+  com bss. Não há a marca `C0DEC0DE` que o `extract_jobmods.py` do LBP procura. Passos:
+  1. extrair os módulos do EBOOT (tamanho real = até o próximo cabeçalho);
+  2. achar o endereço de carga na LS que o PM `pm_wwsjob` usa para o código do job (ver as listas DMA e os pcs
+     do microstep do interpretador);
+  3. traduzi-los com o `tools/lift_jobmods.py`, um prefixo de símbolo por módulo;
+  4. generalizar no `spu_channels.c` o reconhecimento do módulo residente pela assinatura `ila`, que hoje só
+     vale para o PM do LBP (`image_id == 2`).
+
+  Referência de como o Ascension resolveu: `libs/spu_hle/gowa_drawcmd` e `GOWA_WWS_EXEC`, no ps3kit
+  (ver `native/docs/PS3KIT_COMPARACAO.md`). Versões: `gow3-menu-v1` (menu sem fundo),
   `gow3-menu-v2` (fundo com o patch de color grading) e `gow3-menu-v3` (fundo com a LUT 3D verdadeira).
 - Diagnóstico novo do live draw:
   - `LD_DRAWLOG=<quadro>,<n>`: o alvo e as texturas de cada desenho;
