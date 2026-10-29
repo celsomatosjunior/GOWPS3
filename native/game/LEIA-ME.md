@@ -267,7 +267,7 @@ Pasta de trabalho principal: `Projetos\GOW3_trabalho`.
 - Código SPU com SIMD do host (`--spu-simd avx2`, padrão): fase de ~1,7 q/s para ~3 q/s (picos de 4,2).
 - `GOW3_PROF=<início>,<segundos>` (perfil por amostragem do RIP). Resolver com o `.map` do build.
 - Atenção: sem `--lle-libsre` o título vira BLES00000 e o jogo não passa da inicialização; o `gow3_build.py`
-  agora usa `<trabalho>irmware\libsre_lle` sozinho quando existe.
+  agora usa `<trabalho>\firmware\libsre_lle` sozinho quando existe.
 
 **Perfil da fase (AVX2, 260 a 310 s):** a thread principal do PPU fica ~81% fora do executável (esperando); uma
 thread SPU fica ~80% ocupada (`jobmod_14561cbb02eb` func 0x10E20, `mfc_for`, `spu_coh_notify_write`); as
