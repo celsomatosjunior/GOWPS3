@@ -378,7 +378,10 @@ def step_compilar(args, work: Path, state: dict, progress):
         cmd += ["-j", str(args.jobs)]
     proc = run(cmd, work, "compilar", env=env)
     text = log_path(work, "compilar").read_text(errors="replace")
-    errors = [ln for ln in text.splitlines() if re.search(r"error[: ]|FAILED:|fatal error|LNK\d{4}", ln)][:40]
+    # Só as linhas de diagnóstico (arquivo(linha,col): error: ...), não os trechos de código que os warnings
+    # citam ("  145 |   DWORD error = ..."), que escondiam o erro real.
+    errors = [ln for ln in text.splitlines()
+              if re.search(r"\berror( [A-Z]+\d+)?:|FAILED:|fatal error|LNK\d{4}", ln) and " | " not in ln[:12]][:40]
     state.update(build_seconds=round(time.time() - t0), build_errors=errors)
     if proc.returncode:
         raise StepError("compilação falhou:\n" + "\n".join(errors[:20]))

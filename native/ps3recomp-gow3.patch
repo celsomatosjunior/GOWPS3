@@ -554,7 +554,7 @@ index bc05a308..815cb35b 100644
              u32 wslot = DRAW_SRV_BASE + _d * 4 + (u32)_u;
              dr->tex_rt[_u] = -1;
 diff --git a/libs/video/rsx_live_draw.c b/libs/video/rsx_live_draw.c
-index 25791179..182d9ef4 100644
+index 25791179..1f9f9e93 100644
 --- a/libs/video/rsx_live_draw.c
 +++ b/libs/video/rsx_live_draw.c
 @@ -22,7 +22,7 @@
@@ -587,7 +587,15 @@ index 25791179..182d9ef4 100644
  #define TEX_FMT_LINEAR     0x20
  #define TEX_FMT_UNNORM     0x40
  #define TEX_FMT_BASE_MASK  0x9F
-@@ -1903,6 +1904,11 @@ static void decode_texel(u32 base_fmt, const u8* p, u32 remap, u8 d[4])
+@@ -248,6 +249,7 @@ typedef struct {
+ typedef struct {
+     u32 location, offset, format, width, height, pitch, remap;
+     u32 cubemap;
++    u32 volume;          /* depth of a 3D texture (Texture3D SRV), 0 for 2D/cube */
+     ID3D12Resource* tex;
+     u64 content_hash;
+     u32 last_hash_frame;
+@@ -1903,6 +1905,11 @@ static void decode_texel(u32 base_fmt, const u8* p, u32 remap, u8 d[4])
          break;
      }
      case TEX_FMT_DEPTH24_D8: s[0] = 255; s[1] = s[2] = s[3] = p[0]; break;
@@ -599,7 +607,7 @@ index 25791179..182d9ef4 100644
      default: s[0] = p[0]; s[1] = p[1]; s[2] = p[2]; s[3] = p[3]; break;
      }
      d[0] = remap_comp(s, remap, 1);
-@@ -2044,6 +2050,7 @@ static u32 texture_source_span(const rsx_dsp_texture* t)
+@@ -2044,6 +2051,7 @@ static u32 texture_source_span(const rsx_dsp_texture* t)
      case TEX_FMT_G8B8: texel_size = 2; break;
      case RSX_TEX_FMT_W16Z16Y16X16_FLOAT: texel_size = 8; break;
      case TEX_FMT_A8R8G8B8:
@@ -607,7 +615,94 @@ index 25791179..182d9ef4 100644
      case TEX_FMT_DEPTH24_D8: texel_size = 4; break;
      default: return 0;
      }
-@@ -2226,6 +2233,7 @@ static ID3D12Resource* decode_guest_texture(const rsx_dsp_texture* t, u32 remap)
+@@ -2141,11 +2149,86 @@ static u64 texture_content_hash(const rsx_dsp_texture* t, int* readable)
+     return hash;
+ }
+ 
++/* A 3D texture (TEX_FORMAT dimension 3): God of War III's colour-grading
++ * LUT, a 32x32x32 A8R8G8B8 linear volume its final composite samples. Without
++ * it the unit read SRV_WHITE and the whole frame washed out. Linear layouts
++ * of the uncompressed formats decode_texel knows, one mip level: slice z
++ * follows slice z-1 at pitch * height bytes (the RSX's linear volume). The
++ * swizzled (3D Morton) layout is not decoded and stays unsupported. */
++static ID3D12Resource* decode_guest_texture_3d(const rsx_dsp_texture* t, u32 remap)
++{
++    const u32 base_fmt = t->format & TEX_FMT_BASE_MASK & ~(u32)TEX_FMT_UNNORM;
++    const u32 w = t->width, h = t->height, d = t->depth ? t->depth : 1;
++    if (!(t->format & TEX_FMT_LINEAR) || !w || !h || w > 512 || h > 512 || d > 512) return NULL;
++    u32 texel;
++    switch (base_fmt) {
++    case TEX_FMT_B8: texel = 1; break;
++    case TEX_FMT_A4R4G4B4: case TEX_FMT_A1R5G5B5: case TEX_FMT_R5G6B5: case TEX_FMT_G8B8: texel = 2; break;
++    case TEX_FMT_A8R8G8B8: case TEX_FMT_D8R8G8B8: texel = 4; break;
++    default: return NULL;
++    }
++    const u32 pitch = t->pitch ? t->pitch : w * texel;
++    const u32 slice = pitch * h;
++    const u8* src = guest_ptr(t->location, t->offset, slice * d);
++    if (!src) return NULL;
++    u8* rgba = (u8*)malloc((size_t)w * h * d * 4);
++    if (!rgba) return NULL;
++    for (u32 z = 0; z < d; z++)
++        for (u32 y = 0; y < h; y++)
++            for (u32 x = 0; x < w; x++)
++                decode_texel(base_fmt, src + (size_t)z * slice + (size_t)y * pitch + (size_t)x * texel,
++                             remap, rgba + (((size_t)z * h + y) * w + x) * 4);
++    D3D12_HEAP_PROPERTIES hp = {0}; hp.Type = D3D12_HEAP_TYPE_DEFAULT;
++    D3D12_RESOURCE_DESC rd = {0};
++    rd.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE3D;
++    rd.Width = w; rd.Height = h; rd.DepthOrArraySize = (u16)d;
++    rd.MipLevels = 1; rd.Format = DXGI_FORMAT_R8G8B8A8_UNORM; rd.SampleDesc.Count = 1;
++    ID3D12Resource* tex = NULL;
++    const u32 up_pitch = (w * 4u + 255u) & ~255u;
++    const u32 start = (g.upload_used + 511u) & ~511u;
++    if ((u64)start + (u64)up_pitch * h * d > UPLOAD_SIZE ||
++        FAILED(g.dev->lpVtbl->CreateCommittedResource(g.dev, &hp, D3D12_HEAP_FLAG_NONE, &rd,
++                                                      D3D12_RESOURCE_STATE_COPY_DEST, NULL,
++                                                      &IID_ID3D12Resource, (void**)&tex))) {
++        free(rgba);
++        return NULL;
++    }
++    for (u32 z = 0; z < d; z++)
++        for (u32 y = 0; y < h; y++)
++            memcpy(g.upload_mapped + start + ((size_t)z * h + y) * up_pitch,
++                   rgba + ((size_t)z * h + y) * w * 4, (size_t)w * 4);
++    free(rgba);
++    D3D12_TEXTURE_COPY_LOCATION sl = {0}, dl = {0};
++    sl.pResource = g.upload; sl.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
++    sl.PlacedFootprint.Offset = start;
++    sl.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
++    sl.PlacedFootprint.Footprint.Width = w;
++    sl.PlacedFootprint.Footprint.Height = h;
++    sl.PlacedFootprint.Footprint.Depth = d;
++    sl.PlacedFootprint.Footprint.RowPitch = up_pitch;
++    dl.pResource = tex; dl.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
++    g.list->lpVtbl->CopyTextureRegion(g.list, &dl, 0, 0, 0, &sl, NULL);
++    g.upload_used = start + up_pitch * h * d;
++    D3D12_RESOURCE_BARRIER b = {0};
++    b.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION; b.Transition.pResource = tex;
++    b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
++    b.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
++    b.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
++    g.list->lpVtbl->ResourceBarrier(g.list, 1, &b);
++    static int n = 0;
++    if (n++ < 8)
++        fprintf(stderr, "[texture-3d] %u:0x%08X fmt=0x%02X %ux%ux%u pitch=%u\n",
++                t->location, t->offset, t->format, w, h, d, pitch);
++    return tex;
++}
++
+ static ID3D12Resource* decode_guest_texture(const rsx_dsp_texture* t, u32 remap)
+ {
+     const u32 base_fmt = t->format & TEX_FMT_BASE_MASK & ~(u32)TEX_FMT_UNNORM;
+     const int linear = (t->format & TEX_FMT_LINEAR) != 0;
+     const u32 w = t->width, h = t->height;
++    if (t->dimension == 3 && !t->cubemap)
++        return decode_guest_texture_3d(t, remap);
+     if (!w || !h || w > 4096 || h > 4096 || t->dimension != 2)
+         return NULL;
+     u32 n_mips = t->mipmaps ? t->mipmaps : 1;
+@@ -2226,6 +2309,7 @@ static ID3D12Resource* decode_guest_texture(const rsx_dsp_texture* t, u32 remap)
      case TEX_FMT_R5G6B5:
      case TEX_FMT_G8B8: texel_size = 2; break;
      case TEX_FMT_A8R8G8B8:
@@ -615,7 +710,42 @@ index 25791179..182d9ef4 100644
      case TEX_FMT_DEPTH24_D8: texel_size = 4; break;
      case RSX_TEX_FMT_W16Z16Y16X16_FLOAT: texel_size = 8; break;
      default: return NULL;
-@@ -3157,10 +3165,94 @@ static int   s_csv_gate_open;
+@@ -2410,6 +2494,16 @@ static void write_texture_srv(u32 index, const texcache_t* entry)
+     const int compressed = base_fmt == TEX_FMT_DXT1 ||
+                            base_fmt == TEX_FMT_DXT23 ||
+                            base_fmt == TEX_FMT_DXT45;
++    if (entry->volume) {   /* decode_guest_texture_3d: RGBA8, remap already applied */
++        D3D12_SHADER_RESOURCE_VIEW_DESC desc = {0};
++        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
++        desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE3D;
++        desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
++        desc.Texture3D.MipLevels = 1;
++        g.dev->lpVtbl->CreateShaderResourceView(
++            g.dev, entry->tex, &desc, srv_cpu(SRV_TEXTURE_BASE + index));
++        return;
++    }
+     if (entry->cubemap) {
+         static const u32 sel2d3d[4] = { 3, 0, 1, 2 };
+         static const u32 out2comp[4] = { 1, 2, 3, 0 };
+@@ -2475,7 +2569,8 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
+         if (entry->location != t->location || entry->offset != t->offset ||
+             entry->format != t->format || entry->width != t->width ||
+             entry->height != t->height || entry->pitch != t->pitch ||
+-            entry->remap != remap || entry->cubemap != t->cubemap)
++            entry->remap != remap || entry->cubemap != t->cubemap ||
++            entry->volume != ((t->dimension == 3 && !t->cubemap) ? (t->depth ? t->depth : 1) : 0))
+             continue;
+         if (refresh_enabled && entry->tex &&
+             entry->last_hash_frame != g_ld_frames) {
+@@ -2591,6 +2686,7 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
+     replacement.pitch = t->pitch;
+     replacement.remap = remap;
+     replacement.cubemap = t->cubemap;
++    replacement.volume = (t->dimension == 3 && !t->cubemap) ? (t->depth ? t->depth : 1) : 0;
+     replacement.last_hash_frame = g_ld_frames;
+     replacement.last_use_serial = ++g_ld_texture_use_serial;
+     {
+@@ -3157,10 +3253,94 @@ static int   s_csv_gate_open;
  
  static int ld_blit_gpu(u32 src_loc, u32 src_abs, u32 src_pitch,
                         u32 dst_loc, u32 dst_abs, u32 dst_pitch, u32 w, u32 h);
@@ -710,7 +840,66 @@ index 25791179..182d9ef4 100644
      if (s_csv_file && s_csv_gate_open) {
          fprintf(s_csv_file, "#blit,%u,%u:0x%X/%u,%u:0x%X/%u,%ux%u,gpu=%d\n", g_ld_frames,
                  src_loc, src_abs, src_pitch, dst_loc, dst_abs, dst_pitch, w, h, r);
-@@ -6505,11 +6597,14 @@ static void live_draw_csv_emit(u32 prim, u32 n_tri, const char* outcome)
+@@ -4708,12 +4888,14 @@ static ID3D12PipelineState* get_pso(
+     static int ctrl_auto = -1;
+     if (ctrl_auto < 0) ctrl_auto = getenv("RSX_FP_CTRL_AUTO") ? 1 : 0;
+     const u32 fp_ctrl = ctrl_auto ? RSX_FP_CTRL_AUTO : rsx_dsp_shader_control(&g.rsx);
+-    u32 cube_mask = 0;
++    u32 cube_mask = 0, vol_mask = 0;
+     for (u32 unit = 0; unit < RSX_DSP_NUM_TEXTURES; unit++) {
+         rsx_dsp_texture texture;
+         rsx_dsp_get_texture(&g.rsx, unit, &texture);
+         if (texture.enabled && texture.cubemap)
+             cube_mask |= 1u << unit;
++        else if (texture.enabled && texture.dimension == 3)
++            vol_mask |= 1u << unit;   /* Texture3D in the shader (decode_guest_texture_3d) */
+     }
+     const u32 vtex_mask = vertex_texture_mask();
+     const u32 txl_mask = vp_txl_unit_mask(vp_uc, vp_instrs);
+@@ -4765,6 +4947,7 @@ static ID3D12PipelineState* get_pso(
+     const u32 fp_ctrl_key = fp_ctrl & 0x4Eu;   /* 32-bit exports, depth export */
+     key = fnv1a(&fp_ctrl_key, sizeof(fp_ctrl_key), key);
+     key = fnv1a(&cube_mask, sizeof(cube_mask), key);
++    if (vol_mask) key = fnv1a(&vol_mask, sizeof(vol_mask), key);
+     key = fnv1a(&vtex_mask, sizeof(vtex_mask), key);
+     /* BRB/CLB outcomes are baked into the program (rsx_vp_set_branch_bits). */
+     const int vp_branch_bits_used = rsx_vp_uses_branch_bits(vp_uc, vp_instrs * 16);
+@@ -4830,7 +5013,7 @@ static ID3D12PipelineState* get_pso(
+         key = fnv1a(&rs, sizeof(rs), key);
+ #if defined(YZ_PERF_PROFILE)
+     ld_profile_note_fp_variants(
+-        fp_uc, fp_size, fp_ctrl_key, cube_mask, &rs);
++        fp_uc, fp_size, fp_ctrl_key, cube_mask | (vol_mask << 16), &rs);   /* volume units in the high half */
+ #endif
+     g_ld_current_pso.valid = 1;
+     g_ld_current_pso.key = key;
+@@ -4895,9 +5078,13 @@ static ID3D12PipelineState* get_pso(
+     u32 decompiled_constant_count = 0;
+     int fi;
+     if (ld_fp_constants_buffered()) {
+-        fi = rsx_fp_decompile_buffered_ex(
+-            fp_uc, fp_size, fp_ctrl, cube_mask, ps_hlsl,
+-            sizeof(ps_hlsl), &decompiled_constant_count);
++        fi = vol_mask
++            ? rsx_fp_decompile_buffered_shadow_color_expand_vol_ex(
++                fp_uc, fp_size, fp_ctrl, cube_mask, vol_mask, NULL, NULL, NULL,
++                ps_hlsl, sizeof(ps_hlsl), &decompiled_constant_count)
++            : rsx_fp_decompile_buffered_ex(
++                fp_uc, fp_size, fp_ctrl, cube_mask, ps_hlsl,
++                sizeof(ps_hlsl), &decompiled_constant_count);
+         if (fi > 0 &&
+             decompiled_constant_count != g.fp_constants.count)
+             fi = -1;
+@@ -4907,7 +5094,7 @@ static ID3D12PipelineState* get_pso(
+             fi = -1;
+         if (fi > 0) {
+             const int np = rsx_fp_apply_unnorm_scale(
+-                ps_hlsl, sizeof(ps_hlsl), unnorm_mask, unnorm_dim, cube_mask, 0u);
++                ps_hlsl, sizeof(ps_hlsl), unnorm_mask, unnorm_dim, cube_mask, vol_mask);
+             { static int n = 0;
+               if (PS3_LOG_FIRST(n, 8))
+                   fprintf(stderr, "[unnorm] mask=0x%X cube=0x%X dim0=%ux%u"
+@@ -6505,11 +6692,14 @@ static void live_draw_csv_emit(u32 prim, u32 n_tri, const char* outcome)
      /* LD_DRAW_DUMP=<dir> [LD_DRAW_DUMP_EVERY=k, default 10]: in the first
       * gated frame, read back each k-th draw's target BEFORE it is recorded,
       * named by frame-relative index -- bisects which draw changes a surface. */
@@ -728,7 +917,7 @@ index 25791179..182d9ef4 100644
            (idx % every) == 0) {
            dumped_frame = frame;
            char path[MAX_PATH * 2];
-@@ -7423,6 +7518,25 @@ static void sink_end_impl(void* user, const rsx_dispatch* r)
+@@ -7423,6 +7613,25 @@ static void sink_end_impl(void* user, const rsx_dispatch* r)
                }
            }
        } }
@@ -754,7 +943,7 @@ index 25791179..182d9ef4 100644
      for (u32 u = 0; u < SRV_TABLE_SIZE; u++) {
          rsx_dsp_texture t; rsx_dsp_get_texture(&g.rsx, u, &t);
          /* LD_PS1_BUF0=1 -- DIAGNOSTIC, not a fix. Force a 24-bit PS1 VRAM
-@@ -7559,7 +7673,7 @@ static void sink_end_impl(void* user, const rsx_dispatch* r)
+@@ -7559,7 +7768,7 @@ static void sink_end_impl(void* user, const rsx_dispatch* r)
                    }
                }
            } }
