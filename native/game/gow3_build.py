@@ -125,6 +125,25 @@ def step_elf(args, work: Path, state: dict, progress):
     progress(f"EBOOT.ELF: {elf} ({elf.stat().st_size:,} bytes)".replace(",", "."))
 
 
+def fim_do_codigo_por_secoes(elf: Path) -> int | None:
+    """Fim da última seção executável (SHF_ALLOC|SHF_EXECINSTR) de um ELF64 big-endian, ou None
+    quando o ELF não tem tabela de seções ou nenhuma seção executável."""
+    import struct
+    data = elf.read_bytes()
+    if len(data) < 0x40 or data[:4] != b"\x7fELF" or data[4] != 2 or data[5] != 2:
+        return None
+    shoff = struct.unpack_from(">Q", data, 0x28)[0]
+    shentsize, shnum = struct.unpack_from(">HH", data, 0x3A)
+    if not shoff or not shnum or shentsize < 0x40 or shoff + shnum * shentsize > len(data):
+        return None
+    fim = None
+    for i in range(shnum):
+        sh_type, sh_flags, sh_addr, _, sh_size = struct.unpack_from(">IQQQQ", data, shoff + i * shentsize + 4)
+        if sh_type != 8 and sh_flags & 0x6 == 0x6 and sh_size:   # 8 = SHT_NOBITS; 0x6 = ALLOC|EXECINSTR
+            fim = max(fim or 0, sh_addr + sh_size)
+    return fim
+
+
 def step_carregar(args, work: Path, state: dict, progress):
     elf = Path(state["elf"])
     out = work / "analise"
@@ -142,8 +161,11 @@ def step_carregar(args, work: Path, state: dict, progress):
     image = json.loads(files["image"].read_text())
     loader = json.loads(files["loader"].read_text())
     segs = image if isinstance(image, list) else image.get("segments", [])
-    code_end = None
-    for s in segs:
+    # As seções executáveis dizem onde o código acaba. O segmento executável vai além: no GOW3 ele
+    # também carrega os dados só de leitura (0x3CA804..0x4F76E0), e o tradutor os lia como ~7.800
+    # funções. Sem tabela de seções, fica o fim do segmento.
+    code_end = fim_do_codigo_por_secoes(elf)
+    for s in segs if code_end is None else []:
         flags = int(str(s.get("flags", 0)), 0) if not isinstance(s.get("flags"), int) else s["flags"]
         if flags & 1:
             v = int(str(s["vaddr"]), 0) if not isinstance(s["vaddr"], int) else s["vaddr"]
