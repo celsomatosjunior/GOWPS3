@@ -396,8 +396,13 @@ def step_compilar(args, work: Path, state: dict, progress):
     cmd = ["cmake", "--build", state["build_dir"]]
     if args.jobs:
         cmd += ["-j", str(args.jobs)]
+    lp = log_path(work, "compilar")
+    inicio = lp.stat().st_size if lp.exists() else 0
     proc = run(cmd, work, "compilar", env=env)
-    text = log_path(work, "compilar").read_text(errors="replace")
+    # O log acumula as compilações anteriores: só a saída desta conta.
+    with open(lp, "rb") as f:
+        f.seek(inicio)
+        text = f.read().decode("utf-8", errors="replace")
     # Só as linhas de diagnóstico (arquivo(linha,col): error: ...), não os trechos de código que os warnings
     # citam ("  145 |   DWORD error = ..."), que escondiam o erro real.
     errors = [ln for ln in text.splitlines()

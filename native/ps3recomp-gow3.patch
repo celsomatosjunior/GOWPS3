@@ -1007,7 +1007,7 @@ index 32e8a959..e3ac93e8 100644
      s_state.hdc = GetDC(s_state.hwnd);
      s_state.last_fps_time = GetTickCount64();
 diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
-index 5fc50208..b8a39782 100644
+index 5fc50208..6e9281c4 100644
 --- a/runtime/spu/spu_channels.c
 +++ b/runtime/spu/spu_channels.c
 @@ -660,6 +660,11 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
@@ -1033,7 +1033,49 @@ index 5fc50208..b8a39782 100644
                              ctx->gpr[0]._u32[0] & SPU_LS_MASK, (uint32_t)ea);
                int nb = s_af == 2 ? 128 : s_af ? 64 : 8;   /* 64 covers +0x30 pendingRecv; =2 the whole line */
                p += snprintf(buf + p, sizeof buf - p, " RAM=");
-@@ -2575,6 +2580,30 @@ static int spu_smc_microstep(spu_context* ctx)
+@@ -1942,6 +1947,13 @@ int spu_overlay_register_verified_region(uint32_t content_ea, uint32_t load_lsa,
+     return 1;
+ }
+ 
++static int spu_ovl_trace_on(void)
++{
++    static int s_t = -1;
++    if (s_t < 0) s_t = getenv("SPU_OVL_TRACE") ? 1 : 0;
++    return s_t;
++}
++
+ static int spu_overlay_resident_verified(spu_context* ctx, unsigned slot)
+ {
+     int* state = &ctx->resident_code[slot].verify_state;
+@@ -1951,6 +1963,17 @@ static int spu_overlay_resident_verified(spu_context* ctx, unsigned slot)
+         for (unsigned i = 0; match && i < o->code_count; ++i)
+             match = !memcmp(ctx->ls + o->code[i].lsa, o->code[i].bytes, o->code[i].size);
+         *state = match ? SPU_OVERLAY_VERIFIED : SPU_OVERLAY_REJECTED;
++        /* SPU_OVL_TRACE=1: name the first differing word of a rejected load. */
++        if (!match && spu_ovl_trace_on()) {
++            for (unsigned i = 0; i < o->code_count; ++i)
++                for (uint32_t k = 0; k < o->code[i].size; k += 4)
++                    if (memcmp(ctx->ls + o->code[i].lsa + k, o->code[i].bytes + k, 4)) {
++                        static int _n = 0; if (PS3_LOG_FIRST(_n, 64))
++                            fprintf(stderr, "[spu-ovl] image %d rejected: LS 0x%05X differs\n",
++                                    ctx->resident_code[slot].image_id, o->code[i].lsa + k);
++                        i = o->code_count; break;
++                    }
++        }
+     }
+     return *state == SPU_OVERLAY_VERIFIED;
+ }
+@@ -2139,6 +2162,9 @@ void spu_overlay_note_get(spu_context* ctx, uint32_t ea, const uint8_t* ls, uint
+         uint32_t end = base + ctx->resident_code[slot].size;
+         if (lsa < end && lsa + size > base) {
+             if (lsa < base || ea != ctx->resident_code[slot].source_ea + (lsa - base)) {
++                if (spu_ovl_trace_on()) { static int _n = 0; if (PS3_LOG_FIRST(_n, 64))
++                    fprintf(stderr, "[spu-ovl] image %d cleared: GET ea=0x%08X -> LS 0x%05X size=0x%X\n",
++                            ctx->resident_code[slot].image_id, ea, lsa, size); }
+                 ctx->resident_code[slot].image_id = 0;
+                 spu_dcache_residency_changed(ctx);
+             } else if (ctx->resident_code[slot].verify_state) {
+@@ -2575,6 +2601,39 @@ static int spu_smc_microstep(spu_context* ctx)
                fprintf(stderr, "[spu-smc] microstep img=%d pc=0x%05X word 0x%08X not in the"
                        " microstep set -- handing to the interpreter (steps=%d)\n",
                        ctx->image_id, pc, w, steps); }
@@ -1054,7 +1096,16 @@ index 5fc50208..b8a39782 100644
 +                      uint64_t z = 0;
 +                      if (__atomic_compare_exchange_n(&s_seen[h], &z, key + 1, 0,
 +                                                      __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
-+                          fprintf(s_f, "%d 0x%05X\n", ctx->image_id, pc & SPU_LS_MASK);
++                          /* then the resident code slots (image/verify
++                           * state) and the word at LS 0x4000, the job code
++                           * buffer: which module was there and was it known */
++                          const uint8_t* h = ctx->ls + 0x4000;
++                          fprintf(s_f, "%d 0x%05X res=%d/%d,%d/%d hdr=", ctx->image_id,
++                                  pc & SPU_LS_MASK,
++                                  ctx->resident_code[0].image_id, ctx->resident_code[0].verify_state,
++                                  ctx->resident_code[1].image_id, ctx->resident_code[1].verify_state);
++                          for (int b = 0; b < 16; b++) fprintf(s_f, "%02X", h[b]);
++                          fputc('\n', s_f);
 +                          fflush(s_f);
 +                          break;
 +                      }
@@ -1214,6 +1265,118 @@ index 2eef378b..5b7d4c00 100644
      ap.add_argument("--allow-partial", action="store_true",
                      help="With --input, emit supported registrations despite incomplete coverage")
      ap.add_argument("--merge-chunks", action="store_true",
+diff --git a/tools/lift_jobmods.py b/tools/lift_jobmods.py
+index f8783799..e331f278 100644
+--- a/tools/lift_jobmods.py
++++ b/tools/lift_jobmods.py
+@@ -77,6 +77,21 @@ CODE_END = {
+ EXTRA_FUNCS = [a.strip() for a in
+                os.environ.get("LBP_JOBMOD_EXTRA_FUNCS", "").split(",") if a.strip()]
+ 
++# Extra function entries for ONE module (--module-funcs NAME=ADDR,...), keyed by
++# a module-name prefix. Use this when the resident image is known (e.g. pcs
++# logged by the interpreter for one job): offering such addresses to every
++# module turns data into code in the modules that merely span them.
++MODULE_FUNCS = {}
++
++
++def module_extra_funcs(name):
++    """EXTRA_FUNCS plus the --module-funcs entries whose prefix matches `name`."""
++    out = list(EXTRA_FUNCS)
++    for prefix, addrs in MODULE_FUNCS.items():
++        if name and name.startswith(prefix):
++            out += addrs
++    return out
++
+ 
+ def manual_link_targets(raw, base=BASE):
+     """Return targets built into the link register by hand:
+@@ -210,7 +225,7 @@ def module_code_end(raw, name, base=BASE):
+     it lifts lies inside the registered span."""
+     hi = min(base + len(raw), CODE_END.get(name, base + len(raw)))
+     seeds = {base + struct.unpack_from(">I", raw, 0x10)[0], base + 0x30}
+-    seeds |= {int(a, 0) for a in EXTRA_FUNCS}
++    seeds |= {int(a, 0) for a in module_extra_funcs(name)}
+     derived = manual_link_sites(raw, base) + switch_table_sites(raw, base)
+     while True:
+         seen = reachable(raw, seeds, hi, base)
+@@ -223,10 +238,11 @@ def module_code_end(raw, name, base=BASE):
+     return max(seen) + 4
+ 
+ 
+-def module_seeds(raw, base=BASE):
++def module_seeds(raw, base=BASE, name=None):
+     """Extra function entries offered to the lifter for one module."""
+     # Only offer addresses that fall inside THIS module's image.
+-    inside = [a for a in EXTRA_FUNCS if base <= int(a, 0) < base + len(raw)]
++    inside = [a for a in module_extra_funcs(name)
++              if base <= int(a, 0) < base + len(raw)]
+     # The module's first function starts right after the 0x30-byte header
+     # (`4 ila | entry | size | 0 | 0 | C0DEC0DE | 0 | 0 | n`). Usually it is
+     # reached by a branch and found anyway, but in two modules it is a bare
+@@ -268,7 +284,7 @@ def lift_module(raw, name, outdir, tmp_elf, merge_chunks, code_end=None,
+         cmd += ["--code-end", hex(end)]
+     if merge_chunks:
+         cmd += ["--merge-chunks"]
+-    inside = module_seeds(raw, base)
++    inside = module_seeds(raw, base, name)
+     if code_end:
+         inside = [a for a in inside if int(a, 0) < code_end]
+     if inside:
+@@ -310,7 +326,7 @@ def elf_load_segments(elf):
+ 
+ def find_engine_modules(elf):
+     """Job module images embedded in an engine ELF: a 16-byte aligned header
+-    with C0DEC0DE at +0x20 and the load base (0x4000) at +0x28, entry offset
++    with C0DEC0DE at +0x20 and the load base (0x4000, or 0) at +0x28, entry offset
+     at +0x10 and image size at +0x14. Like extract_jobmods.py, the module is
+     the initialised image, imageSize - 32 (the rest is bss), so a module gets
+     the same name, and CODE_END fixup, from either source.
+@@ -320,7 +336,9 @@ def find_engine_modules(elf):
+         at = blob.find(b"\xc0\xde\xc0\xde")
+         while at != -1:
+             h = at - 0x20
+-            if h >= 0 and h % 16 == 0 and struct.unpack_from(">I", blob, h + 0x28)[0] == BASE:
++            # +0x28 is 0 in most of God of War III's modules, which still run
++            # at the job code buffer: treat 0 as the default base.
++            if h >= 0 and h % 16 == 0 and struct.unpack_from(">I", blob, h + 0x28)[0] in (BASE, 0):
+                 entry_off, image = struct.unpack_from(">II", blob, h + 0x10)
+                 size = image - 32
+                 if 0x30 <= entry_off < size and image <= 0x40000 - BASE and h + size <= len(blob):
+@@ -349,7 +367,18 @@ def main():
+                     help="Pass --merge-chunks to spu_lifter.py: each run of chunks "
+                          "between call targets becomes one C function with gotos "
+                          "instead of chunks linked by trampolines.")
++    ap.add_argument("--module-funcs", action="append", default=[], metavar="NAME=ADDR,...",
++                    help="Extra function entries (LS addresses) for the modules whose "
++                         "name starts with NAME only; repeatable. ADDR may also be "
++                         "@FILE, one address per line.")
+     args = ap.parse_args()
++    for spec in args.module_funcs:
++        prefix, _, addrs = spec.partition("=")
++        if addrs.startswith("@"):
++            addrs = ",".join(open(addrs[1:]).read().split())
++        lst = [a.strip() for a in addrs.split(",") if a.strip()]
++        MODULE_FUNCS.setdefault(prefix, []).extend(lst)
++        print(f"  {len(lst)} extra function entr(y/ies) for {prefix}*")
+     OUTDIR  = args.out
+     register_c = args.register or os.path.join(OUTDIR, "jobmods_register.c")
+ 
+diff --git a/tools/ppu_lifter.py b/tools/ppu_lifter.py
+index a657ba61..6c1bc03f 100644
+--- a/tools/ppu_lifter.py
++++ b/tools/ppu_lifter.py
+@@ -5324,6 +5324,10 @@ def main() -> None:
+             if args.code_end is not None:
+                 text_hi = min(text_hi, args.code_end)
+             toc = _read_u32((elf.elf_header.e_entry + 4) & 0xFFFFFFFF) or 0
++            if args.toc is not None:
++                # Explicit TOC: ELFs whose OPD layout is not the PS3 {u32 code, u32 toc}
++                # (e.g. 64-bit ELFv1 descriptors) cannot be read the default way.
++                toc = args.toc
+             # PSL1GHT/GCC ELFs: the entry descriptor's second word is NOT a TOC
+             # (it repeats the code address); the real r2 the crt establishes is
+             # .got + 0x8000 (the ELFv1 TOC bias). Without the right TOC every
 diff --git a/tools/spu_program_pipeline.py b/tools/spu_program_pipeline.py
 index 36cbc240..d18fb1db 100644
 --- a/tools/spu_program_pipeline.py
