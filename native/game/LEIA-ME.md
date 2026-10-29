@@ -140,6 +140,29 @@ dali (ela não faz parte do jogo).
   Por volta de 1 min 40 s aparece o menu em português: "Novo Jogo, Carregar, Opções, Tesouros", com
   "X – Seleccionar". O fundo do menu ainda sai quase branco. Sem o patch, a abertura completa leva vários
   minutos, até a cena desenhada em tempo real de Gaia escalando o Olimpo.
+- **Fundo do menu (29/10/2026).** O passe final de composição amostra uma LUT de color grading de 32×32
+  (`u1[1:0x021AD900]`, uma textura 3D). O live draw só decodifica texturas 2D: no lugar dela entrava a
+  textura branca (`SRV_WHITE`), e a imagem estourava. Com o patch "Disable Color Grading (Speedboost)" o
+  fundo aparece: o rosto do Kratos, as lâminas e o fogo. A correção de verdade é dar suporte a texturas 3D no
+  live draw (decodificação e shaders); até lá, o patch faz parte da receita.
+- **Patches de terceiros do RPCS3:**
+  - `--patch-rpcs3 "<nome>"` (repetível) aplica patches PPU do `patch.yml` que o RPCS3 do usuário baixa
+    (`native/tools/rpcs3_patches.py --patch-yml <rpcs3>\patches\patch.yml --listar` mostra os 9 do GOW3 1.00);
+  - o build lê só o arquivo do usuário, e nenhum patch é copiado para o repositório;
+  - cada aplicação é registrada no log do passo `elf`, com os bytes antes e depois.
+- **Receita reproduzível do menu:**
+  1. compilar com `--pular-videos --patch-rpcs3 "Disable Color Grading (Speedboost)"`;
+  2. rodar com `PAD_SCRIPT` apertando X a cada 4 s entre 15 e 75 s.
+
+  O menu aparece com o fundo. A versão 1 (sem o fundo) é a tag `gow3-menu-v1`; esta é a `gow3-menu-v2`.
+- Diagnóstico novo do live draw:
+  - `LD_DRAWLOG=<quadro>,<n>`: o alvo e as texturas de cada desenho;
+  - `LD_DRAW_DUMP_FROM=<quadro>`;
+  - `LD_BLIT_LOG=1`: as cópias NV3089 feitas na GPU;
+  - `LD_BLIT_READBACK=1`: copia para a memória do jogo o que a GPU copiou para a memória principal;
+  - `PS3_JANELA_FUNDO=1`: a janela abre minimizada e sem roubar o foco, para testes sem ninguém no PC.
+
+  O live draw passou a decodificar texturas D8R8G8B8 (0x9E).
 - Comparação com o ps3kit do Arnaldo: `native/docs/PS3KIT_COMPARACAO.md`.
 - Controle sem ninguém no PC: `PAD_SCRIPT="<s>:<máscara>,..."` aperta botões em segundos dados (START 0x0008,
   CROSS 0x4000, CIRCLE 0x2000, DOWN 0x0040, UP 0x0010), e `PAD_FILE=<arquivo>` aperta o que for escrito no

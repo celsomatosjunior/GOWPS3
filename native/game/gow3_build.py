@@ -128,6 +128,27 @@ def aplica_pular_videos(elf: Path, work: Path) -> Path:
     raise StepError(f"--pular-videos: 0x{ea:X} fora dos segmentos do ELF")
 
 
+def aplica_patches_rpcs3(args, elf: Path, work: Path, state: dict, progress) -> Path:
+    """Patches de terceiros do patch.yml do RPCS3 do usuário (native/tools/rpcs3_patches.py), numa cópia local."""
+    sys.path.insert(0, str(HERE.parent / "tools"))
+    import rpcs3_patches
+    yml = Path(args.patch_yml) if args.patch_yml else (Path(args.rpcs3).parent if args.rpcs3 else
+                                                       Path("F:/Quadrado do Claude/rpcs3")) / "patches" / "patch.yml"
+    if not yml.is_file():
+        raise StepError(f"--patch-rpcs3: não achei o patch.yml do RPCS3 em {yml} (use --patch-yml)")
+    ps = rpcs3_patches.patches_do_jogo(yml, "BCES00510", "01.00")
+    data = elf.read_bytes()
+    for nome in args.patch_rpcs3:
+        if nome not in ps:
+            raise StepError(f"--patch-rpcs3: {nome!r} não existe para BCES00510 01.00; há: " + ", ".join(ps))
+        data, feitos = rpcs3_patches.aplica(data, ps[nome]["ops"])
+        progress(f"Patch do RPCS3 '{nome}' ({ps[nome]['autor']}): " + "; ".join(feitos))
+    out = work / "EBOOT.patches.ELF"
+    out.write_bytes(data)
+    state["patches_rpcs3"] = list(args.patch_rpcs3)
+    return out
+
+
 def step_elf(args, work: Path, state: dict, progress):
     if args.elf:
         elf = Path(args.elf).resolve()
@@ -151,6 +172,8 @@ def step_elf(args, work: Path, state: dict, progress):
         raise StepError(f"{elf} não existe")
     if args.pular_videos:
         elf = aplica_pular_videos(elf, work)
+    if args.patch_rpcs3:
+        elf = aplica_patches_rpcs3(args, elf, work, state, progress)
     state["elf"] = str(elf)
     progress(f"EBOOT.ELF: {elf} ({elf.stat().st_size:,} bytes)".replace(",", "."))
 
@@ -447,6 +470,10 @@ def main() -> int:
     ap.add_argument("--pular-videos", action="store_true",
                     help="aplica numa cópia local do EBOOT o patch 'Skip any videos with X' (EBOOT 1.00): "
                          "o X pula os vídeos, como no RPCS3")
+    ap.add_argument("--patch-rpcs3", action="append", default=[], metavar="NOME",
+                    help="aplica ao EBOOT (cópia local) um patch PPU do patch.yml do RPCS3, pelo nome do RPCS3 "
+                         "(repetível). native/tools/rpcs3_patches.py --listar mostra os do GOW3 1.00")
+    ap.add_argument("--patch-yml", help="patch.yml do RPCS3 (padrão: <pasta do rpcs3>/patches/patch.yml)")
     ap.add_argument("--ffmpeg", help="FFmpeg LGPL compartilhado (pasta com include/ e bin/, mesma série das DLLs): "
                                      "o cellVdec decodifica os vídeos do jogo")
     ap.add_argument("--spu-dir", help="SPU_DIR já montada (programas SPU e policy modules recompilados por fora)")

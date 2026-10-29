@@ -553,6 +553,231 @@ index bc05a308..815cb35b 100644
          for (int _u = 0; _u < 4; _u++) {
              u32 wslot = DRAW_SRV_BASE + _d * 4 + (u32)_u;
              dr->tex_rt[_u] = -1;
+diff --git a/libs/video/rsx_live_draw.c b/libs/video/rsx_live_draw.c
+index 25791179..182d9ef4 100644
+--- a/libs/video/rsx_live_draw.c
++++ b/libs/video/rsx_live_draw.c
+@@ -22,7 +22,7 @@
+ #include "rsx_live_draw.h"
+ #include "ps3emu/yz_runtime_config.h"
+ #include "ps3emu/yz_frontier_trace.h"
+-#include "ps3emu/log_first.h"
++#include "ps3emu/log_first.h"
+ 
+ #if !defined(_WIN32)
+ 
+@@ -88,9 +88,9 @@ static volatile long g_ld_ps1_vram_ready = 0;
+ #if defined(YZ_PERF_CLEAN) || defined(_MSC_VER)
+ #define LD_DIAG_ENABLED(name) 0
+ #else
+-/* Cached per call site: several of these sit on per-draw paths. */
+-#define LD_DIAG_ENABLED(name) ({ static int _ld_diag = -1; \
+-    if (_ld_diag < 0) _ld_diag = getenv(name) != NULL; _ld_diag; })
++/* Cached per call site: several of these sit on per-draw paths. */
++#define LD_DIAG_ENABLED(name) ({ static int _ld_diag = -1; \
++    if (_ld_diag < 0) _ld_diag = getenv(name) != NULL; _ld_diag; })
+ #endif
+ #include <string.h>
+ 
+@@ -195,6 +195,7 @@ extern volatile unsigned long long g_yz_auto_start_tick;
+ #define TEX_FMT_DXT45      0x88
+ #define TEX_FMT_G8B8       0x8B
+ #define TEX_FMT_DEPTH24_D8 0x90
++#define TEX_FMT_D8R8G8B8   0x9E   /* A8R8G8B8 layout, alpha ignored (read as 1) */
+ #define TEX_FMT_LINEAR     0x20
+ #define TEX_FMT_UNNORM     0x40
+ #define TEX_FMT_BASE_MASK  0x9F
+@@ -1903,6 +1904,11 @@ static void decode_texel(u32 base_fmt, const u8* p, u32 remap, u8 d[4])
+         break;
+     }
+     case TEX_FMT_DEPTH24_D8: s[0] = 255; s[1] = s[2] = s[3] = p[0]; break;
++    /* D8R8G8B8: A8R8G8B8 bytes with the top byte unused, sampled as opaque.
++     * God of War III composites its main-menu background from 1280x720
++     * linear textures in this format; it decoded to nothing, and the
++     * engine's fallback (SRV_WHITE) washed the menu out to white. */
++    case TEX_FMT_D8R8G8B8: s[0] = 255; s[1] = p[1]; s[2] = p[2]; s[3] = p[3]; break;
+     default: s[0] = p[0]; s[1] = p[1]; s[2] = p[2]; s[3] = p[3]; break;
+     }
+     d[0] = remap_comp(s, remap, 1);
+@@ -2044,6 +2050,7 @@ static u32 texture_source_span(const rsx_dsp_texture* t)
+     case TEX_FMT_G8B8: texel_size = 2; break;
+     case RSX_TEX_FMT_W16Z16Y16X16_FLOAT: texel_size = 8; break;
+     case TEX_FMT_A8R8G8B8:
++    case TEX_FMT_D8R8G8B8:
+     case TEX_FMT_DEPTH24_D8: texel_size = 4; break;
+     default: return 0;
+     }
+@@ -2226,6 +2233,7 @@ static ID3D12Resource* decode_guest_texture(const rsx_dsp_texture* t, u32 remap)
+     case TEX_FMT_R5G6B5:
+     case TEX_FMT_G8B8: texel_size = 2; break;
+     case TEX_FMT_A8R8G8B8:
++    case TEX_FMT_D8R8G8B8:
+     case TEX_FMT_DEPTH24_D8: texel_size = 4; break;
+     case RSX_TEX_FMT_W16Z16Y16X16_FLOAT: texel_size = 8; break;
+     default: return NULL;
+@@ -3157,10 +3165,94 @@ static int   s_csv_gate_open;
+ 
+ static int ld_blit_gpu(u32 src_loc, u32 src_abs, u32 src_pitch,
+                        u32 dst_loc, u32 dst_abs, u32 dst_pitch, u32 w, u32 h);
++/* Read a w x h rect of an 8-bit colour surface back from the GPU and store it
++ * in guest memory at (dst_loc, dst_abs) with dst_pitch, as A8R8G8B8 bytes (the
++ * RSX's 32-bit colour layout: A, R, G, B). Submits and waits for the open list
++ * (LD_FLUSH_READBACK). Float targets are left alone. */
++static void ld_surface_rect_to_guest(const surface_t* s, u32 sx, u32 sy, u32 w, u32 h,
++                                     u32 dst_loc, u32 dst_abs, u32 dst_pitch)
++{
++    if (!s || !s->tex || s->fmt != DXGI_FORMAT_R8G8B8A8_UNORM || !w || !h) return;
++    u8* dst0 = (u8*)(uintptr_t)guest_ptr(dst_loc, dst_abs, dst_pitch * (h - 1) + w * 4u);
++    if (!dst0) return;
++    const u32 pitch = (w * 4u + 255u) & ~255u;
++    const UINT64 rb_size = (UINT64)pitch * h;
++    D3D12_HEAP_PROPERTIES hp = {0}; hp.Type = D3D12_HEAP_TYPE_READBACK;
++    D3D12_RESOURCE_DESC bd = {0};
++    bd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER; bd.Width = rb_size;
++    bd.Height = 1; bd.DepthOrArraySize = 1; bd.MipLevels = 1;
++    bd.Format = DXGI_FORMAT_UNKNOWN; bd.SampleDesc.Count = 1;
++    bd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
++    ID3D12Resource* rb = NULL;
++    if (FAILED(g.dev->lpVtbl->CreateCommittedResource(g.dev, &hp, D3D12_HEAP_FLAG_NONE, &bd,
++            D3D12_RESOURCE_STATE_COPY_DEST, NULL, &IID_ID3D12Resource, (void**)&rb)))
++        return;
++    D3D12_RESOURCE_BARRIER b = {0};
++    b.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
++    b.Transition.pResource = s->tex;
++    b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
++    b.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
++    b.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
++    g.list->lpVtbl->ResourceBarrier(g.list, 1, &b);
++    D3D12_TEXTURE_COPY_LOCATION src = {0}, dst = {0};
++    src.pResource = s->tex; src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
++    dst.pResource = rb; dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
++    dst.PlacedFootprint.Footprint.Format = s->fmt;
++    dst.PlacedFootprint.Footprint.Width = w;
++    dst.PlacedFootprint.Footprint.Height = h;
++    dst.PlacedFootprint.Footprint.Depth = 1;
++    dst.PlacedFootprint.Footprint.RowPitch = pitch;
++    D3D12_BOX box = { sx, sy, 0, sx + w, sy + h, 1 };
++    g.list->lpVtbl->CopyTextureRegion(g.list, &dst, 0, 0, 0, &src, &box);
++    b.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
++    b.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
++    g.list->lpVtbl->ResourceBarrier(g.list, 1, &b);
++    ld_flush(LD_FLUSH_READBACK);
++    u8* px = NULL; D3D12_RANGE rr = {0, (SIZE_T)rb_size};
++    if (SUCCEEDED(rb->lpVtbl->Map(rb, 0, &rr, (void**)&px))) {
++        for (u32 y = 0; y < h; y++) {
++            const u8* sr = px + (SIZE_T)y * pitch;
++            u8* dr = dst0 + (SIZE_T)y * dst_pitch;
++            for (u32 x = 0; x < w; x++) {   /* R,G,B,A -> A,R,G,B */
++                dr[x * 4 + 0] = sr[x * 4 + 3]; dr[x * 4 + 1] = sr[x * 4 + 0];
++                dr[x * 4 + 2] = sr[x * 4 + 1]; dr[x * 4 + 3] = sr[x * 4 + 2];
++            }
++        }
++        D3D12_RANGE wr = {0, 0};
++        rb->lpVtbl->Unmap(rb, 0, &wr);
++    }
++    rb->lpVtbl->Release(rb);
++    static int n = 0;
++    if (n++ < 4)
++        fprintf(stderr, "[ld-blit] readback %ux%u from 0x%08X -> guest %u:0x%08X\n",
++                w, h, s->offset, dst_loc, dst_abs);
++}
++
+ int rsx_live_draw_blit(u32 src_loc, u32 src_abs, u32 src_pitch,
+                        u32 dst_loc, u32 dst_abs, u32 dst_pitch, u32 w, u32 h)
+ {
+     const int r = ld_blit_gpu(src_loc, src_abs, src_pitch, dst_loc, dst_abs, dst_pitch, w, h);
++    /* LD_BLIT_READBACK=1: a copy out of a live surface into MAIN memory also
++     * lands in guest memory, as on the RSX. A title that hands that copy to its
++     * SPUs (God of War III: the display buffer goes to main memory with NV3089,
++     * MLAA runs over it there, and later passes sample it back and average it
++     * into the exposure) otherwise processes zeros, and the tone map, fed a
++     * black average, washes the frame out to white. */
++    { static int rb_on = -1;
++      if (rb_on < 0) { const char* e = getenv("LD_BLIT_READBACK"); rb_on = e && e[0] != '0'; }
++      if (rb_on && r == 1 && dst_loc == 1) {
++          u32 sx, sy;
++          const int si = surface_containing(src_loc, src_abs, src_pitch, w, h, &sx, &sy);
++          if (si >= 0) ld_surface_rect_to_guest(&g.surfaces[si], sx, sy, w, h, dst_loc, dst_abs, dst_pitch);
++      } }
++    /* LD_BLIT_LOG=1: the first 32 blits and how ld_blit_gpu answered (1 = copied on
++     * the GPU; <= 0 its reason code), to see why a copy out of a live surface fell
++     * back to the guest-memory copy, which moves black. */
++    { static int on = -1; static int n;
++      if (on < 0) on = getenv("LD_BLIT_LOG") ? 1 : 0;
++      if (on && n < 32) { n++;
++          fprintf(stderr, "[ld-blit] %u:0x%08X/%u -> %u:0x%08X/%u %ux%u -> %d\n",
++                  src_loc, src_abs, src_pitch, dst_loc, dst_abs, dst_pitch, w, h, r); } }
+     if (s_csv_file && s_csv_gate_open) {
+         fprintf(s_csv_file, "#blit,%u,%u:0x%X/%u,%u:0x%X/%u,%ux%u,gpu=%d\n", g_ld_frames,
+                 src_loc, src_abs, src_pitch, dst_loc, dst_abs, dst_pitch, w, h, r);
+@@ -6505,11 +6597,14 @@ static void live_draw_csv_emit(u32 prim, u32 n_tri, const char* outcome)
+     /* LD_DRAW_DUMP=<dir> [LD_DRAW_DUMP_EVERY=k, default 10]: in the first
+      * gated frame, read back each k-th draw's target BEFORE it is recorded,
+      * named by frame-relative index -- bisects which draw changes a surface. */
+-    { static const char* dir = (const char*)-1; static u32 every, frame = ~0u, idx, dumped_frame = ~0u;
++    { static const char* dir = (const char*)-1; static u32 every, frame = ~0u, idx, dumped_frame = ~0u, from;
+       if (dir == (const char*)-1) { dir = getenv("LD_DRAW_DUMP");
+-          const char* e = getenv("LD_DRAW_DUMP_EVERY"); every = e ? (u32)atoi(e) : 10; if (!every) every = 10; }
++          const char* e = getenv("LD_DRAW_DUMP_EVERY"); every = e ? (u32)atoi(e) : 10; if (!every) every = 10;
++          /* LD_DRAW_DUMP_FROM=<frame>: the frame to dump (default the first one). */
++          const char* f = getenv("LD_DRAW_DUMP_FROM"); from = f ? (u32)strtoul(f, 0, 0) : 0; }
+       if (frame != g_ld_frames) { frame = g_ld_frames; idx = 0; }
+-      if (dir && target < g.n_surfaces && (dumped_frame == ~0u || dumped_frame == frame) &&
++      if (dir && target < g.n_surfaces && g_ld_frames >= from &&
++          (dumped_frame == ~0u || dumped_frame == frame) &&
+           (idx % every) == 0) {
+           dumped_frame = frame;
+           char path[MAX_PATH * 2];
+@@ -7423,6 +7518,25 @@ static void sink_end_impl(void* user, const rsx_dispatch* r)
+               }
+           }
+       } }
++    /* LD_DRAWLOG=<frame>[,<n>]: from that frame on, the first n draws (default
++     * 400): colour target, then every enabled texture unit -- which surface a
++     * post-process or composite pass reads. */
++    { static int on = -1; static u32 from, cap = 400, n;
++      if (on < 0) { const char* e = getenv("LD_DRAWLOG"); on = e ? 1 : 0;
++                    if (e) sscanf(e, "%u,%u", &from, &cap); }
++      if (on && g_ld_frames >= from && n < cap) {
++          n++;
++          rsx_dsp_surface sfl; rsx_dsp_get_surface(&g.rsx, &sfl);
++          fprintf(stderr, "[drawlog] f=%u rt=0x%08X z=0x%08X", g_ld_frames,
++                  sfl.color_offset[0], sfl.zeta_offset);
++          for (u32 q = 0; q < SRV_TABLE_SIZE; q++) {
++              rsx_dsp_texture tq; rsx_dsp_get_texture(&g.rsx, q, &tq);
++              if (!tq.enabled) continue;
++              fprintf(stderr, " u%u[%u:0x%08X f%02X %ux%u]", q, tq.location, tq.offset,
++                      tq.format, tq.width, tq.height);
++          }
++          fprintf(stderr, "\n");
++      } }
+     for (u32 u = 0; u < SRV_TABLE_SIZE; u++) {
+         rsx_dsp_texture t; rsx_dsp_get_texture(&g.rsx, u, &t);
+         /* LD_PS1_BUF0=1 -- DIAGNOSTIC, not a fix. Force a 24-bit PS1 VRAM
+@@ -7559,7 +7673,7 @@ static void sink_end_impl(void* user, const rsx_dispatch* r)
+                   }
+               }
+           } }
+-        if (sampled < 0 && LD_DIAG_ENABLED("LD_ALIAS_DBG")) {
++        if (sampled < 0 && LD_DIAG_ENABLED("LD_ALIAS_DBG")) {
+             static u32 n_dbg = 0;
+             if (PS3_LOG_FIRST(n_dbg, 24)) {
+                 fprintf(stderr, "[alias-miss] tex %u:0x%08X fmt=0x%02X %ux%u target=%u surf:",
+diff --git a/libs/video/rsx_null_backend.c b/libs/video/rsx_null_backend.c
+index 32e8a959..e3ac93e8 100644
+--- a/libs/video/rsx_null_backend.c
++++ b/libs/video/rsx_null_backend.c
+@@ -263,6 +263,10 @@ int rsx_null_backend_init(u32 width, u32 height, const char* title)
+         printf("[RSX null] ERROR: CreateWindow failed (%lu)\n", GetLastError());
+         return -1;
+     }
++    /* PS3_JANELA_FUNDO=1: unattended runs open the window minimized and without
++     * taking the focus, so they do not get in the way of the desktop (frame
++     * dumps read the engine's surfaces, not the window). */
++    if (getenv("PS3_JANELA_FUNDO")) ShowWindow(s_state.hwnd, SW_SHOWMINNOACTIVE);
+ 
+     s_state.hdc = GetDC(s_state.hwnd);
+     s_state.last_fps_time = GetTickCount64();
 diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
 index 5fc50208..4a0d0deb 100644
 --- a/runtime/spu/spu_channels.c
