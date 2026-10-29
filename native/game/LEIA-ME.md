@@ -81,11 +81,32 @@ dali (ela não faz parte do jogo).
   ``cellSpursCreateTask2``, ``cellSpursGetWorkloadFlag`` e ``_cellSpursWorkloadFlagReceiver`` (receptor 0xFF no init).
   A tela de boot termina aos ~13 s em todas as execuções (o receptor do workload flag usa uma troca atômica;
   com o lock global do lock-line a thread principal travava dentro dele).
-- **Parada atual:** depois da tela de boot a thread principal espera em ``func_0028DA14`` (sincronia de buffer
-  triplo): o contador de 16 bits do buffer da vez (``S+0x40+i*4``, ``S = *(TOC-0x4C64)``) não zera. As 5 tarefas
-  MLAA (taskset2) ficam em WAIT_SIGNAL. O jogo usa o workload flag (receptor wid 11, o PM ``pm_wwsjob``); o
-  kernel do HLE agora escala o receptor quando ``flag == 0`` (como o RPCS3), e ``SPURS_FLAG_DBG=1`` mostra as
-  condições. Falta achar quem devia zerar aquele contador (provavelmente um job Wws ao fim do quadro).
+- **Laço principal fechando quadros (29/10/2026).** A cadeia de cada quadro, achada com o gabarito do
+  RPCS3 lido pela sonda GDB (`native/tools/rpcs3_gdb_amostra.py`):
+  1. o RSX grava um `GET_REPORT` em memória principal cujo campo de preenchimento (zero) cai em cima do
+     workload flag do SPURS (`spurs+0x6C`), e outros três em `0x7003ACB0/C0/D0`, um por buffer;
+  2. o flag em zero dispara o workload `Wws_Job/RsxSync` (wid 11), cujo job (código SPU em 0x426B80) sinaliza
+     as 5 tarefas MLAA do taskset 0x70041A80;
+  3. cada tarefa MLAA desconta 1 de um contador Wws (`0x64AA78/7C/80`, começa em 5; `0x0000FF00` = livre);
+  4. com ele livre, os jobs `Wws_Job/EDGE0..2` rodam e zeram o contador do buffer triplo (`S+0x40+i*4`) que
+     `func_0028DA14` espera.
+
+  Três correções:
+  - o kernel do SPURS travava ao consumir o flag (`vm_write32` dentro do lock-line, que ele mesmo pega);
+  - o RSX precisa esperar os SPUs como no hardware: `GCM_SEMA_ACQUIRE=1` e `GCM_PARK_GRACE_MS` longo, que o
+    passo `rodar` agora liga por padrão. Sem isso o RSX terminava dois quadros de uma vez, os dois sinais do
+    RsxSync se fundiam e duas tarefas MLAA pulavam um quadro;
+  - o WAIT_SIGNAL do runtime consome o bit `signalled` no mesmo instante em que o vê, como o kernel do SPURS.
+
+  Resultado, em 3 de 3 execuções de 70 s: o jogo sai da espera, abre `CINEMATICS/SMLOGO.M2V` no `cellVdec`
+  (330 unidades decodificadas) e os flips continuam.
+- **Parada atual: o vídeo sai preto.** O `cellVdec` do ps3recomp só decodifica de verdade com o FFmpeg
+  (`-DPS3RECOMP_FFMPEG_RUNTIME=ON`, que precisa dos cabeçalhos do FFmpeg na versão das DLLs: `avcodec-63.dll`
+  e `avutil-61.dll`, as mesmas que o RPCS3 do usuário traz). Sem ele, cada AU vira uma imagem vazia.
+- Diagnóstico: `SPURS_PM_TRACE=1` (cada execução de policy module), `SPURS_FLAG_DBG=1` (mudanças do workload
+  flag), `SPU_SIG_TRACE_TS=<taskset>` (cada despertar de tarefa), `SPU_ATOM_EA=<ea>` (atômicos SPU numa linha,
+  com a thread), e no `gow3_diag.cpp` `GOW3_FIND=<valores>` (onde um u32 aparece na memória) e
+  `GOW3_DUMP=<ea:len>`.
 - Título: `gow3_libsre_lle.cpp` chama `cellGame_init_from_paramsfo` (antes o HLE respondia BLES00000).
 
 ## LLE seletivo da libsre (LFQueue)

@@ -65,11 +65,63 @@ static void peek(void)
     }
 }
 
+/* GOW3_FIND="val[,val...]": procura cada u32 (big-endian, alinhado) na memória do PS3 já comprometida
+ * e lista até 24 EAs onde aparece. Serve para achar quem guarda um endereço (um descritor de job, uma
+ * fila) quando nenhum código PPU o calcula diretamente. */
+static void find_values(void)
+{
+    const char* e = getenv("GOW3_FIND");
+    if (!e || !vm_base) return;
+    char buf[512];
+    snprintf(buf, sizeof buf, "%s", e);
+    for (char* t = strtok(buf, ","); t; t = strtok(NULL, ",")) {
+        uint32_t want = (uint32_t)strtoul(t, NULL, 16);
+        uint8_t be[4] = {(uint8_t)(want >> 24), (uint8_t)(want >> 16), (uint8_t)(want >> 8), (uint8_t)want};
+        int hits = 0;
+        add("[GOW3-WD]   procura 0x%08X:", want);
+        for (uint64_t ea = 0; ea < 0x100000000ull && hits < 24;) {
+            MEMORY_BASIC_INFORMATION mbi;
+            if (!VirtualQuery(vm_base + ea, &mbi, sizeof mbi)) break;
+            uint64_t end = (uint64_t)((uint8_t*)mbi.BaseAddress + mbi.RegionSize - vm_base);
+            if (mbi.State == MEM_COMMIT && !(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) {
+                for (uint64_t a = ea; a + 4 <= end && hits < 24; a += 4) {
+                    const uint8_t* p = vm_base + a;
+                    if (p[0] == be[0] && p[1] == be[1] && p[2] == be[2] && p[3] == be[3]) {
+                        add(" 0x%08llX", (unsigned long long)a); hits++;
+                    }
+                }
+            }
+            ea = end > ea ? end : ea + 0x1000;
+        }
+        add("\n");
+    }
+}
+
+/* GOW3_DUMP="ea:len[,ea:len...]": despeja <len> bytes (hex) a partir de cada EA, 16 por linha. */
+static void dump_ranges(void)
+{
+    const char* e = getenv("GOW3_DUMP");
+    if (!e || !vm_base) return;
+    char buf[512];
+    snprintf(buf, sizeof buf, "%s", e);
+    for (char* t = strtok(buf, ","); t; t = strtok(NULL, ",")) {
+        char* c = strchr(t, ':');
+        uint32_t ea = (uint32_t)strtoul(t, NULL, 16) & ~15u;
+        uint32_t len = c ? (uint32_t)strtoul(c + 1, NULL, 16) : 0x40u;
+        for (uint32_t o = 0; o < len && o < 0x1000u; o += 16) {
+            add("[GOW3-WD]   %08X:", ea + o);
+            for (int k = 0; k < 16; k += 4) add(" %08X", peek32(ea + o + k));
+            add("\n");
+        }
+    }
+}
+
 static void dump(HMODULE self, int round)
 {
     s_len = 0;
     add("[GOW3-WD] rodada %d\n", round);
     peek();
+    if (round == 1) { find_values(); dump_ranges(); }
     for (unsigned t = 0; t < 64u; t++)
         if (g_hle_inflight[t]) add("[GOW3-WD]   guest-tid %u dentro de %s\n", t, g_hle_inflight[t]);
     DWORD me = GetCurrentThreadId(), pid = GetCurrentProcessId();

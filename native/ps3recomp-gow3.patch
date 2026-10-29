@@ -1,5 +1,5 @@
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
-index 82ea66c6..b91480fd 100644
+index 82ea66c6..15fd3c16 100644
 --- a/libs/spurs/cellSpurs.c
 +++ b/libs/spurs/cellSpurs.c
 @@ -560,6 +560,8 @@ static s32 spurs_initialize_common(u32 spurs_ea, u32 nspus, const char* prefix)
@@ -189,13 +189,36 @@ index 82ea66c6..b91480fd 100644
  s32 cellSpursCreateTask(CellSpursTaskset* taskset, CellSpursTaskId* taskId,
                          void* elf, void* context, u32 sizeContext,
                          u32 lsPattern_ea, u32 argument_ea)
-@@ -1779,6 +1931,17 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1729,10 +1881,20 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
+             SleepConditionVariableSRW(&si->wake, &si->lock, INFINITE, 0);
+         if (si->stopping && !slot->busy) break;
+         ReleaseSRWLockExclusive(&si->lock);
++        static int pmtr = -1; static volatile LONG pm_runs[16];
++        if (pmtr < 0) pmtr = getenv("SPURS_PM_TRACE") ? 1 : 0;
++        unsigned long long t0 = GetTickCount64();
+         spu_run_policy_module(slot->fn, slot->image_id, slot->pm, slot->pm_size,
+                               slot->data, slot->wid, slot->ea, slot->spu_num);
+         extern SPU_THREAD_LOCAL volatile unsigned g_spurs_pm_polls;
+         unsigned polls = g_spurs_pm_polls;
++        if (pmtr) {
++            LONG n = InterlockedIncrement(&pm_runs[slot->wid & 15]);
++            if (n <= 12 || (n & (n - 1)) == 0)
++                fprintf(stderr, "[pmtrace] wid=%u run#%ld spu=%u %llums polls=%u flag=%08X recv=%u\n",
++                        slot->wid, n, slot->spu_num, GetTickCount64() - t0, polls,
++                        vm_read32(slot->ea + 0x6C), vm_read8(slot->ea + 0x77));
++        }
+         AcquireSRWLockExclusive(&si->lock);
+         u32 wid = slot->wid;
+         if (si->active[wid]) si->active[wid]--;
+@@ -1779,6 +1941,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
          if (!kick_pass) si->pass_no++;
          u32 enabled = vm_read32(ea + SPURS_WKL_ENABLED);
          for (u32 sn = 0; sn < si->nspus; sn++) {
 +        { static int dbg = -1; static unsigned long long last = 0;
 +          if (dbg < 0) dbg = getenv("SPURS_FLAG_DBG") ? 1 : 0;
 +          u32 rw = vm_read8(ea + 0x77);
++          { static u32 lastflag[2] = {0x12345678u, 0x12345678u}; u32 f = vm_read32(ea + 0x6C); u32* lf = &lastflag[ea == 0x70038C80u];
++            if (dbg && f != *lf) { fprintf(stderr, "[flagdbg] spurs=0x%08X flag 0x%08X -> 0x%08X recv=%u t=%llu\n", ea, *lf, f, rw, GetTickCount64()); *lf = f; } }
 +          if (dbg && rw < 16 && vm_read32(ea + 0x6C) == 0 && GetTickCount64() - last > 1000) {
 +              last = GetTickCount64();
 +              int free_lanes = 0; for (u32 k = 0; k < si->nspus; k++) free_lanes += !si->slots[k].busy;
@@ -207,7 +230,7 @@ index 82ea66c6..b91480fd 100644
              struct SpursPmSlot* slot = &si->slots[sn];
              if (slot->busy) continue;
              for (u32 checked = 0; checked < 16; checked++) {
-@@ -1796,7 +1959,11 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1796,7 +1971,11 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                  if (!pm) continue;
                  u32 signal = vm_read16(ea + SPURS_WKL_SIGNAL1);
                  u32 ready = vm_read8(ea + SPURS_WKL_READY1 + wid);
@@ -220,19 +243,26 @@ index 82ea66c6..b91480fd 100644
                  if (kicked) si->idle[wid] = 0;
                  if (!kicked && (kick_pass || (si->pass_no & ((1u << si->idle[wid]) - 1))))
                      continue;
-@@ -1806,6 +1973,12 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1806,7 +1985,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                  if (ready) vm_base[ea + SPURS_WKL_READY1 + wid] = (u8)(ready - 1);
                  if (signal & (0x8000u >> wid))
                      ef_w16(ea + SPURS_WKL_SIGNAL1, (u16)(signal & ~(0x8000u >> wid)));
++                int consumed = 0;
 +                if (vm_read32(ea + 0x6C) == 0 && vm_read8(ea + 0x77) == wid) {
-+                    vm_write32(ea + 0x6C, 0xFFFFFFFFu);   /* consumed: back to "not set" */
++                    /* consumed: back to "not set". A plain store: vm_write32 is a coherent
++                     * store that takes the lock-line itself, and this already holds it. */
++                    memset(vm_base + ea + 0x6C, 0xFF, 4);
++                    consumed = 1;
++                }
+                 ef_line_end(ea);
++                if (consumed) {
 +                    static int nf = 0;
 +                    if (PS3_LOG_FIRST(nf, 8))
 +                        printf("[cellSpurs] workload flag kicked wid=%u (spurs=0x%08X)\n", wid, ea);
 +                }
-                 ef_line_end(ea);
                  slot->fn = pm->fn; slot->image_id = pm->image_id;
                  slot->pm = vm_base + (u32)(uintptr_t)s_workloads[wid].pm;
+                 slot->pm_size = s_workloads[wid].sizePm;
 diff --git a/libs/spurs/cellSpurs.h b/libs/spurs/cellSpurs.h
 index 07a3d2e4..5e490187 100644
 --- a/libs/spurs/cellSpurs.h
@@ -346,6 +376,140 @@ index 298ee7de..af705037 100644
      vm_write32(GCM_CONTROL_GUEST_ADDR + 0, put);
      vm_write32(GCM_CONTROL_GUEST_ADDR + 4, get);
      s_fifo_getoff  = get;
+diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
+index 5fc50208..4a0d0deb 100644
+--- a/runtime/spu/spu_channels.c
++++ b/runtime/spu/spu_channels.c
+@@ -660,6 +660,11 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
+      * threads and the PPU all write stderr, so a dump split across many fprintf
+      * calls comes out shredded and unreadable exactly when it matters. */
+     { static int s_ae = -1; static uint32_t s_aea;
++#ifdef _WIN32
++      __declspec(dllimport) unsigned long __stdcall GetCurrentThreadId(void);
++#else
++#define GetCurrentThreadId() 0ul
++#endif
+       if (s_ae < 0) { const char* e = getenv("SPU_ATOM_EA");
+         s_aea = e ? (uint32_t)strtoul(e, 0, 16) & ~127u : 0; s_ae = s_aea ? 1 : 0;
+         if (s_ae == 1) { extern uint32_t g_barrier_sync_watch;
+@@ -677,8 +682,8 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
+               /* lr (gpr[0]) as well as pc: these atomics sit in generic helpers,
+                * so pc names the HELPER and only lr names the real caller. */
+               p += snprintf(buf + p, sizeof buf - p,
+-                            "[atom-ea] cmd=0x%X img=%d pc=0x%05X lr=0x%05X ea=0x%08X",
+-                            cmd, ctx->image_id, (uint32_t)ctx->pc & SPU_LS_MASK,
++                            "[atom-ea] tid=%lu cmd=0x%X img=%d pc=0x%05X lr=0x%05X ea=0x%08X",
++                            (unsigned long)GetCurrentThreadId(), cmd, ctx->image_id, (uint32_t)ctx->pc & SPU_LS_MASK,
+                             ctx->gpr[0]._u32[0] & SPU_LS_MASK, (uint32_t)ea);
+               int nb = s_af == 2 ? 128 : s_af ? 64 : 8;   /* 64 covers +0x30 pendingRecv; =2 the whole line */
+               p += snprintf(buf + p, sizeof buf - p, " RAM=");
+diff --git a/runtime/spu/spu_workload.c b/runtime/spu/spu_workload.c
+index 3ce8d0d6..e0ce995c 100644
+--- a/runtime/spu/spu_workload.c
++++ b/runtime/spu/spu_workload.c
+@@ -1292,6 +1292,33 @@ static void spu_signalled_update(uint32_t taskset_ea, uint32_t taskId, int set)
+     spu_lockline_unlock();
+ }
+ 
++/* Test-and-clear a task's `signalled` bit in one lock-line section: the waiter
++ * consumes the signal at the moment it sees it, as the SPURS kernel does when it
++ * resumes a signalled task. Seeing the bit and clearing it later lost every
++ * signal that landed in between -- God of War III's five MLAA tasks signal one
++ * another several times a frame, and two of them skipped their share of a frame
++ * that way, so its completion counter never reached zero. Returns 1 if a signal
++ * was pending. Must not be called with s_sig_lock held (lock order). */
++static int spu_signalled_take(uint32_t taskset_ea, uint32_t taskId)
++{
++    extern void spu_lockline_lock(void); extern void spu_lockline_unlock(void);
++    extern void spu_coh_notify_write(uint32_t);
++    extern uint8_t* vm_base;
++    const uint32_t word = taskset_ea + CSTS_SIGNALLED + (taskId / 32u) * 4u;
++    const uint32_t mask = (1u << 31) >> (taskId % 32u);
++    uint8_t* p = vm_base + word;
++    spu_lockline_lock();
++    uint32_t v = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
++    const int had = (v & mask) != 0;
++    if (had) {
++        v &= ~mask;
++        p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16); p[2] = (uint8_t)(v >> 8); p[3] = (uint8_t)v;
++        spu_coh_notify_write(word);
++    }
++    spu_lockline_unlock();
++    return had;
++}
++
+ /* Wake WAIT_SIGNAL sleepers when the signalled line is written, including by
+  * guest SPU/PPU atomics that bypass spu_taskset_signal_task. Coherence calls
+  * this with lock-line held; the guest bit remains the only predicate. */
+@@ -1443,9 +1470,15 @@ int spu_taskset_wait_signal(uint32_t taskset_ea, uint32_t taskId)
+     spu_coh_watch_add(&watch, taskset_ea + CSTS_SIGNALLED, spu_taskset_wake_written, NULL);
+     spu_lockline_unlock();
+ #ifdef _WIN32
+-    AcquireSRWLockExclusive(&s_sig_lock);
+-    while (!spurs_bitset_test(taskset_ea + CSTS_SIGNALLED, taskId)) {
+-        if (!SleepConditionVariableSRW(&s_sig_cv, &s_sig_lock, 1000, 0)) {
++    /* Take the signal (test-and-clear under the lock-line) outside s_sig_lock; sleep
++     * only after re-testing under it, so a set + broadcast cannot slip between. */
++    while (!spu_signalled_take(taskset_ea, taskId)) {
++        AcquireSRWLockExclusive(&s_sig_lock);
++        int slept = 1;
++        if (!spurs_bitset_test(taskset_ea + CSTS_SIGNALLED, taskId))
++            slept = SleepConditionVariableSRW(&s_sig_cv, &s_sig_lock, 1000, 0);
++        ReleaseSRWLockExclusive(&s_sig_lock);
++        if (!slept) {
+             static int _n = 0;
+             if (++secs && _n < 16) { _n++;
+                 fprintf(stderr, "[spu_workload] task %u (taskset 0x%08X) sleeping "
+@@ -1453,12 +1486,16 @@ int spu_taskset_wait_signal(uint32_t taskset_ea, uint32_t taskId)
+             if (drain && secs >= drain) { drained = 1; break; }
+         }
+     }
+-    ReleaseSRWLockExclusive(&s_sig_lock);
+ #else
+-    pthread_mutex_lock(&s_sig_lock);
+-    while (!spurs_bitset_test(taskset_ea + CSTS_SIGNALLED, taskId)) {
+-        struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts); ts.tv_sec += 1;
+-        if (pthread_cond_timedwait(&s_sig_cv, &s_sig_lock, &ts) != 0) {
++    while (!spu_signalled_take(taskset_ea, taskId)) {
++        pthread_mutex_lock(&s_sig_lock);
++        int timedout = 0;
++        if (!spurs_bitset_test(taskset_ea + CSTS_SIGNALLED, taskId)) {
++            struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts); ts.tv_sec += 1;
++            timedout = pthread_cond_timedwait(&s_sig_cv, &s_sig_lock, &ts) != 0;
++        }
++        pthread_mutex_unlock(&s_sig_lock);
++        if (timedout) {
+             static int _n = 0;
+             if (++secs && _n < 16) { _n++;
+                 fprintf(stderr, "[spu_workload] task %u (taskset 0x%08X) sleeping "
+@@ -1466,19 +1503,24 @@ int spu_taskset_wait_signal(uint32_t taskset_ea, uint32_t taskId)
+             if (drain && secs >= drain) { drained = 1; break; }
+         }
+     }
+-    pthread_mutex_unlock(&s_sig_lock);
+ #endif
+     spu_lockline_lock();
+     spu_coh_watch_remove(&watch);
+     spu_lockline_unlock();
+-    /* Signals coalesce in the bit, so consuming it outside s_sig_lock loses none. */
+-    if (!drained) spu_signalled_update(taskset_ea, taskId, 0);
++    /* The signal was consumed by spu_signalled_take, at the moment it was seen. */
+     if (drained) { static int _d = 0; if (PS3_LOG_FIRST(_d, 24))
+         fprintf(stderr, "[spu_workload] task %u (taskset 0x%08X) WS_DRAIN resume "
+                 "after %us (no signal)\n", taskId, taskset_ea, secs); fflush(stderr); }
+     spu_serial_acquire();       /* resume: re-take the serial lock */
+     { extern unsigned long long ps3_ms_now(void);
+       s_wait_exit_ms = ps3_ms_now(); }   /* stamp for the next entry's ran= */
++    /* SPU_SIG_TRACE_TS=<taskset hex>: every wake of that taskset's tasks, with the time. */
++    { static int s_on = -1; static uint32_t s_ts;
++      if (s_on < 0) { const char* e = getenv("SPU_SIG_TRACE_TS"); s_ts = e ? (uint32_t)strtoul(e, 0, 16) : 0; s_on = s_ts != 0; }
++      if (s_on && s_ts == taskset_ea) { static volatile long n; if (_InterlockedIncrement(&n) <= 400)
++          fprintf(stderr, "[sigtrace] wake task=%u tid=%lu taskset=0x%08X t=%llu waited=%us%s""\n", taskId,
++                  (unsigned long)GetCurrentThreadId(), taskset_ea,
++                  (unsigned long long)s_wait_exit_ms, secs, drained ? " (drained)" : ""); } }
+     return 0;
+ }
+ 
 diff --git a/tools/build_spu_workloads.py b/tools/build_spu_workloads.py
 index 2eef378b..5b7d4c00 100644
 --- a/tools/build_spu_workloads.py

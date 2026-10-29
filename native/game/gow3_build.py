@@ -296,6 +296,12 @@ def step_rodar(args, work: Path, state: dict, progress):
         raise StepError("compile antes (passo compilar)")
     env = dict(os.environ)
     env.setdefault("GCM_FLIPCOUNT", "1")
+    # O RSX do GOW3 espera os SPUs como no hardware: SEMAPHORE_ACQUIRE bloqueia (as tarefas MLAA
+    # liberam o semáforo do quadro) e um salto para si mesmo ("park") espera ser reescrito, sem o
+    # atalho de seguir o put. Sem isso o RSX terminava dois quadros de uma vez, o RsxSync disparava
+    # duas vezes seguidas, duas tarefas MLAA pulavam um quadro e a thread principal esperava para sempre.
+    env.setdefault("GCM_SEMA_ACQUIRE", "1")
+    env.setdefault("GCM_PARK_GRACE_MS", "3600000")
     if args.jogo:
         root = Path(args.jogo)
         if (root / "PS3_GAME").is_dir():
