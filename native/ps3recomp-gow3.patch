@@ -1007,7 +1007,7 @@ index 32e8a959..e3ac93e8 100644
      s_state.hdc = GetDC(s_state.hwnd);
      s_state.last_fps_time = GetTickCount64();
 diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
-index 5fc50208..6e9281c4 100644
+index 5fc50208..7342e2c2 100644
 --- a/runtime/spu/spu_channels.c
 +++ b/runtime/spu/spu_channels.c
 @@ -660,6 +660,11 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
@@ -1075,7 +1075,7 @@ index 5fc50208..6e9281c4 100644
                  ctx->resident_code[slot].image_id = 0;
                  spu_dcache_residency_changed(ctx);
              } else if (ctx->resident_code[slot].verify_state) {
-@@ -2575,6 +2601,39 @@ static int spu_smc_microstep(spu_context* ctx)
+@@ -2575,6 +2601,45 @@ static int spu_smc_microstep(spu_context* ctx)
                fprintf(stderr, "[spu-smc] microstep img=%d pc=0x%05X word 0x%08X not in the"
                        " microstep set -- handing to the interpreter (steps=%d)\n",
                        ctx->image_id, pc, w, steps); }
@@ -1105,6 +1105,12 @@ index 5fc50208..6e9281c4 100644
 +                                  ctx->resident_code[0].image_id, ctx->resident_code[0].verify_state,
 +                                  ctx->resident_code[1].image_id, ctx->resident_code[1].verify_state);
 +                          for (int b = 0; b < 16; b++) fprintf(s_f, "%02X", h[b]);
++                          /* and the 16 bytes at the pc, to find code that is
++                           * not the module at 0x4000 in the title's image */
++                          const uint8_t* at = ctx->ls + ((pc & SPU_LS_MASK) & ~3u);
++                          fputs(" at=", s_f);
++                          for (int b = 0; b < 16 && (at - ctx->ls) + b < SPU_LS_SIZE; b++)
++                              fprintf(s_f, "%02X", at[b]);
 +                          fputc('\n', s_f);
 +                          fflush(s_f);
 +                          break;
@@ -1266,7 +1272,7 @@ index 2eef378b..5b7d4c00 100644
                      help="With --input, emit supported registrations despite incomplete coverage")
      ap.add_argument("--merge-chunks", action="store_true",
 diff --git a/tools/lift_jobmods.py b/tools/lift_jobmods.py
-index f8783799..e331f278 100644
+index f8783799..03a2cb2c 100644
 --- a/tools/lift_jobmods.py
 +++ b/tools/lift_jobmods.py
 @@ -77,6 +77,21 @@ CODE_END = {
@@ -1323,8 +1329,14 @@ index f8783799..e331f278 100644
      if code_end:
          inside = [a for a in inside if int(a, 0) < code_end]
      if inside:
-@@ -310,7 +326,7 @@ def elf_load_segments(elf):
+@@ -308,9 +324,13 @@ def elf_load_segments(elf):
+     return out
  
+ 
++# Header load bases find_engine_modules accepts (--base-zero adds 0).
++ENGINE_BASES = (BASE,)
++
++
  def find_engine_modules(elf):
      """Job module images embedded in an engine ELF: a 16-byte aligned header
 -    with C0DEC0DE at +0x20 and the load base (0x4000) at +0x28, entry offset
@@ -1332,18 +1344,18 @@ index f8783799..e331f278 100644
      at +0x10 and image size at +0x14. Like extract_jobmods.py, the module is
      the initialised image, imageSize - 32 (the rest is bss), so a module gets
      the same name, and CODE_END fixup, from either source.
-@@ -320,7 +336,9 @@ def find_engine_modules(elf):
+@@ -320,7 +340,9 @@ def find_engine_modules(elf):
          at = blob.find(b"\xc0\xde\xc0\xde")
          while at != -1:
              h = at - 0x20
 -            if h >= 0 and h % 16 == 0 and struct.unpack_from(">I", blob, h + 0x28)[0] == BASE:
-+            # +0x28 is 0 in most of God of War III's modules, which still run
-+            # at the job code buffer: treat 0 as the default base.
-+            if h >= 0 and h % 16 == 0 and struct.unpack_from(">I", blob, h + 0x28)[0] in (BASE, 0):
++            # +0x28 is 0 in most of God of War III's modules; --base-zero treats
++            # them as running at the job code buffer too (not yet verified).
++            if h >= 0 and h % 16 == 0 and struct.unpack_from(">I", blob, h + 0x28)[0] in ENGINE_BASES:
                  entry_off, image = struct.unpack_from(">II", blob, h + 0x10)
                  size = image - 32
                  if 0x30 <= entry_off < size and image <= 0x40000 - BASE and h + size <= len(blob):
-@@ -349,7 +367,18 @@ def main():
+@@ -349,7 +371,23 @@ def main():
                      help="Pass --merge-chunks to spu_lifter.py: each run of chunks "
                           "between call targets becomes one C function with gotos "
                           "instead of chunks linked by trampolines.")
@@ -1351,7 +1363,12 @@ index f8783799..e331f278 100644
 +                    help="Extra function entries (LS addresses) for the modules whose "
 +                         "name starts with NAME only; repeatable. ADDR may also be "
 +                         "@FILE, one address per line.")
++    ap.add_argument("--base-zero", action="store_true",
++                    help="--engine-elf: also take modules whose header load base is 0")
      args = ap.parse_args()
++    if args.base_zero:
++        global ENGINE_BASES
++        ENGINE_BASES = (BASE, 0)
 +    for spec in args.module_funcs:
 +        prefix, _, addrs = spec.partition("=")
 +        if addrs.startswith("@"):

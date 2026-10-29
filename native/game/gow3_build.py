@@ -512,6 +512,12 @@ def main() -> int:
         ap.error("indique --jogo ou --elf")
     work = Path(args.trabalho).resolve()
     work.mkdir(parents=True, exist_ok=True)
+    # Sem o gow3_libsre_lle.cpp o PARAM.SFO não é lido (título BLES00000) e o jogo para antes do logo:
+    # a libsre já preparada na pasta de trabalho entra sozinha.
+    padrao_lle = work / "firmware" / "libsre_lle"
+    if not args.lle_libsre and (padrao_lle / "libsre_image.bin").is_file():
+        args.lle_libsre = str(padrao_lle)
+        print(f"--lle-libsre não indicado: usando {padrao_lle}")
     state_file = work / "estado.json"
     state = json.loads(state_file.read_text(encoding="utf-8")) if state_file.is_file() else {}
     resumo = work / "resumo.txt"
