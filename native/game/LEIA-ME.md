@@ -79,7 +79,8 @@ dali (ela não faz parte do jogo).
 - Depois da tela de boot: o jogo registra os tratadores de vblank e de usuário, lê o controle e desenha
   (shaders do jogo, render-to-texture 1280x720). ``ps3recomp-gow3.patch`` traz ``_cellSpursTaskAttribute2Initialize``,
   ``cellSpursCreateTask2``, ``cellSpursGetWorkloadFlag`` e ``_cellSpursWorkloadFlagReceiver`` (receptor 0xFF no init).
-  Roda estável a ~80 flips/s.
+  A tela de boot termina aos ~13 s em todas as execuções (o receptor do workload flag usa uma troca atômica;
+  com o lock global do lock-line a thread principal travava dentro dele).
 - **Parada atual:** os quadros apresentados são pretos e o jogo ainda não chama ``cellVdecOpenEx`` (o vídeo do logo,
   ``SMLOGO.M2V``, é o próximo passo no RPCS3 sem patches).
 - Título: `gow3_libsre_lle.cpp` chama `cellGame_init_from_paramsfo` (antes o HLE respondia BLES00000).

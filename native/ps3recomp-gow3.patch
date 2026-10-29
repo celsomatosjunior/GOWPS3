@@ -1,5 +1,5 @@
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
-index 82ea66c6..40be55ae 100644
+index 82ea66c6..cc2e9aef 100644
 --- a/libs/spurs/cellSpurs.c
 +++ b/libs/spurs/cellSpurs.c
 @@ -560,6 +560,8 @@ static s32 spurs_initialize_common(u32 spurs_ea, u32 nspus, const char* prefix)
@@ -134,16 +134,16 @@ index 82ea66c6..40be55ae 100644
 +    if (!s) return (s32)0x80410711u;
 +    if (s & 0x7Fu) return (s32)0x80410710u;
 +    if (wid >= 32) return (s32)0x80410702u;   /* ..._INVAL */
++    /* One CAS on the receiver byte; no global lock-line lock, which the SPU side
++     * also takes and which wedged the caller here. */
 +    u8* recv = vm_base + s + 0x77;
-+    spu_lockline_lock();
++    u8 expect = is_set ? 0xFF : (u8)wid;
 +    s32 rc = CELL_OK;
-+    if (is_set ? *recv != 0xFF : *recv != wid) {
++    if (!__atomic_compare_exchange_n(recv, &expect, is_set ? (u8)wid : (u8)0xFF, 0,
++                                     __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
 +        rc = is_set ? (s32)0x8041070Au : (s32)0x80410709u;   /* ..._BUSY / ..._PERM */
-+    } else {
++    else
 +        vm_write32(s + 0x6C, 0xFFFFFFFFu);
-+        *recv = is_set ? (u8)wid : 0xFF;
-+    }
-+    spu_lockline_unlock();
 +    static int n = 0;
 +    if (PS3_LOG_FIRST(n, 8))
 +        printf("[cellSpurs] WorkloadFlagReceiver(spurs=0x%08X wid=%u set=%u) -> 0x%08X\n", s, wid, is_set, (u32)rc);
