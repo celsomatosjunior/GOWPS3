@@ -100,6 +100,34 @@ def check_tools(env: dict) -> list[str]:
 # ---------------------------------------------------------------------------------------------
 # passos
 # ---------------------------------------------------------------------------------------------
+# "Skip any videos with X button" (autor: illusion, patches da comunidade do RPCS3), para o EBOOT 1.00:
+# no player de vídeo, `stw r6,0xF5C(r31)` vira `stw r0,0xF5C(r31)`, e o X passa a pular qualquer vídeo.
+# A troca é feita numa cópia local do EBOOT.ELF (nunca vai ao repositório), antes da tradução.
+PULAR_VIDEOS = (0x0026FD18, bytes.fromhex("90DF"), bytes.fromhex("901F"))
+
+
+def aplica_pular_videos(elf: Path, work: Path) -> Path:
+    import struct
+    ea, antes, depois = PULAR_VIDEOS
+    data = bytearray(elf.read_bytes())
+    phoff, = struct.unpack_from(">Q", data, 0x20)
+    es, n = struct.unpack_from(">HH", data, 0x36)
+    for i in range(n):
+        p_type, _, off, vaddr, _, filesz = struct.unpack_from(">IIQQQQ", data, phoff + i * es)
+        if p_type == 1 and vaddr <= ea < vaddr + filesz:
+            o = off + ea - vaddr
+            if data[o:o + 2] == depois:
+                return elf                      # já aplicado
+            if data[o:o + 2] != antes:
+                raise StepError(f"--pular-videos: 0x{ea:X} tem {data[o:o + 2].hex()}, esperado {antes.hex()} "
+                                "(o patch é do EBOOT 1.00)")
+            data[o:o + 2] = depois
+            out = work / "EBOOT.pular_videos.ELF"
+            out.write_bytes(data)
+            return out
+    raise StepError(f"--pular-videos: 0x{ea:X} fora dos segmentos do ELF")
+
+
 def step_elf(args, work: Path, state: dict, progress):
     if args.elf:
         elf = Path(args.elf).resolve()
@@ -121,6 +149,8 @@ def step_elf(args, work: Path, state: dict, progress):
                 decrypt.store_elf(ident["sha256"], elf)
     if not elf.is_file():
         raise StepError(f"{elf} não existe")
+    if args.pular_videos:
+        elf = aplica_pular_videos(elf, work)
     state["elf"] = str(elf)
     progress(f"EBOOT.ELF: {elf} ({elf.stat().st_size:,} bytes)".replace(",", "."))
 
@@ -414,6 +444,9 @@ def main() -> int:
     ap.add_argument("--sem-spu", action="store_true", help="não traduzir os programas SPU embutidos")
     ap.add_argument("--lle-libsre", help="pasta da libsre relocada e recompilada (lifted/, libsre_image.bin): "
                                          "a LFQueue passa a rodar o código real da Sony")
+    ap.add_argument("--pular-videos", action="store_true",
+                    help="aplica numa cópia local do EBOOT o patch 'Skip any videos with X' (EBOOT 1.00): "
+                         "o X pula os vídeos, como no RPCS3")
     ap.add_argument("--ffmpeg", help="FFmpeg LGPL compartilhado (pasta com include/ e bin/, mesma série das DLLs): "
                                      "o cellVdec decodifica os vídeos do jogo")
     ap.add_argument("--spu-dir", help="SPU_DIR já montada (programas SPU e policy modules recompilados por fora)")

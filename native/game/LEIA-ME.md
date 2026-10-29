@@ -130,7 +130,20 @@ dali (ela não faz parte do jogo).
 
   Numa execução de 120 s: 4.430 flips (~37/s) e 1.314 AUs de vídeo, sem erros. `LD_FRAME_DUMP=<pasta>`
   (com `LD_FRAME_DUMP_EVERY`) salva os quadros do live draw.
+- **Menu principal (29/10/2026).** O caminho até ele:
+  1. compilar com `--pular-videos`, que aplica numa cópia local do EBOOT (`EBOOT.pular_videos.ELF`) o patch
+     "Skip any videos with X button" dos patches da comunidade do RPCS3 (autor: illusion; EBOOT 1.00:
+     `be16 0x0026FD18 = 0x901F`, ou seja, `stw r6,0xF5C(r31)` vira `stw r0,0xF5C(r31)`). O build confere a
+     instrução original antes de trocar;
+  2. rodar apertando X a cada 4 s (`PAD_SCRIPT`), o que fecha o `SMLOGO.M2V` e o `OPENINGCREDITS.M2V`.
+
+  Por volta de 1 min 40 s aparece o menu em português: "Novo Jogo, Carregar, Opções, Tesouros", com
+  "X – Seleccionar". O fundo do menu ainda sai quase branco. Sem o patch, a abertura completa leva vários
+  minutos, até a cena desenhada em tempo real de Gaia escalando o Olimpo.
 - Comparação com o ps3kit do Arnaldo: `native/docs/PS3KIT_COMPARACAO.md`.
+- Controle sem ninguém no PC: `PAD_SCRIPT="<s>:<máscara>,..."` aperta botões em segundos dados (START 0x0008,
+  CROSS 0x4000, CIRCLE 0x2000, DOWN 0x0040, UP 0x0010), e `PAD_FILE=<arquivo>` aperta o que for escrito no
+  arquivo. Os dois são do `cellPad` do ps3recomp.
 
 ## Compilar sobre o ps3kit (ramo `gow3`)
 
