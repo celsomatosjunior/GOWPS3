@@ -1,0 +1,16 @@
+16:47:18 == elf ==
+16:47:18 EBOOT.ELF: D:\a\GOWPS3\GOWPS3\corpus\ps3_test.elf (846.656 bytes)
+16:47:18 == carregar ==
+16:47:18 19 funções, 0 importações do firmware, fim do código 0x100C3AEF
+16:47:18 == traduzir ==
+16:47:18 Traduzindo 19 funções em 8 arquivos (pode levar muitos minutos)...
+16:47:46 Tradução: 3482 funções. 9 arquivos. 1.928.564 linhas. 108 MB. 44939 instruções não traduzidas (TODO)
+16:47:46 == projeto ==
+16:48:10 Projeto configurado
+16:48:10 == compilar ==
+16:48:11 Compilando (a primeira vez leva de 20 a 60 minutos e usa bastante memória)...
+16:50:27 Executável: D:\a\GOWPS3\GOWPS3\jogo\build\GOW3Native.exe (13 MB) em 2 min
+16:50:27 == rodar ==
+16:50:27 Rodando o GOW3Native por até 20 s (log: D:\a\GOWPS3\GOWPS3\jogo\logs\rodar.log)...
+16:50:28 Execução: terminou sozinho (código 0); nids_nao_implementados=0, chamadas_indiretas_sem_destino=0, falhas_de_memoria=0, erros=0, flips=0
+16:50:28 TUDO CERTO
