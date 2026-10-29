@@ -210,6 +210,16 @@ def add_libsre_lle(args, proj: Path, cm: Path):
                   encoding="utf-8")
 
 
+def ffmpeg_cmake_args(args) -> list:
+    """-D do CMake para o cellVdec decodificar com o FFmpeg (carregado em tempo de execução, nunca ligado)."""
+    if not args.ffmpeg:
+        return []
+    inc = Path(args.ffmpeg).resolve() / "include"
+    if not (inc / "libavcodec" / "avcodec.h").is_file():
+        raise StepError(f"--ffmpeg: não achei {inc / 'libavcodec' / 'avcodec.h'}")
+    return ["-DPS3RECOMP_FFMPEG_RUNTIME=ON", f"-DPS3RECOMP_FFMPEG_INCLUDE_DIR={inc}"]
+
+
 def step_projeto(args, work: Path, state: dict, progress):
     proj = work / "projeto"
     if proj.exists():
@@ -245,6 +255,7 @@ def step_projeto(args, work: Path, state: dict, progress):
         cmd.append(f"-DSPU_DIR={Path(args.spu_dir).resolve()}")
     elif not args.sem_spu:
         cmd.append(f"-DPORT_SPU_INPUTS={state['elf']}")
+    cmd += ffmpeg_cmake_args(args)
     if build.exists():
         shutil.rmtree(build)
     proc = run(cmd, work, "projeto", env=env)
@@ -277,6 +288,9 @@ def step_compilar(args, work: Path, state: dict, progress):
     state.update(exe=str(exe), exe_bytes=exe.stat().st_size)
     if args.lle_libsre:
         shutil.copy2(Path(args.lle_libsre) / "libsre_image.bin", exe.parent / "libsre_image.bin")
+    if args.ffmpeg:   # as DLLs LGPL do FFmpeg ao lado do .exe (ficam no PC do usuário)
+        for dll in (Path(args.ffmpeg) / "bin").glob("*.dll"):
+            shutil.copy2(dll, exe.parent / dll.name)
     progress(f"Executável: {exe} ({exe.stat().st_size / 1e6:.0f} MB) em {state['build_seconds'] // 60} min")
 
 
@@ -302,6 +316,9 @@ def step_rodar(args, work: Path, state: dict, progress):
     # duas vezes seguidas, duas tarefas MLAA pulavam um quadro e a thread principal esperava para sempre.
     env.setdefault("GCM_SEMA_ACQUIRE", "1")
     env.setdefault("GCM_PARK_GRACE_MS", "3600000")
+    # O player de vídeo do GOW3 pausa o envio de AUs por mais de 1,5 s; o "idle drain" do cellVdec
+    # esvaziava o decodificador com flush nessa pausa e todas as AUs P/B seguintes saíam vazias.
+    env.setdefault("VDEC_IDLE_DRAIN_MS", "0")
     if args.jogo:
         root = Path(args.jogo)
         if (root / "PS3_GAME").is_dir():
@@ -346,6 +363,8 @@ def main() -> int:
     ap.add_argument("--sem-spu", action="store_true", help="não traduzir os programas SPU embutidos")
     ap.add_argument("--lle-libsre", help="pasta da libsre relocada e recompilada (lifted/, libsre_image.bin): "
                                          "a LFQueue passa a rodar o código real da Sony")
+    ap.add_argument("--ffmpeg", help="FFmpeg LGPL compartilhado (pasta com include/ e bin/, mesma série das DLLs): "
+                                     "o cellVdec decodifica os vídeos do jogo")
     ap.add_argument("--spu-dir", help="SPU_DIR já montada (programas SPU e policy modules recompilados por fora)")
     args = ap.parse_args()
     if not args.elf and not args.jogo:

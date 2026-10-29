@@ -116,8 +116,40 @@ static void dump_ranges(void)
     }
 }
 
+/* GOW3_SNAP="ea,w,h,pitch[,arquivo]": grava como BMP (24 bits) a imagem RGBA/ARGB de 32 bits que está na
+ * memória do PS3 em <ea>, a cada rodada do watchdog (gow3_snap_<rodada>.bmp na pasta atual). Serve para ver
+ * se um buffer que o SPU, o PPU ou o vdec escrevem tem a imagem certa, sem passar pela GPU. */
+static void snap(int round)
+{
+    const char* e = getenv("GOW3_SNAP");
+    if (!e || !vm_base) return;
+    unsigned ea = 0, w = 0, h = 0, pitch = 0;
+    if (sscanf(e, "%x,%u,%u,%u", &ea, &w, &h, &pitch) != 4 || !w || !h || w > 4096 || h > 4096) return;
+    char path[64];
+    snprintf(path, sizeof path, "gow3_snap_%d.bmp", round);
+    FILE* f = fopen(path, "wb");
+    if (!f) return;
+    unsigned row = (w * 3 + 3) & ~3u, size = 54 + row * h;
+    unsigned char hd[54] = {'B', 'M'};
+    *(unsigned*)(hd + 2) = size; *(unsigned*)(hd + 10) = 54; *(unsigned*)(hd + 14) = 40;
+    *(int*)(hd + 18) = (int)w; *(int*)(hd + 22) = -(int)h; *(unsigned short*)(hd + 26) = 1;
+    *(unsigned short*)(hd + 28) = 24;
+    fwrite(hd, 1, 54, f);
+    static unsigned char line[4096 * 3 + 4];
+    for (unsigned y = 0; y < h; y++) {
+        const unsigned char* p = vm_base + ea + y * pitch;
+        memset(line, 0, row);
+        for (unsigned x = 0; x < w; x++) {   /* RGBA em memória: R G B A -> BMP B G R */
+            line[x * 3 + 0] = p[x * 4 + 2]; line[x * 3 + 1] = p[x * 4 + 1]; line[x * 3 + 2] = p[x * 4 + 0];
+        }
+        fwrite(line, 1, row, f);
+    }
+    fclose(f);
+}
+
 static void dump(HMODULE self, int round)
 {
+    snap(round);
     s_len = 0;
     add("[GOW3-WD] rodada %d\n", round);
     peek();

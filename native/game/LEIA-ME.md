@@ -108,9 +108,26 @@ dali (ela não faz parte do jogo).
     `SPU_DMA_IMG=315634988` mostra as listas DMA), mas o backend D3D12 não grava nessa memória o que a GPU
     desenha, nem relê o que os SPUs escreveram;
   - os jobs Wws (Edge e os outros) são carregados em tempo de execução e rodam no interpretador SPU.
-- **Parada atual: o vídeo sai preto.** O `cellVdec` do ps3recomp só decodifica de verdade com o FFmpeg
-  (`-DPS3RECOMP_FFMPEG_RUNTIME=ON`, que precisa dos cabeçalhos do FFmpeg na versão das DLLs: `avcodec-63.dll`
-  e `avutil-61.dll`, as mesmas que o RPCS3 do usuário traz). Sem ele, cada AU vira uma imagem vazia.
+- **Vídeo (29/10/2026):** `--ffmpeg <pasta>` liga a decodificação real no `cellVdec`. A pasta é um FFmpeg
+  LGPL compartilhado da série das DLLs (9.0: `avcodec-63`, `avutil-61`; por exemplo
+  `ffmpeg-n9.0-latest-win64-lgpl-shared-9.0` do BtbN). O build passa os cabeçalhos ao CMake e copia as DLLs
+  para junto do .exe; nada disso vai para o repositório. Duas correções no `cellVdec`
+  (`ps3recomp-gow3.patch`):
+  - com a fila de imagens cheia, o AU fica guardado e recebe o AUDONE quando o jogo tira uma imagem; antes o
+    runtime respondia BUSY sem AUDONE e o player parava no quadro 18;
+  - o "idle drain" fica desligado para o GOW3 (`VDEC_IDLE_DRAIN_MS=0`): o flush dele apagava as referências
+    e as AUs seguintes não davam imagem.
+
+  Com isso o `SMLOGO.M2V` decodifica inteiro, e as imagens corretas chegam à memória (0x75200000, RGBA). Na
+  tela, porém, ainda não aparecem.
+- **Parada atual: o quadro passa pela memória do PS3.** Por quadro, o jogo:
+  1. desenha no buffer de tela (local 0x0 / 0x384000 / 0x708000);
+  2. copia-o com o NV3089 para a memória principal (0x70A80000), onde as tarefas MLAA filtram;
+  3. compõe a tela a partir de uma textura em 0xC1194000.
+
+  O backend D3D12 desenha na GPU do PC e não grava o resultado na memória do PS3, então essas cópias movem
+  zeros. Falta ler os alvos de render de volta da GPU antes das cópias, e subir de novo as texturas que os
+  SPUs reescrevem.
 - Diagnóstico: `SPURS_PM_TRACE=1` (cada execução de policy module), `SPURS_FLAG_DBG=1` (mudanças do workload
   flag), `SPU_SIG_TRACE_TS=<taskset>` (cada despertar de tarefa), `SPU_ATOM_EA=<ea>` (atômicos SPU numa linha,
   com a thread), e no `gow3_diag.cpp` `GOW3_FIND=<valores>` (onde um u32 aparece na memória) e

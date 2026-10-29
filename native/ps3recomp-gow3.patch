@@ -1,3 +1,157 @@
+diff --git a/libs/codec/cellVdec.c b/libs/codec/cellVdec.c
+index 7e222c92..33b21296 100644
+--- a/libs/codec/cellVdec.c
++++ b/libs/codec/cellVdec.c
+@@ -48,6 +48,7 @@ static u64 vdec_now_ms(void)
+ #define VDEC_QUEUE   32   /* decoded pictures waiting for GetPicture */
+ #define VDEC_BUSY_AT 16   /* refuse new AUs past this many (EndSeq can add more) */
+ #define VDEC_AU_RING 64   /* AUs remembered for pictures that come out late */
++#define VDEC_PEND    8    /* AUs held while the picture queue is full (then BUSY) */
+ 
+ /* A decoded picture waiting for the title (decoder path only). */
+ typedef struct {
+@@ -80,6 +81,11 @@ typedef struct {
+     u32 picsDecoded;    /* pictures the decoder has given back, this sequence */
+     u64 lastAuMs;       /* when the last AU arrived (idle drain) */
+     int idleDrained;    /* the idle drain already ran since that AU */
++    /* AUs accepted while the picture queue was full: decoded, and their AUDONE
++     * sent, once the title takes pictures (vdec_pump), as the hardware decoder
++     * holds an AU until it has a picture buffer free. */
++    struct { u8* data; u32 size; CellVdecAuInfo au; } pend[VDEC_PEND];
++    u32 pHead, pCount;
+ } VdecSlot;
+ 
+ static VdecSlot s_vdec[MAX_VDEC];
+@@ -117,6 +123,9 @@ static void vdec_queue_clear(VdecSlot* v)
+     for (u32 i = 0; i < v->qCount; i++)
+         free(v->queue[(v->qHead + i) % VDEC_QUEUE].yuv);
+     v->qHead = v->qCount = 0;
++    for (u32 i = 0; i < v->pCount; i++)
++        free(v->pend[(v->pHead + i) % VDEC_PEND].data);
++    v->pHead = v->pCount = 0;
+ }
+ 
+ /* vdec_ff_emit_fn: queue a decoded picture under the item of the AU it was
+@@ -173,6 +182,41 @@ static void vdec_notify_new_pics(u32 slot)
+         vdec_notify(slot, CELL_VDEC_MSG_TYPE_PICOUT, CELL_OK);
+ }
+ 
++/* Decode the AUs held by cellVdecDecodeAu while there is room for their
++ * pictures, each followed by its AUDONE and PICOUTs, in submission order.
++ * Called after a picture is taken and before EndSeq drains the decoder. The
++ * callbacks run outside the lock and may re-enter (GetPicture -> pump); the
++ * `pumping` flag keeps one pump per slot at a time. */
++static void vdec_pump(u32 slot)
++{
++    static volatile int pumping[MAX_VDEC];
++    if (pumping[slot]) return;
++    pumping[slot] = 1;
++    for (;;) {
++        VDEC_LOCK();
++        VdecSlot* v = &s_vdec[slot];
++        if (!v->in_use || !v->ff || !v->pCount || v->qCount >= VDEC_BUSY_AT) {
++            VDEC_UNLOCK();
++            break;
++        }
++        u32 i = v->pHead;
++        v->pHead = (v->pHead + 1) % VDEC_PEND;
++        v->pCount--;
++        v->auCount++;
++        v->aus[v->auCount % VDEC_AU_RING] = v->pend[i].au;
++        v->newPics = 0;
++        vdec_ff_decode(v->ff, v->pend[i].data, v->pend[i].size, v->auCount, vdec_on_picture, v);
++        free(v->pend[i].data);
++        v->pend[i].data = NULL;
++        v->lastAuMs = vdec_now_ms();
++        v->idleDrained = 0;
++        VDEC_UNLOCK();
++        vdec_notify(slot, CELL_VDEC_MSG_TYPE_AUDONE, CELL_OK);
++        vdec_notify_new_pics(slot);
++    }
++    pumping[slot] = 0;
++}
++
+ /* Idle drain. libavcodec holds back the pictures a B-frame stream may still
+  * reorder (has_b_frames of them) until it sees the next AU or the end of the
+  * stream. A title that waits for every picture before it calls EndSeq never
+@@ -372,8 +416,9 @@ s32 cellVdecEndSeq(CellVdecHandle handle)
+     if (handle >= MAX_VDEC || !s_vdec[handle].in_use)
+         return (s32)CELL_VDEC_ERROR_ARG;
+ 
+-    /* Pictures the decoder still holds for reordering come out now, each
+-     * with its PICOUT, before SEQDONE. */
++    /* Held AUs first (as far as the picture queue allows), then the pictures
++     * the decoder still holds for reordering, each with its PICOUT, before SEQDONE. */
++    vdec_pump(handle);
+     VDEC_LOCK();
+     s_vdec[handle].seqStarted = 0;
+     const int ff = s_vdec[handle].ff != NULL;
+@@ -424,9 +469,28 @@ s32 cellVdecDecodeAu(CellVdecHandle handle, s32 mode, const CellVdecAuInfo* auIn
+ 
+     if (v->ff) {
+         VDEC_LOCK();
+-        if (v->qCount >= VDEC_BUSY_AT) {
++        if (v->qCount >= VDEC_BUSY_AT || v->pCount) {
++            /* No picture buffer free: hold the AU (its bytes, since the title may
++             * reuse its stream buffer once the call returns) and answer AUDONE
++             * when it is decoded (vdec_pump). God of War III's movie player waits
++             * for that AUDONE before it submits again; a BUSY with no AUDONE to
++             * follow stopped its logo after 18 pictures. */
++            int held = 0;
++            if (v->pCount < VDEC_PEND && au.size) {
++                u8* copy = (u8*)malloc(au.size);
++                if (copy) {
++                    memcpy(copy, vm_ptr8(au.startAddr), au.size);
++                    u32 i = (v->pHead + v->pCount) % VDEC_PEND;
++                    v->pend[i].data = copy; v->pend[i].size = au.size; v->pend[i].au = au;
++                    v->pCount++;
++                    held = 1;
++                }
++            }
+             VDEC_UNLOCK();
+-            return (s32)CELL_VDEC_ERROR_BUSY;  /* title must take pictures */
++            { static int s_ad = -1; static unsigned s_nb; if (s_ad < 0) s_ad = getenv("VDEC_AUDBG") ? 1 : 0;
++              if (s_ad && s_nb++ < 20) printf("[vdec-au] %s (queued %u, held %u, AUs %u)\n",
++                                               held ? "held" : "BUSY", v->qCount, v->pCount, v->auCount); }
++            return held ? CELL_OK : (s32)CELL_VDEC_ERROR_BUSY;
+         }
+         v->auCount++;
+         v->aus[v->auCount % VDEC_AU_RING] = au;
+@@ -434,6 +498,18 @@ s32 cellVdecDecodeAu(CellVdecHandle handle, s32 mode, const CellVdecAuInfo* auIn
+         if (au.size)   /* an empty packet would mean end of stream to FFmpeg */
+             vdec_ff_decode(v->ff, vm_ptr8(au.startAddr), au.size, v->auCount,
+                            vdec_on_picture, v);
++        /* VDEC_AUDBG=1: per AU, the MPEG-2 picture type in it and the pictures out so far. */
++        { static int s_ad = -1; if (s_ad < 0) s_ad = getenv("VDEC_AUDBG") ? 1 : 0;
++          if (s_ad && v->auCount <= 200) {
++              const u8* p = vm_ptr8(au.startAddr); int pt = -1, tr = -1, pics = 0;
++              for (u32 i = 0; i + 5 < au.size; i++)
++                  if (!p[i] && !p[i + 1] && p[i + 2] == 1 && p[i + 3] == 0) {
++                      if (pt < 0) { tr = (p[i + 4] << 2) | (p[i + 5] >> 6); pt = (p[i + 5] >> 3) & 7; }
++                      pics++;
++                  }
++              printf("[vdec-au] #%u size=%u pictures=%d type=%d tref=%d -> decoded %u queued %u\n",
++                     v->auCount, au.size, pics, pt, tr, v->picsDecoded, v->qCount);
++          } }
+         v->lastAuMs = vdec_now_ms();
+         v->idleDrained = 0;
+         VDEC_UNLOCK();
+@@ -618,6 +694,7 @@ s32 cellVdecGetPicture(CellVdecHandle handle, const void* format, void* outBuff)
+         s32 rc = vdec_take_picture(v, dst, vm_read32(fmt_ea + 0),
+                                    vm_read32(fmt_ea + 4), vm_read8(fmt_ea + 8));
+         VDEC_UNLOCK();
++        if (rc == CELL_OK) vdec_pump(handle);
+         return rc;
+     }
+     if (!v->hasPic)
+@@ -671,6 +748,7 @@ s32 cellVdecGetPictureExt(CellVdecHandle handle, const void* format,
+     s32 rc = vdec_take_picture(&s_vdec[handle], dst, vm_read32(fmt_ea + 0),
+                                vm_read32(fmt_ea + 4), vm_read8(fmt_ea + 0xC));
+     VDEC_UNLOCK();
++    if (rc == CELL_OK) vdec_pump(handle);
+     return rc;
+ }
+ 
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
 index 82ea66c6..15fd3c16 100644
 --- a/libs/spurs/cellSpurs.c
@@ -376,6 +530,29 @@ index 298ee7de..af705037 100644
      vm_write32(GCM_CONTROL_GUEST_ADDR + 0, put);
      vm_write32(GCM_CONTROL_GUEST_ADDR + 4, get);
      s_fifo_getoff  = get;
+diff --git a/libs/video/rsx_d3d12_backend.c b/libs/video/rsx_d3d12_backend.c
+index bc05a308..815cb35b 100644
+--- a/libs/video/rsx_d3d12_backend.c
++++ b/libs/video/rsx_d3d12_backend.c
+@@ -4806,6 +4806,18 @@ static void render_frame(void)
+          * resolves to an offscreen RT (sampled directly), an uploaded guest
+          * texture, or a null SRV. */
+         double _sv0 = perf_on() ? perf_now() : 0.0;
++        /* TEX_DRAWLOG=<N>[,<skip>]: per draw, the render target and every bound unit
++         * (offset, size, format), for N draws after skipping <skip> -- which
++         * texture a full-screen pass (a movie frame, a post-process) samples. */
++        { static int cap = -2, skip = 0, n = 0;
++          if (cap == -2) { const char* e = getenv("TEX_DRAWLOG"); cap = 0;
++                           if (e) sscanf(e, "%d,%d", &cap, &skip); }
++          if (cap > 0 && n < cap + skip && n++ >= skip) {
++              fprintf(stderr, "[DRAWTEX] rt=0x%X verts=%u fp=0x%X", dr->rt_off, dr->vertex_count, dr->fp_addr);
++              for (int u = 0; u < 4; u++) if (dr->tex[u].set)
++                  fprintf(stderr, " t%d=0x%X %ux%u f%02X", u, dr->tex[u].off, dr->tex[u].w, dr->tex[u].h, dr->tex[u].fmt);
++              fprintf(stderr, "\n");
++          } }
+         for (int _u = 0; _u < 4; _u++) {
+             u32 wslot = DRAW_SRV_BASE + _d * 4 + (u32)_u;
+             dr->tex_rt[_u] = -1;
 diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
 index 5fc50208..4a0d0deb 100644
 --- a/runtime/spu/spu_channels.c
