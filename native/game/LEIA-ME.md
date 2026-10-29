@@ -251,6 +251,22 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   `GOW3_DUMP=<ea:len>`.
 - Título: `gow3_libsre_lle.cpp` chama `cellGame_init_from_paramsfo` (antes o HLE respondia BLES00000).
 
+## Ponto de retomada (atualizado a cada pausa)
+
+Estado em 29/10/2026, 17h50: versão reproduzível = tag `gow3-menu-v3` (menu com fundo, Novo Jogo até a
+introdução do Poseidon). Pasta de trabalho principal: `Projetos\GOW3_trabalho` (EBOOT com `--pular-videos`,
+`spu_jobs` com os 5 módulos de job traduzidos).
+
+**Próxima ação exata:**
+1. Compilar a pasta principal (o runtime ganhou `SPU_INTERP_PCLOG=<arquivo>`, que grava cada pc entregue ao
+   interpretador) e rodar o teste do Novo Jogo de 330 s com `SPU_INTERP_PCLOG=<trabalho>\interp_pcs.txt`
+   (mesmo `PAD_SCRIPT`: X em 15/30/45/60/75 s e de 100 a 220 s a cada 15 s; `PS3_JANELA_FUNDO=1`).
+2. Pegar os pcs da imagem 278921217 (o PM `pm_wwsjob`) com pc >= 0x4000 e passá-los em
+   `LBP_JOBMOD_EXTRA_FUNCS` ao `tools/lift_jobmods.py --engine-elf <trabalho>\EBOOT.ELF --out <trabalho>\spu_jobs
+   --symbol-prefix gow3`; recompilar e repetir até o arquivo parar de crescer.
+3. Medir na mesma cena (quadros/s do resumo do passo `rodar`, hoje ~8/s) e confirmar no watchdog que as threads do
+   PM saem de `spu_interp_run_until`.
+
 ## LLE seletivo da libsre (LFQueue)
 
 O ps3recomp não tem `_cellSpursLFQueuePushBody`, e o caminho ANY2ANY do CellSyncLFQueue

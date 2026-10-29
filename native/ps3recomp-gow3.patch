@@ -1007,7 +1007,7 @@ index 32e8a959..e3ac93e8 100644
      s_state.hdc = GetDC(s_state.hwnd);
      s_state.last_fps_time = GetTickCount64();
 diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
-index 5fc50208..4a0d0deb 100644
+index 5fc50208..b8a39782 100644
 --- a/runtime/spu/spu_channels.c
 +++ b/runtime/spu/spu_channels.c
 @@ -660,6 +660,11 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
@@ -1033,6 +1033,37 @@ index 5fc50208..4a0d0deb 100644
                              ctx->gpr[0]._u32[0] & SPU_LS_MASK, (uint32_t)ea);
                int nb = s_af == 2 ? 128 : s_af ? 64 : 8;   /* 64 covers +0x30 pendingRecv; =2 the whole line */
                p += snprintf(buf + p, sizeof buf - p, " RAM=");
+@@ -2575,6 +2580,30 @@ static int spu_smc_microstep(spu_context* ctx)
+               fprintf(stderr, "[spu-smc] microstep img=%d pc=0x%05X word 0x%08X not in the"
+                       " microstep set -- handing to the interpreter (steps=%d)\n",
+                       ctx->image_id, pc, w, steps); }
++        /* SPU_INTERP_PCLOG=<file>: append every distinct (image, pc) the
++         * interpreter is handed here, one "image 0xPC" line each, so the code a
++         * job reaches only through indirect branches can be fed back to its
++         * lift as entry seeds (tools/lift_jobmods.py LBP_JOBMOD_EXTRA_FUNCS). */
++        { static int s_on = -1; static FILE* s_f; static uint64_t s_seen[8192];
++          if (s_on < 0) { const char* e = getenv("SPU_INTERP_PCLOG");
++                          s_f = (e && *e) ? fopen(e, "a") : NULL; s_on = s_f != NULL; }
++          if (s_on) {
++              const uint64_t key = ((uint64_t)(uint32_t)ctx->image_id << 32) | (pc & SPU_LS_MASK);
++              uint32_t h = (uint32_t)(key * 0x9E3779B97F4A7C15ull >> 51);
++              for (unsigned k = 0; k < 8192; k++, h = (h + 1) & 8191u) {
++                  const uint64_t cur = __atomic_load_n(&s_seen[h], __ATOMIC_RELAXED);
++                  if (cur == key + 1) break;
++                  if (!cur) {
++                      uint64_t z = 0;
++                      if (__atomic_compare_exchange_n(&s_seen[h], &z, key + 1, 0,
++                                                      __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
++                          fprintf(s_f, "%d 0x%05X\n", ctx->image_id, pc & SPU_LS_MASK);
++                          fflush(s_f);
++                          break;
++                      }
++                      if (z == key + 1) break;
++                  }
++              } } }
+         ctx->pc = pc;
+         /* Stop at the drain's return point too: it sits mid-function, so it is
+          * no lifted entry, and a job's return would otherwise run on through
 diff --git a/runtime/spu/spu_dma.h b/runtime/spu/spu_dma.h
 index 8c4ccaa8..44b8e6d6 100644
 --- a/runtime/spu/spu_dma.h
