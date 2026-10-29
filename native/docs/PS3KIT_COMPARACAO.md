@@ -16,7 +16,7 @@ o `CHANGELOG.md` ainda para na v0.14). O nosso projeto usa o ps3recomp **v0.18.0
 
 | Tema | ps3kit | Nosso (`ps3recomp-gow3.patch` + `native/game`) | Melhor |
 |---|---|---|---|
-| **Taskset2** (`cellSpursCreateTaskset2`, `_cellSpursTasksetAttribute2Initialize`) | Em `libs/spurs/cellSpurs.c`: cria com tamanho 0x2900, lendo do atributo só o argumento do taskset; prioridade e contenção máxima ficam no padrão | Mesmo tamanho 0x2900, e também passa a prioridade por SPU e a `maxContention` do atributo para `spurs_create_taskset` | **Nosso**, um pouco mais fiel ao atributo; o resto é equivalente |
+| **Taskset2** (`cellSpursCreateTaskset2`, `_cellSpursTasksetAttribute2Initialize`) | Em `libs/spurs/cellSpurs.c`: cria com tamanho 0x2900, lendo do atributo só o argumento do taskset; prioridade e contenção máxima ficam no padrão | Mesmo tamanho 0x2900, e também passa a prioridade por SPU e a `maxContention` do atributo para `spurs_create_taskset` | **Empate na prática**: o `spurs_create_taskset` do ps3kit ignora prioridade e contenção (marca os dois parâmetros como não usados), então passá-los não muda nada lá |
 | **SPURS2** (`cellSpursInitializeWithAttribute2`, 32 workloads) | Tem (commit `b2907d5d`): a segunda metade dos workloads com os campos próprios da instância (readyCount2, wklSignal2, wklState2, wklInfo2) e a flag de 32 workloads | Não tem: o kernel do HLE vai até 16 workloads | **ps3kit**. O GOW3 usa 12 workloads e por isso não precisou, mas é uma lacuna nossa |
 | **Task2** (`_cellSpursTaskAttribute2Initialize`, `cellSpursCreateTask2`) | Lê `sizeContext` (+0x04), a palavra baixa de `eaContext` (+0x0C) e o `lsPattern` (+0x10); a inicialização zera só os 0x24 primeiros bytes | Mesmos campos (`eaContext` lido como u64 e truncado) | **Empate** |
 | **Workload flag** (`cellSpursGetWorkloadFlag`, `_cellSpursWorkloadFlagReceiver`) | **Não tem**: as duas funções só aparecem na tabela de NIDs (`tools/nid_database.py`), e o kernel não olha o flag em `spurs+0x6C`/`+0x77` | Tem as duas funções e o kernel dispara o receptor quando o flag zera, como o RPCS3. O receptor usa CAS no byte +0x77, e há a correção do travamento por `vm_write32` dentro do lock-line | **Nosso**. É o que faz o RsxSync (wid 11) rodar no GOW3 |
@@ -129,3 +129,18 @@ acelerar. Os motivos:
 O RSX do RPCS3 vale como **segundo motor de comparação** quando o live draw empacar num quadro: é a melhor
 referência de imagem que existe, mas a integração é grande (MSVC, Vulkan, GPL, troca da memória do runtime).
 Se o Arnaldo preferir que o GOW3 viva dentro do ps3kit, o item 4 é a lista de trabalho.
+
+## Depois da comparação (29/10/2026)
+
+Os PRs foram abertos para o ramo `gow3` do ps3kit, um por correção. O `/` não pode ser usado nos nomes porque
+o ramo `gow3` já existe, então os ramos são `gow3-<correção>`:
+- `gow3-spurs-workload-flag`
+- `gow3-wait-signal-take`, que preserva a contagem do "GPU hold" do round gate
+- `gow3-spu-workloads-code-end`
+- `gow3-spurs-taskset-find`, o registro de tasksets que o LLE da LFQueue precisa: no HLE os tasksets têm wid
+  0, então não dá para achá-los pelo `wklInfo`
+- `gow3-template-live-draw`
+
+Ficaram de fora, porque o ps3kit já tem ou porque não mudariam nada lá: os atributos do Taskset2, o
+Task2, a tabela de offsets do GCM e as AUs retidas do vídeo. O resultado da build do GOW3 sobre o ps3kit está
+no LEIA-ME (`native/game/LEIA-ME.md`, seção "Compilar sobre o ps3kit").

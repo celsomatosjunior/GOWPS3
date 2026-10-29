@@ -247,6 +247,8 @@ def use_gow3_rsx(proj: Path, cm: Path):
     execução entre o backend D3D12 (padrão) e o live draw (RSX_LIVE_DRAW=1)."""
     main = proj / "main.cpp"
     text = main.read_text(encoding="utf-8")
+    if "template_rsx_init" in text:
+        return   # ps3kit (ramo gow3): o próprio modelo já escolhe o live draw com RSX_LIVE_DRAW
     old = ("#  define rsx_backend_init    rsx_d3d12_backend_init\n"
            "#  define rsx_backend_present rsx_d3d12_backend_present\n"
            "#  define rsx_backend_pump    rsx_d3d12_backend_pump_messages\n")
@@ -361,6 +363,7 @@ def step_rodar(args, work: Path, state: dict, progress):
     # duas vezes seguidas, duas tarefas MLAA pulavam um quadro e a thread principal esperava para sempre.
     env.setdefault("GCM_SEMA_ACQUIRE", "1")
     env.setdefault("GCM_PARK_GRACE_MS", "3600000")
+    env.setdefault("GCM_PARK_WAIT_MS", "3600000")   # o mesmo ajuste com o nome do ps3kit
     # O player de vídeo do GOW3 pausa o envio de AUs por mais de 1,5 s; o "idle drain" do cellVdec
     # esvaziava o decodificador com flush nessa pausa e todas as AUs P/B seguintes saíam vazias.
     env.setdefault("VDEC_IDLE_DRAIN_MS", "0")

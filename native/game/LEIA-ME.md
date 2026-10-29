@@ -131,6 +131,44 @@ dali (ela não faz parte do jogo).
   Numa execução de 120 s: 4.430 flips (~37/s) e 1.314 AUs de vídeo, sem erros. `LD_FRAME_DUMP=<pasta>`
   (com `LD_FRAME_DUMP_EVERY`) salva os quadros do live draw.
 - Comparação com o ps3kit do Arnaldo: `native/docs/PS3KIT_COMPARACAO.md`.
+
+## Compilar sobre o ps3kit (ramo `gow3`)
+
+O ps3kit (`arnaldolima1/ps3kit`, privado) tem um ramo `gow3`, tirado do `master`, e cinco ramos de correção
+com PR para ele. Cada ramo traz uma correção que o ps3kit não tinha:
+
+| Ramo | O que traz |
+|---|---|
+| `gow3-spurs-workload-flag` | workload flag, receptor e disparo no kernel |
+| `gow3-wait-signal-take` | WAIT_SIGNAL consome o sinal ao vê-lo |
+| `gow3-spu-workloads-code-end` | `--code-end` no `build_spu_workloads.py` |
+| `gow3-spurs-taskset-find` | taskset de um (spurs, wid, task), para o LLE da LFQueue |
+| `gow3-template-live-draw` | `RSX_LIVE_DRAW=1` no `main.cpp` do modelo |
+
+Sobre o ps3kit não se aplica nenhum dos nossos `.patch`: o `ppu_lifter.py` dele já tem `--toc`, e as
+correções vão nos ramos. Para testar tudo junto, junte os cinco ramos num ramo local (aqui,
+`gow3-integracao`) e passe o checkout como `--ps3recomp`. O `gow3_build.py` reconhece o modelo do ps3kit: não
+mexe no `main.cpp` se ele já escolhe o live draw, e define também `GCM_PARK_WAIT_MS`, o nome do ps3kit para a
+espera do park.
+
+```powershell
+python <ps3kit>\tools\build_spu_workloads.py --input <trabalho>\EBOOT.ELF --lifted <trabalho>\spu --out <trabalho>\spu\spu_workloads.c --constructor --code-end spu_83b0bc054de1b6ecba6f7dfa763ea2f2bcf2535183c567607bedbeeeb037ed9a=0xAA80
+python native\game\lift_pm.py <trabalho>\EBOOT.ELF --ps3recomp <ps3kit> --ea 0x49FF80 --size 12032 --fp 0x7AE3FE49074DF128 --name pm_wwsjob --out <trabalho>\spu_pm
+python native\game\monta_spu_dir.py --programas <trabalho>\spu --pms <trabalho>\spu_pm --out <trabalho>\spu_dir
+# libsre: lift_prx.py e ppu_lifter.py --raw do ps3kit, como na seção do LLE abaixo
+python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --spu-dir <trabalho>\spu_dir --lle-libsre <lle> --ffmpeg <ffmpeg> ...
+```
+
+**Resultado (29/10/2026):**
+- as ferramentas do ps3kit traduzem tudo: os 8 programas SPU registrados (com `--code-end`), o PM e a
+  libsre, e 11.482 funções PPU sem nenhuma instrução sem tradução;
+- o executável compila (81 MB) e roda 120 s sem erros nem NIDs faltando, com o live draw ligado pelo modelo e
+  a LFQueue na libsre real (os sinais chegam à tarefa Edge Zlib);
+- **ainda não chega ao logo**. Os flips param aos ~17 s, o receptor do workload flag não é chamado e o
+  `SMLOGO.M2V` é reaberto várias vezes. Há também um desvio do policy module Wws para LS 0x9D4 (o serviço
+  "select workload" do kernel fica em 0x9D0), que na v0.18 não acontece. O ponto provável é a resposta
+  nova do poll do ps3kit (`spu_branch_service`) ou o microstep do interpretador. Na v0.18 o mesmo jogo
+  mostra o logo e a abertura, então a v0.18 continua sendo a base do dia a dia.
 - **Com o backend D3D12 antigo (sem live draw) o quadro passava pela memória do PS3 e não aparecia:** Por quadro, o jogo:
   1. desenha no buffer de tela (local 0x0 / 0x384000 / 0x708000);
   2. copia-o com o NV3089 para a memória principal (0x70A80000), onde as tarefas MLAA filtram;
