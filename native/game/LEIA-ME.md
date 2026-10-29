@@ -71,10 +71,13 @@ dali (ela não faz parte do jogo).
   travava a thread da janela, e o Windows a fechava por Application Hang).
 - Laço de quadros rodando: ~80 flips/s (`IntroLoaderThread` envia um CLEAR, o marcador de flip 0xFEAD e um`r
   SEMAPHORE_ACQUIRE por quadro). A tela é preta: só limpezas.
-- **Parada atual:** a abertura não avança. O jogo lê `CINEMATICS/SMLOGO.M2V` mas nunca chama `cellVdecOpenEx`; a
-  thread principal espera a `IntroLoaderThread`. O RPCS3 (gabarito) não cria essa thread e vai direto para`r
-  `cellVdecQueryAttrEx/OpenEx`. Quem a cria é `func_001E5440`, quando o byte em `*(TOC-0x6C70)` não é zero:`r
-  próximo passo é descobrir quem liga esse byte.`r
+- Tela de boot (``IntroLoaderThread``, ``/INTRO/BOOT0_BCES00510.GTF``): termina sozinha em ~16 s, como no RPCS3
+  sem patches (~13 s). Precisou do título correto (PARAM.SFO) e de um save ``BCES00510-USERDATA``.
+- **Atenção ao comparar com o RPCS3:** o RPCS3 do usuário tem patches da comunidade ligados para o GOW3
+  ("Skip intro", "Skip any videos with X", "Disable MLAA" etc.). Para um gabarito fiel, rodar sem o
+  ``config/patch_config.yml`` (guardar uma cópia e restaurar depois), como faz a sessão de 28/10.
+- **Parada atual:** depois da tela de boot a thread principal espera em ``lr=0x2622EC`` e o jogo ainda não chama
+  ``cellVdecOpenEx`` (no RPCS3 sem patches o vídeo do logo começa logo após a tela de boot).
 - Título: `gow3_libsre_lle.cpp` chama `cellGame_init_from_paramsfo` (antes o HLE respondia BLES00000).
 
 ## LLE seletivo da libsre (LFQueue)
@@ -100,6 +103,12 @@ no executável. Ele liga `_cellSpursLFQueueInitialize`, `_cellSpursLFQueuePushBo
 função procura o taskset nas estruturas internas do SPURS da libsre, que aqui não existem; a versão
 nossa entrega o sinal pelo runtime (`spurs_taskset_find` + `spu_taskset_signal_task`). Nada derivado do
 firmware vai para o repositório.
+
+## Save
+
+O jogo lê ``BCES00510-USERDATA`` em ``<trabalho>/gamedata/dev_hdd0/home/00000001/savedata/`` (o passo rodar usa
+``<trabalho>`` como pasta atual). Sem ele o boot segue o caminho de "primeira vez". O save é do usuário e fica
+só no PC dele: copiar do RPCS3 (``dev_hdd0/home/00000001/savedata/BCES00510-USERDATA``).
 
 ## O que esperar
 

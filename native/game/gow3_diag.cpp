@@ -215,3 +215,23 @@ extern "C" void gow3_watch_install(void)
 #else
 extern "C" void gow3_watch_install(void) {}
 #endif
+
+/* Gancho de depuração para instrumentar à mão uma função recompilada (só em builds locais de
+ * investigação): registra as primeiras chamadas com r3 e lr. */
+extern "C" void gow3_dbg_call(unsigned fn, unsigned long long r3, unsigned long long lr)
+{
+    static volatile long n = 0;
+    if (n++ < 40) fprintf(stderr, "[GOW3-DBG] func_%08X r3=0x%llX lr=0x%llX\n", fn, r3, lr);
+}
+
+extern "C" uint64_t ppu_timebase_now(void);
+
+/* Retorno de uma função recompilada instrumentada à mão: as 8 primeiras vezes e depois 1 a cada 200. */
+extern "C" void gow3_dbg_ret(unsigned fn, unsigned long long r3, double f1, unsigned long long arg)
+{
+    static volatile long n = 0;
+    long k = n++;
+    if (k < 8 || k % 200 == 0)
+        fprintf(stderr, "[GOW3-DBG] #%ld func_%08X -> r3=0x%llX f1=%g arg=0x%llX tb=%llu\n", k, fn, r3, f1, arg,
+                (unsigned long long)ppu_timebase_now());
+}
