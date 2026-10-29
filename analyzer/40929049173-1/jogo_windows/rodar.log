@@ -1,0 +1,12 @@
+=== ps3recomp game runner ===
+[ppu] loaded 3 PT_LOAD segments, entry OPD 0x20000000
+[boot] VFS root: D:/a/GOWPS3
+
+[boot] dispatching entry OPD 0x20000000 (stack top 0x0FF00000)
+
+
+[boot] ppu_run returned 0 (entry function unwound)
+[stdio] stdout/stderr buffered (64 KB each), flushed every 50 ms (PS3_STDIO_UNBUFFERED=1: unbuffered)
+[ppu] argv[0] @0x0FEFFFC0 = "/dev_bdvd/PS3_GAME/USRDIR/EBOOT.BIN"
+[ppu] argc=1 argv=0x0FEFFFA0
+[ppu] run: code 0x10001878, toc 0x100E7A00, sp 0x0FEFFF20
