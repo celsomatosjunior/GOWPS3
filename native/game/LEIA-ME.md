@@ -279,10 +279,13 @@ no mesmo teste de 330 s. Versão preservada: tag `gow3-fase-v1` e `Projetos\vers
 `jobmod_14561cbb02eb` (o resto: `spu_coh_notify_write`, despacho indireto). Cada workload Wws tem
 maxContention=1, então a fila de um job chain é serial, como no PS3.
 
-**Próxima ação exata:** confirmar o controle na fase com um teste A/B (mesma receita com e sem
-`PAD_STICK=128,0,128,128,295,325`, quadros com `LD_FRAME_DUMP=<pasta> LD_FRAME_DUMP_EVERY=10
-LD_FRAME_DUMP_FROM=7200`; comparar os quadros de 300 a 325 s). Depois medir de novo o perfil da fase, agora com
-imagem.
+**Controle na fase:** o teste A/B (mesma receita com e sem `PAD_STICK` de 295 a 325 s) não decide: as duas
+execuções já divergem antes do comando (o jogo não é determinístico entre execuções), então os quadros não isolam
+o efeito do analógico. O controle chega ao jogo (os menus respondem ao X do `PAD_SCRIPT`).
+
+**Próxima ação exata:** testar com um controle de verdade (XInput): rodar
+`Projetosersoes\gow3-fase-v1odar_fase.ps1`, esperar o fim do `PAD_SCRIPT` (220 s) e jogar. Em paralelo,
+medir de novo o perfil da fase (`GOW3_PROF=260,50`), agora que a fase tem imagem.
 
 ## LLE seletivo da libsre (LFQueue)
 
