@@ -1,0 +1,200 @@
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(134,47): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  134 |     *(unsigned*)(hd + 2) = size; *(unsigned*)(hd + 10) = 54; *(unsigned*)(hd + 14) = 40;
+      |                                               ^~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(134,47): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(134,75): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  134 |     *(unsigned*)(hd + 2) = size; *(unsigned*)(hd + 10) = 54; *(unsigned*)(hd + 14) = 40;
+      |                                                                           ^~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(134,75): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(135,13): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  135 |     *(int*)(hd + 18) = (int)w; *(int*)(hd + 22) = -(int)h; *(unsigned short*)(hd + 26) = 1;
+      |             ^~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(135,13): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(135,40): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  135 |     *(int*)(hd + 18) = (int)w; *(int*)(hd + 22) = -(int)h; *(unsigned short*)(hd + 26) = 1;
+      |                                        ^~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(135,40): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(135,79): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  135 |     *(int*)(hd + 18) = (int)w; *(int*)(hd + 22) = -(int)h; *(unsigned short*)(hd + 26) = 1;
+      |                                                                               ^~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(135,79): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(136,24): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  136 |     *(unsigned short*)(hd + 28) = 24;
+      |                        ^~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(136,24): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(137,5): warning: function 'fwrite' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  137 |     fwrite(hd, 1, 54, f);
+      |     ^~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(140,42): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  140 |         const unsigned char* p = vm_base + ea + y * pitch;
+      |                                  ~~~~~~~~^~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(140,42): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(140,34): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  140 |         const unsigned char* p = vm_base + ea + y * pitch;
+      |                                  ^~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(140,34): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(141,9): warning: function 'memset' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  141 |         memset(line, 0, row);
+      |         ^~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(143,13): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  143 |             line[x * 3 + 0] = p[x * 4 + 2]; line[x * 3 + 1] = p[x * 4 + 1]; line[x * 3 + 2] = p[x * 4 + 0];
+      |             ^~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(143,13): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(143,31): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  143 |             line[x * 3 + 0] = p[x * 4 + 2]; line[x * 3 + 1] = p[x * 4 + 1]; line[x * 3 + 2] = p[x * 4 + 0];
+      |                               ^
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(143,31): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(143,45): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  143 |             line[x * 3 + 0] = p[x * 4 + 2]; line[x * 3 + 1] = p[x * 4 + 1]; line[x * 3 + 2] = p[x * 4 + 0];
+      |                                             ^~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(143,45): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(143,63): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  143 |             line[x * 3 + 0] = p[x * 4 + 2]; line[x * 3 + 1] = p[x * 4 + 1]; line[x * 3 + 2] = p[x * 4 + 0];
+      |                                                               ^
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(143,63): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(143,77): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  143 |             line[x * 3 + 0] = p[x * 4 + 2]; line[x * 3 + 1] = p[x * 4 + 1]; line[x * 3 + 2] = p[x * 4 + 0];
+      |                                                                             ^~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(143,77): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(143,95): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  143 |             line[x * 3 + 0] = p[x * 4 + 2]; line[x * 3 + 1] = p[x * 4 + 1]; line[x * 3 + 2] = p[x * 4 + 0];
+      |                                                                                               ^
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(143,95): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(145,9): warning: function 'fwrite' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  145 |         fwrite(line, 1, row, f);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(158,13): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  158 |         if (g_hle_inflight[t]) add("[GOW3-WD]   guest-tid %u dentro de %s\n", t, g_hle_inflight[t]);
+      |             ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(158,13): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(158,82): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  158 |         if (g_hle_inflight[t]) add("[GOW3-WD]   guest-tid %u dentro de %s\n", t, g_hle_inflight[t]);
+      |                                                                                  ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(158,82): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(183,51): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  183 |                 for (uint64_t* p = sp; (uint64_t)(p + 1) <= end && p < sp + 0x20000 && found < 14; p++) {
+      |                                                   ^
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(183,51): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(183,72): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  183 |                 for (uint64_t* p = sp; (uint64_t)(p + 1) <= end && p < sp + 0x20000 && found < 14; p++) {
+      |                                                                        ^~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(183,72): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(183,100): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  183 |                 for (uint64_t* p = sp; (uint64_t)(p + 1) <= end && p < sp + 0x20000 && found < 14; p++) {
+      |                                                                                                    ^
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(183,100): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(197,5): warning: function 'fwrite' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  197 |     fwrite(s_buf, 1, s_len, stderr);
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(220,17): warning: function 'atoi' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  220 |     int s = e ? atoi(e) : 0;
+      |                 ^~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(239,13): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  239 |         if (t->key[h] == off + 1) { t->n[h]++; return; }
+      |             ^~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(239,13): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(239,37): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  239 |         if (t->key[h] == off + 1) { t->n[h]++; return; }
+      |                                     ^~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(239,37): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(240,14): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  240 |         if (!t->key[h]) { t->key[h] = off + 1; t->n[h] = 1; return; }
+      |              ^~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(240,14): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(240,27): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  240 |         if (!t->key[h]) { t->key[h] = off + 1; t->n[h] = 1; return; }
+      |                           ^~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(240,27): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(240,48): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  240 |         if (!t->key[h]) { t->key[h] = off + 1; t->n[h] = 1; return; }
+      |                                                ^~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(240,48): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(249,48): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  249 |     IMAGE_NT_HEADERS* nt = (IMAGE_NT_HEADERS*)((uint8_t*)self + ((IMAGE_DOS_HEADER*)self)->e_lfanew);
+      |                                                ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(249,48): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(266,40): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  266 |                 while (i < nthreads && s_prof[i].tid != te.th32ThreadID) i++;
+      |                                        ^~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(266,40): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(267,78): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  267 |                 if (i == nthreads) { if (nthreads == PROF_THREADS) continue; s_prof[nthreads++].tid = te.th32ThreadID; }
+      |                                                                              ^~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(267,78): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(274,64): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  274 |                     if (c.Rip >= lo && c.Rip < hi) prof_count(&s_prof[i], (uint32_t)(c.Rip - lo));
+      |                                                                ^~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(274,64): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(275,28): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  275 |                     else { s_prof[i].total++; s_prof[i].outside++; }
+      |                            ^~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(275,28): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(275,47): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  275 |                     else { s_prof[i].total++; s_prof[i].outside++; }
+      |                                               ^~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(275,47): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(285,27): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  285 |         prof_thread* t = &s_prof[i];
+      |                           ^~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(285,27): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(291,21): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  291 |                 if (t->key[k] && t->n[k] > best) { best = t->n[k]; bk = k; }
+      |                     ^~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(291,21): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(291,34): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  291 |                 if (t->key[k] && t->n[k] > best) { best = t->n[k]; bk = k; }
+      |                                  ^~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(291,34): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(291,59): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  291 |                 if (t->key[k] && t->n[k] > best) { best = t->n[k]; bk = k; }
+      |                                                           ^~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(291,59): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(293,56): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  293 |             fprintf(stderr, "[GOW3-PROF]   0x%X %u\n", t->key[bk] - 1, best);
+      |                                                        ^~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(293,56): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(294,13): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  294 |             t->n[bk] = 0;
+      |             ^~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(294,13): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(305,15): warning: function 'sscanf' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  305 |     if (!e || sscanf(e, "%d,%d", &start, &secs) < 1) return 0;
+      |               ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(328,38): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  328 |         if (a >= s_watch_page && a < s_watch_page + 0x1000) {
+      |                                      ^~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(328,38): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(340,32): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  340 |             const uint8_t* p = vm_base + s_watch_ea;
+      |                                ^~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(340,32): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(341,62): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  341 |             uint32_t v = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+      |                                                              ^
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(341,62): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(341,87): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  341 |             uint32_t v = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+      |                                                                                       ^
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(341,87): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(341,100): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  341 |             uint32_t v = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+      |                                                                                                    ^
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(341,100): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(366,18): warning: function 'strcmp' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  366 |     s_watch_ea = strcmp(e, "ctrl") == 0 ? cellGcm_control_guest_addr() : (uint32_t)strtoul(e, NULL, 16);
+      |                  ^~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(366,84): warning: function 'strtoul' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  366 |     s_watch_ea = strcmp(e, "ctrl") == 0 ? cellGcm_control_guest_addr() : (uint32_t)strtoul(e, NULL, 16);
+      |                                                                                    ^~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(369,20): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  369 |     s_watch_page = vm_base + (s_watch_ea & ~0xFFFu);
+      |                    ^~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(369,20): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(376,26): warning: function 'atoi' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  376 |         Sleep(d ? (DWORD)atoi(d) : 300);
+      |                          ^~~~~~~
+221 warnings generated.
+[178/181] Building CXX object CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_007.cpp.obj
+[179/181] Building CXX object CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_006.cpp.obj
+[180/181] Linking CXX executable GOW3Native.exe
+(código 0)

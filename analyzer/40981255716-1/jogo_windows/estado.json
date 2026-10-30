@@ -1,0 +1,73 @@
+{
+ "elf": "D:\\a\\GOWPS3\\GOWPS3\\corpus\\ps3_test.elf",
+ "steps": {
+  "elf": {
+   "ok": true,
+   "seconds": 0
+  },
+  "carregar": {
+   "ok": true,
+   "seconds": 0
+  },
+  "traduzir": {
+   "ok": true,
+   "seconds": 38
+  },
+  "projeto": {
+   "ok": true,
+   "seconds": 19
+  },
+  "compilar": {
+   "ok": true,
+   "seconds": 156
+  },
+  "rodar": {
+   "ok": true,
+   "seconds": 0
+  }
+ },
+ "functions_json": "D:\\a\\GOWPS3\\GOWPS3\\jogo\\analise\\ps3_test.functions.json",
+ "imports_json": "D:\\a\\GOWPS3\\GOWPS3\\jogo\\analise\\ps3_test.imports.json",
+ "n_functions": 19,
+ "n_imports": 0,
+ "code_end": 269236975,
+ "toc": "0x100e7a00",
+ "recomp_dir": "D:\\a\\GOWPS3\\GOWPS3\\jogo\\recompiled",
+ "lifted_functions": 3482,
+ "lifted_files": 9,
+ "lifted_bytes": 107796333,
+ "lifted_lines": 1928564,
+ "lifter_todos": 44939,
+ "lift_seconds": 38,
+ "build_dir": "D:\\a\\GOWPS3\\GOWPS3\\jogo\\build",
+ "spu": null,
+ "build_seconds": 155,
+ "build_errors": [],
+ "exe": "D:\\a\\GOWPS3\\GOWPS3\\jogo\\build\\GOW3Native.exe",
+ "exe_bytes": 12530688,
+ "run_seconds": 0,
+ "run_end": "terminou sozinho (código 0)",
+ "run_code": 0,
+ "run_counts": {
+  "nids_nao_implementados": 0,
+  "chamadas_indiretas_sem_destino": 0,
+  "falhas_de_memoria": 0,
+  "erros": 0,
+  "flips": 0
+ },
+ "run_missing_nids": [],
+ "run_tail": [
+  "=== ps3recomp game runner ===",
+  "[ppu] loaded 3 PT_LOAD segments, entry OPD 0x20000000",
+  "[boot] VFS root: D:/a/GOWPS3",
+  "",
+  "[boot] dispatching entry OPD 0x20000000 (stack top 0x0FF00000)",
+  "",
+  "",
+  "[boot] ppu_run returned 0 (entry function unwound)",
+  "[stdio] stdout/stderr buffered (64 KB each), flushed every 50 ms (PS3_STDIO_UNBUFFERED=1: unbuffered)",
+  "[ppu] argv[0] @0x0FEFFFC0 = \"/dev_bdvd/PS3_GAME/USRDIR/EBOOT.BIN\"",
+  "[ppu] argc=1 argv=0x0FEFFFA0",
+  "[ppu] run: code 0x10001878, toc 0x100E7A00, sp 0x0FEFFF20"
+ ]
+}
