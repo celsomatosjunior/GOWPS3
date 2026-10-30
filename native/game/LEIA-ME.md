@@ -284,7 +284,7 @@ execuções já divergem antes do comando (o jogo não é determinístico entre 
 o efeito do analógico. O controle chega ao jogo (os menus respondem ao X do `PAD_SCRIPT`).
 
 **Próxima ação exata:** testar com um controle de verdade (XInput): rodar
-`Projetosersoes\gow3-fase-v1odar_fase.ps1`, esperar o fim do `PAD_SCRIPT` (220 s) e jogar. Em paralelo,
+`Projetos\versoes\gow3-fase-v1\rodar_fase.ps1`, esperar o fim do `PAD_SCRIPT` (220 s) e jogar. Em paralelo,
 medir de novo o perfil da fase (`GOW3_PROF=260,50`), agora que a fase tem imagem.
 
 ## LLE seletivo da libsre (LFQueue)
