@@ -272,8 +272,7 @@ Pasta de trabalho principal: `Projetos\GOW3_trabalho`.
 **Fase com imagem (29/10, 21h40):** os volumes 64x32 FP16 (formato 0xBA, linear, 3D) da fase não eram
 decodificados e caíam no SRV branco, e a tela inteira ficava de uma cor só. Com o `decode_guest_texture_3d` em
 R16G16B16A16_FLOAT a fase aparece (Kratos em combate, com o HUD), `decodefail=0`, e os flips subiram para ~14/s
-no mesmo teste de 330 s. Versão preservada: tag `gow3-fase-v1` e `Projetosersoes\gow3-fase-v1
-odar_fase.ps1`.
+no mesmo teste de 330 s. Versão preservada: tag `gow3-fase-v1` e `Projetos\versoes\gow3-fase-v1\rodar_fase.ps1`.
 
 **Perfil da fase (AVX2, antes da correção dos volumes):** a thread principal do PPU fica ~81% esperando em
 `func_0028DA14` (o buffer triplo que os jobs EDGE liberam); uma thread SPU fica ~80% ocupada no código do
