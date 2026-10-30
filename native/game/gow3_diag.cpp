@@ -225,7 +225,7 @@ static int start_watchdog()
 static int s_started = start_watchdog();
 
 /* GOW3_PROF=<início s>,<duração s>: perfil por amostragem. A cada ~2 ms suspende cada thread e conta o RIP
- * (deslocamento no executável, resolver com o GOW3Native.map); no fim imprime, por thread, as 40 posições
+ * (deslocamento no executável, resolver com o GOW3Native.map); no fim imprime, por thread, as 300 posições
  * mais vistas e o total de amostras. Só diagnóstico. */
 enum { PROF_SLOTS = 1 << 16, PROF_THREADS = 96 };
 struct prof_thread { DWORD tid; uint32_t total, outside; uint32_t key[PROF_SLOTS]; uint32_t n[PROF_SLOTS]; };
@@ -285,7 +285,7 @@ static DWORD WINAPI profiler(LPVOID arg)
         prof_thread* t = &s_prof[i];
         if (t->total - t->outside < 50) continue;
         fprintf(stderr, "[GOW3-PROF] tid %lu amostras %u fora_do_exe %u\n", (unsigned long)t->tid, t->total, t->outside);
-        for (int r = 0; r < 40; r++) {
+        for (int r = 0; r < 300; r++) {
             uint32_t best = 0, bk = 0;
             for (unsigned k = 0; k < PROF_SLOTS; k++)
                 if (t->key[k] && t->n[k] > best) { best = t->n[k]; bk = k; }
