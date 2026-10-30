@@ -1,0 +1,1 @@
+RPCS3: https://github.com/RPCS3/rpcs3-binaries-win/releases/download/build-8e26652c85bb5658965fa5731d9a0309ca10b42b/rpcs3-v0.0.43-20508-8e26652c_win64_msvc.7z
