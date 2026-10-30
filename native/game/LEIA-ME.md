@@ -269,13 +269,20 @@ Pasta de trabalho principal: `Projetos\GOW3_trabalho`.
 - Atenção: sem `--lle-libsre` o título vira BLES00000 e o jogo não passa da inicialização; o `gow3_build.py`
   agora usa `<trabalho>\firmware\libsre_lle` sozinho quando existe.
 
-**Perfil da fase (AVX2, 260 a 310 s):** a thread principal do PPU fica ~81% fora do executável (esperando); uma
-thread SPU fica ~80% ocupada (`jobmod_14561cbb02eb` func 0x10E20, `mfc_for`, `spu_coh_notify_write`); as
-outras SPUs ficam quase paradas.
+**Fase com imagem (29/10, 21h40):** os volumes 64x32 FP16 (formato 0xBA, linear, 3D) da fase não eram
+decodificados e caíam no SRV branco, e a tela inteira ficava de uma cor só. Com o `decode_guest_texture_3d` em
+R16G16B16A16_FLOAT a fase aparece (Kratos em combate, com o HUD), `decodefail=0`, e os flips subiram para ~14/s
+no mesmo teste de 330 s. Versão preservada: tag `gow3-fase-v1` e `Projetosersoes\gow3-fase-v1odar_fase.ps1`.
 
-**Próxima ação exata:** descobrir o que a thread principal espera (GOW3_WATCHDOG na fase: LRs do PS3) e se os
-jobs da fila ficam numa SPU só (contar por thread host os jobs/workloads despachados); se ficam, ver por que o
-SPURS do HLE não espalha os jobs pelas outras SPUs.
+**Perfil da fase (AVX2, antes da correção dos volumes):** a thread principal do PPU fica ~81% esperando em
+`func_0028DA14` (o buffer triplo que os jobs EDGE liberam); uma thread SPU fica ~80% ocupada no código do
+`jobmod_14561cbb02eb` (o resto: `spu_coh_notify_write`, despacho indireto). Cada workload Wws tem
+maxContention=1, então a fila de um job chain é serial, como no PS3.
+
+**Próxima ação exata:** confirmar o controle na fase com um teste A/B (mesma receita com e sem
+`PAD_STICK=128,0,128,128,295,325`, quadros com `LD_FRAME_DUMP=<pasta> LD_FRAME_DUMP_EVERY=10
+LD_FRAME_DUMP_FROM=7200`; comparar os quadros de 300 a 325 s). Depois medir de novo o perfil da fase, agora com
+imagem.
 
 ## LLE seletivo da libsre (LFQueue)
 
