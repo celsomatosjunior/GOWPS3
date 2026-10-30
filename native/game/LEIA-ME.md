@@ -283,9 +283,16 @@ maxContention=1, então a fila de um job chain é serial, como no PS3.
 execuções já divergem antes do comando (o jogo não é determinístico entre execuções), então os quadros não isolam
 o efeito do analógico. O controle chega ao jogo (os menus respondem ao X do `PAD_SCRIPT`).
 
-**Próxima ação exata:** testar com um controle de verdade (XInput): rodar
-`Projetos\versoes\gow3-fase-v1\rodar_fase.ps1`, esperar o fim do `PAD_SCRIPT` (220 s) e jogar. Em paralelo,
-medir de novo o perfil da fase (`GOW3_PROF=260,50`), agora que a fase tem imagem.
+**30/10 à tarde:** perfil da fase com imagem igual ao anterior: a SPU da frente da fila fica no código de
+`jobmod_14561cbb02eb` (função 0x10E20: leituras de LS, fm/fma e shufb em sequência, transformação de vértices).
+O passo `rodar` liga `SPU_MFC_LOOKUP_CACHE=1` (tirou o `mfc_for` do perfil, sem regressão). O próximo ganho grande
+de SPU pede mudar o tradutor para manter os registradores SPU em variáveis locais em vez de `ctx->gpr` na
+memória (trabalho maior).
+
+**Próxima ação exata:** o Celso testa o controle à noite (rodar `Projetos\versoes\gow3-fase-v1\rodar_fase.ps1`,
+esperar o fim do `PAD_SCRIPT`, uns 220 s, e jogar com um controle XInput). Conforme o resultado: se o Kratos não
+responder, investigar a leitura do controle na fase (cellPadGetData/GetInfo2 no log); se responder, seguir com o
+desempenho (registradores SPU em variáveis locais no tradutor).
 
 ## LLE seletivo da libsre (LFQueue)
 
