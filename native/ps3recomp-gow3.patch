@@ -1312,10 +1312,18 @@ index 2eef378b..5b7d4c00 100644
                      help="With --input, emit supported registrations despite incomplete coverage")
      ap.add_argument("--merge-chunks", action="store_true",
 diff --git a/tools/lift_jobmods.py b/tools/lift_jobmods.py
-index f8783799..03a2cb2c 100644
+index f8783799..fd81c869 100644
 --- a/tools/lift_jobmods.py
 +++ b/tools/lift_jobmods.py
-@@ -77,6 +77,21 @@ CODE_END = {
+@@ -46,6 +46,7 @@ sys.path.insert(0, os.path.dirname(__file__))
+ from wrap_spu_elf import wrap
+ 
+ ROOT   = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
++REG_LOCALS = False   # --reg-locals: pass it on to spu_lifter.py
+ LIFTER = os.path.join(os.path.dirname(__file__), "spu_lifter.py")
+ BASE   = 0x4000
+ 
+@@ -77,6 +78,21 @@ CODE_END = {
  EXTRA_FUNCS = [a.strip() for a in
                 os.environ.get("LBP_JOBMOD_EXTRA_FUNCS", "").split(",") if a.strip()]
  
@@ -1337,7 +1345,7 @@ index f8783799..03a2cb2c 100644
  
  def manual_link_targets(raw, base=BASE):
      """Return targets built into the link register by hand:
-@@ -210,7 +225,7 @@ def module_code_end(raw, name, base=BASE):
+@@ -210,7 +226,7 @@ def module_code_end(raw, name, base=BASE):
      it lifts lies inside the registered span."""
      hi = min(base + len(raw), CODE_END.get(name, base + len(raw)))
      seeds = {base + struct.unpack_from(">I", raw, 0x10)[0], base + 0x30}
@@ -1346,7 +1354,7 @@ index f8783799..03a2cb2c 100644
      derived = manual_link_sites(raw, base) + switch_table_sites(raw, base)
      while True:
          seen = reachable(raw, seeds, hi, base)
-@@ -223,10 +238,11 @@ def module_code_end(raw, name, base=BASE):
+@@ -223,10 +239,11 @@ def module_code_end(raw, name, base=BASE):
      return max(seen) + 4
  
  
@@ -1360,16 +1368,18 @@ index f8783799..03a2cb2c 100644
      # The module's first function starts right after the 0x30-byte header
      # (`4 ila | entry | size | 0 | 0 | C0DEC0DE | 0 | 0 | n`). Usually it is
      # reached by a branch and found anyway, but in two modules it is a bare
-@@ -268,7 +284,7 @@ def lift_module(raw, name, outdir, tmp_elf, merge_chunks, code_end=None,
+@@ -268,7 +285,9 @@ def lift_module(raw, name, outdir, tmp_elf, merge_chunks, code_end=None,
          cmd += ["--code-end", hex(end)]
      if merge_chunks:
          cmd += ["--merge-chunks"]
 -    inside = module_seeds(raw, base)
++    if REG_LOCALS:
++        cmd += ["--reg-locals"]
 +    inside = module_seeds(raw, base, name)
      if code_end:
          inside = [a for a in inside if int(a, 0) < code_end]
      if inside:
-@@ -308,9 +324,13 @@ def elf_load_segments(elf):
+@@ -308,9 +327,13 @@ def elf_load_segments(elf):
      return out
  
  
@@ -1384,7 +1394,7 @@ index f8783799..03a2cb2c 100644
      at +0x10 and image size at +0x14. Like extract_jobmods.py, the module is
      the initialised image, imageSize - 32 (the rest is bss), so a module gets
      the same name, and CODE_END fixup, from either source.
-@@ -320,7 +340,9 @@ def find_engine_modules(elf):
+@@ -320,7 +343,9 @@ def find_engine_modules(elf):
          at = blob.find(b"\xc0\xde\xc0\xde")
          while at != -1:
              h = at - 0x20
@@ -1395,7 +1405,7 @@ index f8783799..03a2cb2c 100644
                  entry_off, image = struct.unpack_from(">II", blob, h + 0x10)
                  size = image - 32
                  if 0x30 <= entry_off < size and image <= 0x40000 - BASE and h + size <= len(blob):
-@@ -349,7 +371,23 @@ def main():
+@@ -349,7 +374,29 @@ def main():
                      help="Pass --merge-chunks to spu_lifter.py: each run of chunks "
                           "between call targets becomes one C function with gotos "
                           "instead of chunks linked by trampolines.")
@@ -1403,9 +1413,15 @@ index f8783799..03a2cb2c 100644
 +                    help="Extra function entries (LS addresses) for the modules whose "
 +                         "name starts with NAME only; repeatable. ADDR may also be "
 +                         "@FILE, one address per line.")
++    ap.add_argument("--reg-locals", action="store_true",
++                    help="Pass --reg-locals to spu_lifter.py: SPU registers in C "
++                         "locals inside each function (spu_reg_locals.py).")
 +    ap.add_argument("--base-zero", action="store_true",
 +                    help="--engine-elf: also take modules whose header load base is 0")
      args = ap.parse_args()
++    if args.reg_locals:
++        global REG_LOCALS
++        REG_LOCALS = True
 +    if args.base_zero:
 +        global ENGINE_BASES
 +        ENGINE_BASES = (BASE, 0)
@@ -1434,6 +1450,43 @@ index a657ba61..6c1bc03f 100644
              # PSL1GHT/GCC ELFs: the entry descriptor's second word is NOT a TOC
              # (it repeats the code address); the real r2 the crt establishes is
              # .got + 0x8000 (the ELFv1 TOC bias). Without the right TOC every
+diff --git a/tools/spu_lifter.py b/tools/spu_lifter.py
+index 35d8d428..32182c8e 100644
+--- a/tools/spu_lifter.py
++++ b/tools/spu_lifter.py
+@@ -1080,9 +1080,12 @@ class SPULifter:
+     def emit_source(self,header_name: str) -> str:
+         lines = [SOURCE_PREAMBLE.format(header_name=header_name), ""]
+         weak = "__attribute__((weak)) " if getattr(self, "weak_emit", False) else ""
++        reg_locals = getattr(self, "reg_locals", False)
++        if reg_locals:
++            from spu_reg_locals import localize_body
+         for f in self.functions:
+             lines.append(f"void {weak}{f.name}(spu_context* ctx) {{")
+-            for b in f.body_lines:
++            for b in (localize_body(f.body_lines) if reg_locals else f.body_lines):
+                 lines.append(b if b.endswith(":") else f"    {b}")
+             lines.append("}")
+             lines.append("")
+@@ -1146,6 +1149,10 @@ def main() -> None:
+                         "read from this ELF and the positional <input> arg "
+                         "is ignored.")
+     p.add_argument("--report", help="Write machine-readable generation diagnostics JSON")
++    p.add_argument("--reg-locals", action="store_true",
++                   help="Keep SPU registers in C locals inside each function, "
++                        "stored back to ctx->gpr only around calls, channels, "
++                        "dispatch and returns (spu_reg_locals.py). Off by default.")
+     p.add_argument("--trace", action="store_true",
+                    help="Emit spu_trace_pc/spu_trace_rt around each instruction "
+                         "for §3 diff-vs-RPCS3 validation. Output goes to stderr "
+@@ -1311,6 +1318,7 @@ def main() -> None:
+     insns = disassemble_spu(data, base)
+ 
+     lifter = SPULifter(trace=args.trace, prefix=args.symbol_prefix)
++    lifter.reg_locals = args.reg_locals
+     lifter.bi_r0_jump = compute_bi_r0_jumps(insns, bounds)
+     if lifter.bi_r0_jump:
+         print(f"  {len(lifter.bi_r0_jump)} `bi $r0` computed-jump site(s) "
 diff --git a/tools/spu_program_pipeline.py b/tools/spu_program_pipeline.py
 index 36cbc240..d18fb1db 100644
 --- a/tools/spu_program_pipeline.py
@@ -1477,3 +1530,294 @@ index 36cbc240..d18fb1db 100644
                  functions, (offset, base, size) = detect_functions(blob, verbose=False)
                  bounds = sorted({(max(s, a), min(e, b)) for s, e in functions for a, b in ranges
                                   if max(s, a) < min(e, b)})
+diff --git a/tools/spu_reg_locals.py b/tools/spu_reg_locals.py
+new file mode 100644
+index 00000000..daef0696
+--- /dev/null
++++ b/tools/spu_reg_locals.py
+@@ -0,0 +1,190 @@
++#!/usr/bin/env python3
++"""
++Keep SPU registers in C locals inside each lifted function (spu_lifter.py
++--reg-locals, or standalone on an already generated spu_recomp.c).
++
++The lifter writes every guest register access as ``ctx->gpr[N]``. ctx->gpr is
++a u128 union in memory, and clang gives union accesses char ("may alias
++anything") TBAA, so every result is stored and every operand reloaded: a
++vertex-transform loop of fm/fma/shufb becomes a stream of 16-byte loads and
++stores. This pass rewrites a function body to work on ``u128 r_N`` locals:
++
++  * entry: ``u128 r_N = ctx->gpr[N];`` for every register the body touches
++    (the compiler drops the ones overwritten before being read);
++  * pure lines (register arithmetic, LS loads/stores, branches inside the
++    function) use the locals;
++  * an escape line -- anything else that touches ctx (calls, channels, stop,
++    dispatch, tail branches, SPU_RET...) or returns -- is kept verbatim on
++    ctx->gpr: the written locals are stored back before it and every local is
++    reloaded after it (the callee may change any register);
++  * ``if (cond) { ... }`` whose block always leaves the function (conditional
++    tail branch or return) stores back inside the block only, so the not-taken
++    path of a loop costs nothing.
++
++Labels stay where they are; gotos only jump inside the function, where the
++locals are the registers. LS debug probes that log ctx->gpr[0] can see a stale
++value while a function runs; nothing else reads ctx->gpr behind the code.
++"""
++
++import re
++import sys
++
++_GPR = re.compile(r"ctx->gpr\[(\d+)\]")
++_SIG = re.compile(r"^void .*\(spu_context\* ctx\) \{$")
++_ASSIGN = re.compile(r"ctx->gpr\[(\d+)\] = ")
++# Accesses that only read/write LS bytes, never ctx->gpr or control flow.
++_SAFE_CTX = re.compile(r"ctx->gpr\[\d+\]|spu_ls_read128\(ctx,|spu_ls_write128\(ctx,")
++_LEAVES = ("SPU_DIRECT(", "SPU_RET(", "SPU_RET_REG(", "SPU_TAILCALL(")
++
++
++def _is_escape(stmt: str) -> bool:
++    rest = _SAFE_CTX.sub("", stmt)
++    return (re.search(r"\bctx\b", rest) is not None or "return" in rest
++            or "jmp" in rest)
++
++
++def _calls(expr: str) -> bool:
++    """A condition that calls something (reads of ctx fields are fine)."""
++    return re.search(r"\w\s*\(", _SAFE_CTX.sub("", expr)) is not None
++
++
++def _local(stmt: str) -> str:
++    return _GPR.sub(lambda m: f"r_{m.group(1)}", stmt)
++
++
++def _always_leaves(block: str) -> bool:
++    """True when a `{ ... }` block body ends by leaving the function."""
++    b = block.strip()
++    if b.startswith("{") and b.endswith("}"):
++        b = b[1:-1].strip()
++    last = b.rstrip("; ").rsplit(";", 1)[-1].strip() if b else ""
++    if last.startswith("{"):              # `{ SPU_DIRECT(...); }`
++        return _always_leaves(last)
++    return (b.endswith("return;") or any(last.startswith(k) for k in _LEAVES))
++
++
++def _split_if(stmt: str):
++    """`if (cond) { block }` -> (cond, block) when the statement is exactly that."""
++    if not stmt.startswith("if (") or not stmt.endswith("}"):
++        return None
++    depth = 0
++    for i in range(3, len(stmt)):
++        c = stmt[i]
++        if c == "(":
++            depth += 1
++        elif c == ")":
++            depth -= 1
++            if depth == 0:
++                cond, rest = stmt[4:i], stmt[i + 1:].strip()
++                if not rest.startswith("{"):
++                    return None
++                # the block must be one brace group spanning to the end
++                d = 0
++                for j, ch in enumerate(rest):
++                    d += ch == "{"
++                    d -= ch == "}"
++                    if d == 0 and j != len(rest) - 1:
++                        return None
++                return cond, rest
++    return None
++
++
++# Big functions with many calls in the middle hurt more than they gain: every
++# fall-through escape reloads all the locals, and clang's optimizer goes
++# super-linear on long bodies full of u128 locals and gotos (whole job modules
++# took over 30 minutes each). Hot SPU loops are short and call nothing.
++MAX_LINES = 600
++MAX_ESCAPES = 8
++
++
++def localize_body(body: list[str], indent: str = "    ",
++                  max_lines: int = MAX_LINES, max_escapes: int = MAX_ESCAPES) -> list[str]:
++    """Rewrite one function body (lines without the signature / closing brace).
++
++    Returned unchanged when it is longer than max_lines or has more than
++    max_escapes fall-through escapes (0 = no limit)."""
++    if max_lines and len(body) > max_lines:
++        return body
++    used: set[int] = set()
++    written: set[int] = set()
++    plan = []        # (kind, text)
++    for raw in body:
++        s = raw.strip()
++        if not s or s.endswith(":") and not s.startswith(("if", "{")) and " " not in s:
++            plan.append(("label", raw))
++            continue
++        if not _is_escape(s):
++            used.update(int(n) for n in _GPR.findall(s))
++            written.update(int(n) for n in _ASSIGN.findall(s))
++            plan.append(("pure", s))
++            continue
++        sp = _split_if(s)
++        if sp and _always_leaves(sp[1]) and not _calls(sp[0]):
++            used.update(int(n) for n in _GPR.findall(sp[0]))
++            plan.append(("ifleave", sp))
++            continue
++        plan.append(("escape", s))
++    if not used:
++        return body
++    if max_escapes and sum(k == "escape" for k, _ in plan) > max_escapes:
++        return body
++    regs = sorted(used)
++    wr = sorted(written)
++    flush = " ".join(f"ctx->gpr[{n}] = r_{n};" for n in wr)
++    reload = " ".join(f"r_{n} = ctx->gpr[{n}];" for n in regs)
++    out = [indent + " ".join(f"u128 r_{n} = ctx->gpr[{n}];" for n in regs)]
++    for kind, t in plan:
++        if kind == "label":
++            out.append(t)
++        elif kind == "pure":
++            out.append(indent + _local(t))
++        elif kind == "ifleave":
++            cond, block = t
++            inner = block.strip()[1:-1].strip()
++            out.append(f"{indent}if ({_local(cond)}) {{ {flush} {inner} }}")
++        else:
++            if flush:
++                out.append(indent + flush)
++            out.append(indent + t)
++            out.append(indent + reload)
++    return out
++
++
++def localize_source(text: str) -> str:
++    """Apply localize_body to every lifted function of a generated spu_recomp.c."""
++    lines = text.split("\n")
++    out = []
++    i = 0
++    while i < len(lines):
++        line = lines[i]
++        if _SIG.match(line):
++            j = i + 1
++            while j < len(lines) and lines[j] != "}":
++                j += 1
++            body = lines[i + 1:j]
++            ind = "    "
++            for b in body:
++                if b.strip() and not b.strip().endswith(":"):
++                    ind = b[:len(b) - len(b.lstrip())]
++                    break
++            out.append(line)
++            out.extend(localize_body(body, ind))
++            out.append("}")
++            i = j + 1
++            continue
++        out.append(line)
++        i += 1
++    return "\n".join(out)
++
++
++def main() -> None:
++    if len(sys.argv) != 3:
++        sys.exit("uso: spu_reg_locals.py <entrada.c> <saida.c>")
++    with open(sys.argv[1], encoding="utf-8") as f:
++        text = f.read()
++    with open(sys.argv[2], "w", encoding="utf-8", newline="\n") as f:
++        f.write(localize_source(text))
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/tools/test_spu_reg_locals.py b/tools/test_spu_reg_locals.py
+new file mode 100644
+index 00000000..c16d1771
+--- /dev/null
++++ b/tools/test_spu_reg_locals.py
+@@ -0,0 +1,89 @@
++#!/usr/bin/env python3
++"""--reg-locals (spu_reg_locals.py) must keep the lifted program's behaviour.
++
++Unit checks of the rewrite (pure lines on locals, store-back around escapes,
++store-back inside an `if` that leaves) and the merge-chunks interrupt program
++compiled and run with the rewrite on, merged and unmerged: the pending
++interrupt must still be taken at the chunk entry and r3 reach the same value.
++
++Usage:
++    python3 tools/test_spu_reg_locals.py
++"""
++
++import sys
++import unittest
++from pathlib import Path
++
++TOOLS = Path(__file__).resolve().parent
++sys.path.insert(0, str(TOOLS))
++
++from spu_reg_locals import localize_body, localize_source  # noqa: E402
++import test_spu_lifter_merge_chunks as mc  # noqa: E402
++
++
++class Rewrite(unittest.TestCase):
++    def test_pure_lines_use_locals(self):
++        out = localize_body(["    ctx->gpr[3] = spu_ai(ctx->gpr[4], 1);",
++                             "    spu_ls_write128(ctx, ctx->gpr[1]._u32[0] + 0x10, ctx->gpr[3]);"])
++        self.assertIn("u128 r_1 = ctx->gpr[1]; u128 r_3 = ctx->gpr[3]; u128 r_4 = ctx->gpr[4];",
++                      out[0])
++        self.assertEqual(out[1].strip(), "r_3 = spu_ai(r_4, 1);")
++        self.assertEqual(out[2].strip(), "spu_ls_write128(ctx, r_1._u32[0] + 0x10, r_3);")
++
++    def test_escape_stores_back_and_reloads(self):
++        out = localize_body(["    ctx->gpr[3] = spu_ai(ctx->gpr[3], 1);",
++                             "    spu_wrch(ctx, 28, ctx->gpr[3]);",
++                             "    ctx->gpr[4] = spu_ori(ctx->gpr[3], 0);"])
++        self.assertEqual([l.strip() for l in out[2:5]],
++                         ["ctx->gpr[3] = r_3; ctx->gpr[4] = r_4;",
++                          "spu_wrch(ctx, 28, ctx->gpr[3]);",
++                          "r_3 = ctx->gpr[3]; r_4 = ctx->gpr[4];"])
++
++    def test_leaving_if_stores_back_inside(self):
++        out = localize_body(["    ctx->gpr[5] = spu_il(1);",
++                             "    if (ctx->gpr[5]._u32[0] != 0) { SPU_DIRECT(ctx, 0x40, f); }"])
++        self.assertEqual(out[2].strip(),
++                         "if (r_5._u32[0] != 0) { ctx->gpr[5] = r_5; SPU_DIRECT(ctx, 0x40, f); }")
++
++    def test_ctx_condition_with_return_block(self):
++        line = ("    if (ctx->int_enable && (ctx->event_status & ctx->event_mask)) "
++                "{ ctx->pc = 0x4; g_spu_trampoline_fn = f; return; }")
++        out = localize_body(["    ctx->gpr[3] = spu_il(0);", "loc_4:", line])
++        self.assertEqual(out[2], "loc_4:")
++        self.assertTrue(out[3].strip().startswith(
++            "if (ctx->int_enable && (ctx->event_status & ctx->event_mask)) { ctx->gpr[3] = r_3;"))
++
++    def test_many_escapes_left_unchanged(self):
++        body = ["    ctx->gpr[3] = spu_ai(ctx->gpr[3], 1);",
++                "    spu_wrch(ctx, 28, ctx->gpr[3]);"] * 9
++        self.assertEqual(localize_body(body), body)
++        self.assertNotEqual(localize_body(body, max_escapes=0), body)
++
++    def test_function_without_registers_is_unchanged(self):
++        src = "void f(spu_context* ctx) {\n    ctx->pc = 0x10u; return;\n}\n"
++        self.assertEqual(localize_source(src), src)
++
++
++class Behaviour(mc.MergeChunkInterrupts):
++    """The merge-chunks programs again, lifted with --reg-locals."""
++
++    def run_program(self, merge):
++        orig = mc.lift
++
++        def lift_rl(m):
++            lifter = orig(m)
++            lifter.reg_locals = True
++            return lifter
++        mc.lift = lift_rl
++        try:
++            return super().run_program(merge)
++        finally:
++            mc.lift = orig
++
++    # the body checks look at the raw lifter output, which --reg-locals does not change
++    test_merged_entry_checks_for_pending_interrupt = None
++    test_unmerged_output_has_no_entry_check = None
++
++
++if __name__ == '__main__':
++    unittest.main()
