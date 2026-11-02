@@ -325,9 +325,25 @@ fase estiver mais rápida.
 - Execuções às vezes entram, depois de ~280 s, num estado a ~115-140 q/s (outro estado do jogo, sem ninguém
   jogando); o `fps_fase2.py` da pasta de trabalho descarta trechos acima de 40 q/s.
 
-**Próxima ação exata:** descobrir o que as listas EDGE esperam (hipótese: o anel de saída do EDGE espera o RSX
-consumir comandos, e o RSX só olha a FIFO a cada `Sleep(4)`; testar `GCM_DRAIN_MS=0/1`, nova opção do
-`templates/project/main.cpp`). Depois, reduzir o custo do runtime SPU nos saltos (`spu_indirect_branch`/`spu_lifted_lookup`:
+- **A cadeia do quadro, medida (02/11, fim da manhã):**
+  - `GCM_DRAIN_MS=1` (o `gow3_build.py` agora liga): a thread de apresentação olha a FIFO a cada 1 ms em vez de
+    4 ms. Fase ~6,1 -> **~7,2 q/s** (A/B de três execuções). Versão `gow3-fase-v3` (tag e `Projetos\versoes`).
+  - `GCM_DRAIN_STATS=10`: o andador do RSX está **sempre estacionado** num auto-JUMP, o buraco que o Edge
+    reserva na FIFO e um job SPU preenche. Com `PS3_FTRACE` cada buraco vira um trecho "acquire wait" (a=get).
+    Com `GCM_DRAIN_MS=0` um buraco dura ~86 us (mediana) e em 65% desse tempo uma lista EDGE está rodando.
+  - O quadro é, portanto, (jobs EDGE por quadro) x (custo de cada rodada do policy module Wws). As listas EDGE
+    do quadro N só começam depois que o RSX alcança o flip do quadro N-1 (ver o desenho por workload em
+    `GOW3_trabalho\scratch\ft_wid.py <trace> <início ms> <duração ms> <ms por coluna>`).
+  - Quem marca e libera o slot do quadro: `SPU_ATOMIC_WATCH=649EC8` (RenderJobs põe 1, EDGEn zera).
+  - O que o EDGE lê sem parar: `SPU_GET_HIST=<wid>` (GETLLAR na própria lista e em 0x72FC2280, que uma SPU
+    reescreve por atômica a cada ~0,3 ms: `GOW3_WATCH_EA` agora registra só a linha de 128 bytes, com o RIP).
+  - Não ajudaram (medidos): `SPURS_PASS_US` (100 us: 5,5 q/s; 250: 3,7), `SPURS_IDLE_BACKOFF` 6/8 (igual),
+    `GCM_SEMA_SPIN` (igual), `LD_FLUSH_STATS` mostra os flushes da GPU em ~4% do tempo.
+
+**Próxima ação exata:** baixar o custo de cada rodada do policy module Wws nas listas EDGE (~60 us; uma
+rodada vazia custa ~45 us): perfilar a thread SPU que roda as EDGE (`GOW3_PROF` mostra o nome "spurs pm") e
+atacar o fixo por rodada (entrada do policy module, `spu_indirect_branch`/`spu_lifted_lookup`,
+`spu_coh_notify_write` nos PUTLLC, `spu_step` do interpretador se aparecer). Depois, reduzir o custo do runtime SPU nos saltos (`spu_indirect_branch`/`spu_lifted_lookup`:
 cache direto por pc no próprio local de chamada) e do `spu_coh_notify_write`; depois medir a fase de novo
 (`GOW3_PROF=250,70`, `SPURS_PM_STATS=10`) e comparar com ~6,3 quadros/s.
 

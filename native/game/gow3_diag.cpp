@@ -350,6 +350,7 @@ static uint8_t* s_watch_page;
 static uint32_t s_watch_ea;
 /* RIP da escrita que caiu na armadilha, por thread, até o passo único seguinte. */
 static __declspec(thread) uint64_t g_gow3_watch_rip;
+static __declspec(thread) uint8_t* g_gow3_watch_addr;   /* o byte do PS3 que a escrita tocou */
 
 static LONG WINAPI watch_veh(EXCEPTION_POINTERS* ep)
 {
@@ -360,6 +361,7 @@ static LONG WINAPI watch_veh(EXCEPTION_POINTERS* ep)
             DWORD old;
             VirtualProtect(s_watch_page, 0x1000, PAGE_READWRITE, &old);
             g_gow3_watch_rip = ep->ContextRecord->Rip;
+            g_gow3_watch_addr = a;
             ep->ContextRecord->EFlags |= 0x100;   /* passo único: a escrita roda, e o próximo trap loga */
             return EXCEPTION_CONTINUE_EXECUTION;
         }
@@ -368,13 +370,18 @@ static LONG WINAPI watch_veh(EXCEPTION_POINTERS* ep)
         if (g_gow3_watch_rip) {
             uint64_t rip = g_gow3_watch_rip;
             g_gow3_watch_rip = 0;
-            const uint8_t* p = vm_base + s_watch_ea;
+            /* Só as escritas na linha de 128 bytes de <ea>: a página inteira costuma ter outros dados quentes. */
+            const uint32_t ea_w = (uint32_t)(g_gow3_watch_addr - vm_base);
+            const uint32_t at = ea_w & ~3u;
+            const uint8_t* p = vm_base + at;
             uint32_t v = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
             static volatile LONG logged;
-            if (InterlockedIncrement(&logged) <= 200) {
-                char line[160];
-                int n = snprintf(line, sizeof line, "[GOW3-WATCH] escrita na página: rip EXE+0x%llX  [0x%08X]=0x%08X\n",
-                                 (unsigned long long)(rip - (uint64_t)GetModuleHandleA(NULL)), s_watch_ea, v);
+            if ((ea_w & ~127u) == (s_watch_ea & ~127u) && InterlockedIncrement(&logged) <= 3000) {
+                char line[200];
+                LARGE_INTEGER q, f; QueryPerformanceCounter(&q); QueryPerformanceFrequency(&f);
+                int n = snprintf(line, sizeof line, "[GOW3-WATCH] t=%.3fms rip EXE+0x%llX tid=%lu [0x%08X]=0x%08X\n",
+                                 (double)q.QuadPart * 1000.0 / (double)f.QuadPart,
+                                 (unsigned long long)(rip - (uint64_t)GetModuleHandleA(NULL)), GetCurrentThreadId(), at, v);
                 DWORD w;
                 WriteFile(GetStdHandle(STD_ERROR_HANDLE), line, (DWORD)n, &w, NULL);
             }
