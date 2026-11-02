@@ -1859,7 +1859,7 @@ index 195c75e3..95b4c5b8 100644
          u128 x = spu_shufb(a, b, c), y = spu_shufb_ref(a, b, c);
          if (memcmp(&x, &y, 16)) {
 diff --git a/templates/project/main.cpp b/templates/project/main.cpp
-index f1f3243b..8b3eb53c 100644
+index f1f3243b..a020f6c9 100644
 --- a/templates/project/main.cpp
 +++ b/templates/project/main.cpp
 @@ -110,6 +110,7 @@ void     cellGcmTickVBlank(void);
@@ -1892,6 +1892,21 @@ index f1f3243b..8b3eb53c 100644
          ULONGLONG now = GetTickCount64();
  
          int fired = 0;
+@@ -238,7 +251,13 @@ static DWORD WINAPI frame_clock(LPVOID)
+             }
+             cellGcm_rsx_process_fifo();
+ 
+-            if (rsx_backend_pump() != 0) {
++            /* The window's messages at most every 2 ms: with GCM_DRAIN_MS=0 this loop spins, and a
++             * PeekMessage per turn kept the thread in win32u most of the time, between drains. */
++            static ULONGLONG last_pump = 0;
++            const ULONGLONG pump_now = GetTickCount64();
++            const int pump_due = drain_ms != 0 || pump_now - last_pump >= 2;
++            if (pump_due) last_pump = pump_now;
++            if (pump_due && rsx_backend_pump() != 0) {
+                 rsx_ok = 0;              /* window closed */
+                 /* ...so quit, as the console's Quit Game does, instead of
+                  * leaving the game running with no window. */
 diff --git a/tools/build_spu_workloads.py b/tools/build_spu_workloads.py
 index 2eef378b..5b7d4c00 100644
 --- a/tools/build_spu_workloads.py
