@@ -1617,10 +1617,10 @@ index 8c4ccaa8..ad9cdc25 100644
       * List commands (GETL/PUTL...): per CBEA the LIST's local-store address is
       * carried in MFC_EAL (the PM writes EAL=list, LSA=dest) and each element
 diff --git a/runtime/spu/spu_helpers.h b/runtime/spu/spu_helpers.h
-index f04fda63..862e4309 100644
+index f04fda63..4d069799 100644
 --- a/runtime/spu/spu_helpers.h
 +++ b/runtime/spu/spu_helpers.h
-@@ -467,10 +467,11 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) { return spu_selb_ref(a, b,
+@@ -467,18 +467,22 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) { return spu_selb_ref(a, b,
   * as the byte loop). SPU byte P lives at host byte SPU_W(P), i.e. the bytes
   * of each 32-bit word reversed, so swap into SPU order, select, swap back. */
  static inline u128 spu_shufb(u128 a, u128 b, u128 c) {
@@ -1634,17 +1634,25 @@ index f04fda63..862e4309 100644
 +    const __m128i idx = _mm_xor_si128(_mm_and_si128(C, _mm_set1_epi8(0x0F)), _mm_set1_epi8(3));
      const __m128i fromb = _mm_cmpeq_epi8(_mm_and_si128(C, _mm_set1_epi8(0x10)), _mm_set1_epi8(0x10));
      __m128i r = _mm_blendv_epi8(_mm_shuffle_epi8(A, idx), _mm_shuffle_epi8(B, idx), fromb);
-     /* Special selectors: 10x -> 0x00, 110 -> 0xFF, 111 -> 0x80. */
-@@ -478,7 +479,7 @@ static inline u128 spu_shufb(u128 a, u128 b, u128 c) {
-     const __m128i mC0 = _mm_cmpeq_epi8(_mm_and_si128(C, _mm_set1_epi8((char)0xC0)), _mm_set1_epi8((char)0xC0));
-     const __m128i mE0 = _mm_cmpeq_epi8(_mm_and_si128(C, _mm_set1_epi8((char)0xE0)), _mm_set1_epi8((char)0xE0));
-     const __m128i special = _mm_blendv_epi8(mC0, _mm_set1_epi8((char)0x80), mE0);
+-    /* Special selectors: 10x -> 0x00, 110 -> 0xFF, 111 -> 0x80. */
+-    const __m128i m80 = _mm_cmpeq_epi8(_mm_and_si128(C, _mm_set1_epi8((char)0x80)), _mm_set1_epi8((char)0x80));
+-    const __m128i mC0 = _mm_cmpeq_epi8(_mm_and_si128(C, _mm_set1_epi8((char)0xC0)), _mm_set1_epi8((char)0xC0));
+-    const __m128i mE0 = _mm_cmpeq_epi8(_mm_and_si128(C, _mm_set1_epi8((char)0xE0)), _mm_set1_epi8((char)0xE0));
+-    const __m128i special = _mm_blendv_epi8(mC0, _mm_set1_epi8((char)0x80), mE0);
 -    r = _mm_shuffle_epi8(_mm_blendv_epi8(r, special, m80), sw);
-+    r = _mm_blendv_epi8(r, special, m80);
++    /* Special selectors: 10x -> 0x00, 110 -> 0xFF, 111 -> 0x80. Most controls have none (no byte
++     * with bit 7 set), and one pmovmskb skips the eight instructions that handle them. */
++    if (__builtin_expect(_mm_movemask_epi8(C) != 0, 0)) {
++        const __m128i m80 = _mm_cmpeq_epi8(_mm_and_si128(C, _mm_set1_epi8((char)0x80)), _mm_set1_epi8((char)0x80));
++        const __m128i mC0 = _mm_cmpeq_epi8(_mm_and_si128(C, _mm_set1_epi8((char)0xC0)), _mm_set1_epi8((char)0xC0));
++        const __m128i mE0 = _mm_cmpeq_epi8(_mm_and_si128(C, _mm_set1_epi8((char)0xE0)), _mm_set1_epi8((char)0xE0));
++        const __m128i special = _mm_blendv_epi8(mC0, _mm_set1_epi8((char)0x80), mE0);
++        r = _mm_blendv_epi8(r, special, m80);
++    }
      u128 out; memcpy(&out, &r, 16); return out;
  }
  #elif defined(__ARM_NEON)
-@@ -787,7 +788,62 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
+@@ -787,7 +791,62 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
  SPU__SF_V3(spu__fma_s,  spu__fma_any(x, y, z, 0, 0))
  SPU__SF_V3(spu__fms_s,  spu__fma_any(x, y, z, 0, 0x80000000u))
  SPU__SF_V3(spu__fnms_s, spu__fma_any(x, y, z, 0x80000000u, 0))
@@ -1815,6 +1823,18 @@ index 3ce8d0d6..e0ce995c 100644
      return 0;
  }
  
+diff --git a/runtime/spu/tests/test_spu_shufb.c b/runtime/spu/tests/test_spu_shufb.c
+index 195c75e3..95b4c5b8 100644
+--- a/runtime/spu/tests/test_spu_shufb.c
++++ b/runtime/spu/tests/test_spu_shufb.c
+@@ -18,6 +18,7 @@ int main(void)
+         for (int i = 0; i < 16; i++) {
+             a._u8[i] = (uint8_t)rand(); b._u8[i] = (uint8_t)rand();
+             c._u8[i] = (uint8_t)rand();          /* covers all 256 selector values */
++            if (it & 1) c._u8[i] &= 0x7F;        /* and controls with no special selector at all */
+         }
+         u128 x = spu_shufb(a, b, c), y = spu_shufb_ref(a, b, c);
+         if (memcmp(&x, &y, 16)) {
 diff --git a/templates/project/main.cpp b/templates/project/main.cpp
 index f1f3243b..8b3eb53c 100644
 --- a/templates/project/main.cpp
