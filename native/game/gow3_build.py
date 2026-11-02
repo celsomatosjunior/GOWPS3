@@ -340,7 +340,7 @@ def spu_simd(args, cm: Path):
     sse41 deixa só o pshufb, para CPUs sem AVX2. -ffp-contract=off fica explícito."""
     # -w: no clang-cl o -Wall do modelo vale -Weverything, e a análise dos avisos nas funções longas com gotos e
     # registradores locais levava minutos por módulo de job.
-    opts = "-O2;-ffp-contract=off;-w;" + ("-mavx2;-mfma" if args.spu_simd == "avx2" else "-msse4.1")
+    opts = (args.spu_opt or "-O2") + ";-ffp-contract=off;-w;" + ("-mavx2;-mfma" if args.spu_simd == "avx2" else "-msse4.1")
     # --spu-float aprox: fa/fm/fma do SPU como as operações do host (SPU_FLOAT_APPROX do spu_helpers.h, como o
     # "approximate xfloat" padrão do RPCS3); exato = a emulação bit a bit (truncamento, faixa estendida).
     defs = "SPU_USE_DISPATCH_MT" + (";SPU_FLOAT_APPROX" if args.spu_float == "aprox" else "")
@@ -555,6 +555,8 @@ def main() -> int:
                                      "o cellVdec decodifica os vídeos do jogo")
     ap.add_argument("--spu-reg-locais", action=argparse.BooleanOptionalAction, default=True,
                     help="registradores SPU dos módulos de job em variáveis locais de cada função (padrão: ligado)")
+    ap.add_argument("--spu-opt", default="",
+                    help="opções de otimização das fontes SPU no lugar de -O2, separadas por ; (ex.: -O3;-march=znver3)")
     ap.add_argument("--spu-float", choices=["aprox", "exato"], default="aprox",
                     help="ponto flutuante do SPU: aprox = operações do host (como o RPCS3); exato = bit a bit")
     ap.add_argument("--spu-simd", choices=["avx2", "sse41"], default="avx2",

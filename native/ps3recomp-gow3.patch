@@ -1537,7 +1537,7 @@ index 8c4ccaa8..ad9cdc25 100644
       * List commands (GETL/PUTL...): per CBEA the LIST's local-store address is
       * carried in MFC_EAL (the PM writes EAL=list, LSA=dest) and each element
 diff --git a/runtime/spu/spu_helpers.h b/runtime/spu/spu_helpers.h
-index f04fda63..3618c7a4 100644
+index f04fda63..862e4309 100644
 --- a/runtime/spu/spu_helpers.h
 +++ b/runtime/spu/spu_helpers.h
 @@ -467,10 +467,11 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) { return spu_selb_ref(a, b,
@@ -1564,7 +1564,7 @@ index f04fda63..3618c7a4 100644
      u128 out; memcpy(&out, &r, 16); return out;
  }
  #elif defined(__ARM_NEON)
-@@ -787,7 +788,34 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
+@@ -787,7 +788,62 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
  SPU__SF_V3(spu__fma_s,  spu__fma_any(x, y, z, 0, 0))
  SPU__SF_V3(spu__fms_s,  spu__fma_any(x, y, z, 0, 0x80000000u))
  SPU__SF_V3(spu__fnms_s, spu__fma_any(x, y, z, 0x80000000u, 0))
@@ -1590,12 +1590,40 @@ index f04fda63..3618c7a4 100644
 +}
 +SPU__AX_INLINE __m128 spu__ax_ld(u128 a) { return spu__ax_sat(_mm_loadu_si128((const __m128i*)a._u32)); }
 +SPU__AX_INLINE u128 spu__ax_st(__m128 v) { u128 r; _mm_storeu_ps(r._f32, spu__ax_sat(_mm_castps_si128(v))); return r; }
-+SPU__AX_INLINE u128 spu_fa(u128 a, u128 b) { return spu__ax_st(_mm_add_ps(spu__ax_ld(a), spu__ax_ld(b))); }
-+SPU__AX_INLINE u128 spu_fs(u128 a, u128 b) { return spu__ax_st(_mm_sub_ps(spu__ax_ld(a), spu__ax_ld(b))); }
-+SPU__AX_INLINE u128 spu_fm(u128 a, u128 b) { return spu__ax_st(_mm_mul_ps(spu__ax_ld(a), spu__ax_ld(b))); }
-+SPU__AX_INLINE u128 spu_fma(u128 a, u128 b, u128 c)  { return spu__ax_st(_mm_fmadd_ps(spu__ax_ld(a), spu__ax_ld(b), spu__ax_ld(c))); }   /* a*b + c */
-+SPU__AX_INLINE u128 spu_fms(u128 a, u128 b, u128 c)  { return spu__ax_st(_mm_fmsub_ps(spu__ax_ld(a), spu__ax_ld(b), spu__ax_ld(c))); }   /* a*b - c */
-+SPU__AX_INLINE u128 spu_fnms(u128 a, u128 b, u128 c) { return spu__ax_st(_mm_fnmadd_ps(spu__ax_ld(a), spu__ax_ld(b), spu__ax_ld(c))); }  /* c - a*b */
++/* Fast path: the op on the raw operands. An operand with biased exponent 255 can only come out
++ * as Inf/NaN in some lane (Inf*0 included), so one test of the result sends exactly those calls to
++ * the saturating path; an ordinary result only needs zeros and denormals made +0. About 8
++ * instructions per op instead of 17-23. */
++SPU__AX_INLINE __m128 spu__ax_raw(u128 a) { return _mm_loadu_ps(a._f32); }
++SPU__AX_INLINE int spu__ax_bad(__m128 r) {
++    const __m128i e = _mm_and_si128(_mm_castps_si128(r), _mm_set1_epi32(0x7F800000));
++    return _mm_movemask_ps(_mm_castsi128_ps(_mm_cmpeq_epi32(e, _mm_set1_epi32(0x7F800000)))) != 0;
++}
++SPU__AX_INLINE u128 spu__ax_fin(__m128 r) {
++    const __m128i x = _mm_castps_si128(r);
++    const __m128i keep = _mm_cmpgt_epi32(_mm_andnot_si128(_mm_set1_epi32((int)0x80000000u), x), _mm_set1_epi32(0x007FFFFF));
++    u128 o; _mm_storeu_si128((__m128i*)o._u32, _mm_and_si128(x, keep)); return o;
++}
++#define SPU__AX_OP2(name, op) \
++    static __attribute__((noinline, cold)) u128 name##_sat(u128 a, u128 b) { \
++        return spu__ax_st(op(spu__ax_ld(a), spu__ax_ld(b))); } \
++    SPU__AX_INLINE u128 name(u128 a, u128 b) { \
++        const __m128 r = op(spu__ax_raw(a), spu__ax_raw(b)); \
++        return __builtin_expect(spu__ax_bad(r), 0) ? name##_sat(a, b) : spu__ax_fin(r); }
++#define SPU__AX_OP3(name, op) \
++    static __attribute__((noinline, cold)) u128 name##_sat(u128 a, u128 b, u128 c) { \
++        return spu__ax_st(op(spu__ax_ld(a), spu__ax_ld(b), spu__ax_ld(c))); } \
++    SPU__AX_INLINE u128 name(u128 a, u128 b, u128 c) { \
++        const __m128 r = op(spu__ax_raw(a), spu__ax_raw(b), spu__ax_raw(c)); \
++        return __builtin_expect(spu__ax_bad(r), 0) ? name##_sat(a, b, c) : spu__ax_fin(r); }
++SPU__AX_OP2(spu_fa, _mm_add_ps)
++SPU__AX_OP2(spu_fs, _mm_sub_ps)
++SPU__AX_OP2(spu_fm, _mm_mul_ps)
++SPU__AX_OP3(spu_fma,  _mm_fmadd_ps)    /* a*b + c */
++SPU__AX_OP3(spu_fms,  _mm_fmsub_ps)    /* a*b - c */
++SPU__AX_OP3(spu_fnms, _mm_fnmadd_ps)   /* c - a*b */
++#undef SPU__AX_OP2
++#undef SPU__AX_OP3
 +#elif defined(__ARM_NEON) && !defined(SPU_SCALAR_HELPERS)
  /* Four lanes at a time, every lane exact, with no FPCR change. The host rounds to nearest (the
   * thread's default FPCR: RN, no flush-to-zero -- writing FPCR per op serializes, ~17 ns on an
