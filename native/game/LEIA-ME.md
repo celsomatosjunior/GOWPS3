@@ -354,6 +354,15 @@ fase estiver mais rápida.
   - Cada buraco do Edge: ~65% do tempo o job EDGE roda na SPU, ~35% o RSX processa os comandos até o próximo
     buraco (no RSX: `texture_content_hash`, decodificação de vértices na CPU `rsx_vertex_*`, `sink_end_impl`).
 
+  - A thread de apresentação passava 64% em `win32u` (PeekMessage a cada volta do giro); agora as mensagens da
+    janela saem no máximo a cada ~16 ms. Com isso a thread do RSX fica ~70% só cedendo a CPU, esperando os
+    buracos do Edge: o caminho crítico é a SPU das listas EDGE (~73% ocupada; 57% no código dos jobs, ~7% no
+    despacho indireto `spu_indirect_branch`/`spu_lifted_lookup`). Fase: **~8,8-9,2 q/s** (antes de hoje: ~4,6).
+  - No laço da 0x10E20 (~990 instruções x86 por ~120 SPU) sobram: derramamento de registradores (~20%),
+    testes de Inf/NaN do float aproximado (~6%), inversão de bytes da LS (~4%).
+  - O estado de 115-140 q/s que algumas execuções alcançam depois de ~280 s deve ser a tela de morte: sem
+    ninguém jogando, o Kratos apanha cercado e com pouca vida (quadros de `LD_FRAME_DUMP` no fim da fase).
+
 **Próxima ação exata:** os dois lados do pingue-pongue Edge/RSX: (1) código dos jobs EDGE (o laço da 0x10E20
 ainda tem ~990 instruções x86 para ~120 SPU: derramamentos de registradores, testes de Inf/NaN) e o fixo de
 cada rodada do policy module Wws; (2) a CPU do live draw por desenho (decodificação de vértices,
