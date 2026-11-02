@@ -289,10 +289,34 @@ O passo `rodar` liga `SPU_MFC_LOOKUP_CACHE=1` (tirou o `mfc_for` do perfil, sem 
 de SPU pede mudar o tradutor para manter os registradores SPU em variáveis locais em vez de `ctx->gpr` na
 memória (trabalho maior).
 
-**Próxima ação exata:** o Celso testa o controle à noite (rodar `Projetos\versoes\gow3-fase-v1\rodar_fase.ps1`,
-esperar o fim do `PAD_SCRIPT`, uns 220 s, e jogar com um controle XInput). Conforme o resultado: se o Kratos não
-responder, investigar a leitura do controle na fase (cellPadGetData/GetInfo2 no log); se responder, seguir com o
-desempenho (registradores SPU em variáveis locais no tradutor).
+**Controle (31/10):** o Celso testou; a ~5 quadros/s não dá para jogar. O teste do controle fica para quando a
+fase estiver mais rápida.
+
+**02/11 (trabalho autônomo; commits só locais desde 01/11, à espera do envio de terça):**
+- Registradores SPU em variáveis locais: `ps3recomp/tools/spu_reg_locals.py` (`spu_lifter.py --reg-locals` e
+  `lift_jobmods.py --reg-locals`, desligado por padrão no ps3recomp, com `tools/test_spu_reg_locals.py`). O
+  `gow3_build.py` aplica a reescrita às cópias dos módulos de job no projeto (`--spu-reg-locais`, padrão ligado). Só
+  entram funções de até 600 linhas e 8 escapes. Ganho pequeno sozinho (a 0x10E20 passou de 7,8% para 6,6% das amostras).
+- Armadilha: no clang-cl o `-Wall` do modelo vale `-Weverything`, e a análise dos avisos levava mais de 30 min
+  por módulo. As fontes SPU agora compilam com `-w`; o build todo leva ~3 min.
+- **Ponto flutuante aproximado** (`--spu-float aprox`, padrão; `SPU_FLOAT_APPROX` no `spu_helpers.h`): fa/fs/fm/fma/
+  fms/fnms viram operações nativas do host, como o "approximate xfloat" padrão do RPCS3. Valores com expoente 255
+  (máscaras 0xFFFFFFFF, faixa estendida) saturam em ±FLT_MAX, e zeros/denormais viram +0. Sem a saturação a tela
+  da fase ficava amarela (NaN). Fase: média de **~4,6 para ~6,1-6,4 quadros/s** (picos de 15-18), imagem correta,
+  sem "identical transfers", `decodefail=0`. Versão preservada: tag `gow3-fase-v2` e `Projetos\versoes\gow3-fase-v2`.
+  `--spu-float exato` volta à emulação bit a bit.
+- SPURS: a escolha do workload segue o peso do kernel (prioridade por SPU, `SPURS_PRIO_SELECT=0` desliga);
+  `SPURS_PM_STATS=<s>` imprime por workload o tempo, as rodadas e as SPUs; `SPURS_IDLE_BACKOFF=0` piora (5,25 q/s).
+  Retrato da fase: em 10 s os workloads Wws somam ~22 s de SPU (wids 8, 9 e 10 ~2,8 s cada nas SPUs 0-2; o wid 6
+  ~4 s numa instância SPURS de uma SPU só; os wids 3 e 4 ~3 s). Não há SPU livre fácil de aproveitar: o ganho
+  está no código traduzido.
+- Perfil (`GOW3_PROF` agora imprime até 4000 posições por thread): a SPU mais ocupada passa ~49% no jobmod_14561,
+  ~18% no runtime (`spu_lifted_lookup`, `spu_indirect_branch`, `spu_coh_notify_write`, `spu_drain_call`). A thread
+  principal do PPU e a do RSX ficam ~20% ocupadas.
+
+**Próxima ação exata:** reduzir o custo do runtime SPU nos saltos (`spu_indirect_branch`/`spu_lifted_lookup`:
+cache direto por pc no próprio local de chamada) e do `spu_coh_notify_write`; depois medir a fase de novo
+(`GOW3_PROF=250,70`, `SPURS_PM_STATS=10`) e comparar com ~6,3 quadros/s.
 
 ## LLE seletivo da libsre (LFQueue)
 
