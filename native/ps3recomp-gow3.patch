@@ -785,7 +785,7 @@ index bc05a308..815cb35b 100644
              u32 wslot = DRAW_SRV_BASE + _d * 4 + (u32)_u;
              dr->tex_rt[_u] = -1;
 diff --git a/libs/video/rsx_live_draw.c b/libs/video/rsx_live_draw.c
-index 25791179..5b57e302 100644
+index 25791179..b12dc0a6 100644
 --- a/libs/video/rsx_live_draw.c
 +++ b/libs/video/rsx_live_draw.c
 @@ -22,7 +22,7 @@
@@ -902,7 +902,30 @@ index 25791179..5b57e302 100644
      if (!t->width || !t->height || t->width > 4096 || t->height > 4096 ||
          t->dimension != 2)
          return 0;
-@@ -2141,11 +2186,99 @@ static u64 texture_content_hash(const rsx_dsp_texture* t, int* readable)
+@@ -2127,6 +2172,22 @@ static u64 texture_content_hash(const rsx_dsp_texture* t, int* readable)
+      * deliberately cheap; this is a mutation detector, not a content ID. */
+     u64 hash = 1469598103934665603ull;
+     u32 i = 0;
++    /* Four independent FNV lanes over 32-byte blocks, folded into one: the single chain waited a
++     * multiply per word (~2 GB/s), and with a texture hashed every frame this was the walker's
++     * hottest function in God of War III's first level. */
++    {
++        u64 h0 = hash, h1 = hash ^ 0x9E3779B97F4A7C15ull, h2 = hash ^ 0xC2B2AE3D27D4EB4Full,
++            h3 = hash ^ 0x165667B19E3779F9ull;
++        for (; i + 32 <= span; i += 32) {
++            u64 w[4];
++            memcpy(w, src + i, sizeof(w));
++            h0 = (h0 ^ w[0]) * 1099511628211ull;
++            h1 = (h1 ^ w[1]) * 1099511628211ull;
++            h2 = (h2 ^ w[2]) * 1099511628211ull;
++            h3 = (h3 ^ w[3]) * 1099511628211ull;
++        }
++        hash = ((((h0 * 1099511628211ull) ^ h1) * 1099511628211ull ^ h2) * 1099511628211ull) ^ h3;
++    }
+     for (; i + 8 <= span; i += 8) {
+         u64 word;
+         memcpy(&word, src + i, sizeof(word));
+@@ -2141,11 +2202,99 @@ static u64 texture_content_hash(const rsx_dsp_texture* t, int* readable)
      return hash;
  }
  
@@ -1002,7 +1025,7 @@ index 25791179..5b57e302 100644
      if (!w || !h || w > 4096 || h > 4096 || t->dimension != 2)
          return NULL;
      u32 n_mips = t->mipmaps ? t->mipmaps : 1;
-@@ -2226,6 +2359,7 @@ static ID3D12Resource* decode_guest_texture(const rsx_dsp_texture* t, u32 remap)
+@@ -2226,6 +2375,7 @@ static ID3D12Resource* decode_guest_texture(const rsx_dsp_texture* t, u32 remap)
      case TEX_FMT_R5G6B5:
      case TEX_FMT_G8B8: texel_size = 2; break;
      case TEX_FMT_A8R8G8B8:
@@ -1010,7 +1033,7 @@ index 25791179..5b57e302 100644
      case TEX_FMT_DEPTH24_D8: texel_size = 4; break;
      case RSX_TEX_FMT_W16Z16Y16X16_FLOAT: texel_size = 8; break;
      default: return NULL;
-@@ -2410,6 +2544,17 @@ static void write_texture_srv(u32 index, const texcache_t* entry)
+@@ -2410,6 +2560,17 @@ static void write_texture_srv(u32 index, const texcache_t* entry)
      const int compressed = base_fmt == TEX_FMT_DXT1 ||
                             base_fmt == TEX_FMT_DXT23 ||
                             base_fmt == TEX_FMT_DXT45;
@@ -1028,7 +1051,7 @@ index 25791179..5b57e302 100644
      if (entry->cubemap) {
          static const u32 sel2d3d[4] = { 3, 0, 1, 2 };
          static const u32 out2comp[4] = { 1, 2, 3, 0 };
-@@ -2475,7 +2620,8 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
+@@ -2475,7 +2636,8 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
          if (entry->location != t->location || entry->offset != t->offset ||
              entry->format != t->format || entry->width != t->width ||
              entry->height != t->height || entry->pitch != t->pitch ||
@@ -1038,7 +1061,7 @@ index 25791179..5b57e302 100644
              continue;
          if (refresh_enabled && entry->tex &&
              entry->last_hash_frame != g_ld_frames) {
-@@ -2591,6 +2737,7 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
+@@ -2591,6 +2753,7 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
      replacement.pitch = t->pitch;
      replacement.remap = remap;
      replacement.cubemap = t->cubemap;
@@ -1046,7 +1069,7 @@ index 25791179..5b57e302 100644
      replacement.last_hash_frame = g_ld_frames;
      replacement.last_use_serial = ++g_ld_texture_use_serial;
      {
-@@ -2612,10 +2759,12 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
+@@ -2612,10 +2775,12 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
              (g_ld_texture_decode_fail & (g_ld_texture_decode_fail - 1)) == 0)
              fprintf(stderr,
                      "[texture-cache] decode failed n=%llu src=%u:0x%08X "
@@ -1061,7 +1084,7 @@ index 25791179..5b57e302 100644
      }
      return replacement.tex ? SRV_TEXTURE_BASE + index : SRV_WHITE;
  }
-@@ -3157,10 +3306,94 @@ static int   s_csv_gate_open;
+@@ -3157,10 +3322,94 @@ static int   s_csv_gate_open;
  
  static int ld_blit_gpu(u32 src_loc, u32 src_abs, u32 src_pitch,
                         u32 dst_loc, u32 dst_abs, u32 dst_pitch, u32 w, u32 h);
@@ -1156,7 +1179,7 @@ index 25791179..5b57e302 100644
      if (s_csv_file && s_csv_gate_open) {
          fprintf(s_csv_file, "#blit,%u,%u:0x%X/%u,%u:0x%X/%u,%ux%u,gpu=%d\n", g_ld_frames,
                  src_loc, src_abs, src_pitch, dst_loc, dst_abs, dst_pitch, w, h, r);
-@@ -4708,12 +4941,14 @@ static ID3D12PipelineState* get_pso(
+@@ -4708,12 +4957,14 @@ static ID3D12PipelineState* get_pso(
      static int ctrl_auto = -1;
      if (ctrl_auto < 0) ctrl_auto = getenv("RSX_FP_CTRL_AUTO") ? 1 : 0;
      const u32 fp_ctrl = ctrl_auto ? RSX_FP_CTRL_AUTO : rsx_dsp_shader_control(&g.rsx);
@@ -1172,7 +1195,7 @@ index 25791179..5b57e302 100644
      }
      const u32 vtex_mask = vertex_texture_mask();
      const u32 txl_mask = vp_txl_unit_mask(vp_uc, vp_instrs);
-@@ -4765,6 +5000,7 @@ static ID3D12PipelineState* get_pso(
+@@ -4765,6 +5016,7 @@ static ID3D12PipelineState* get_pso(
      const u32 fp_ctrl_key = fp_ctrl & 0x4Eu;   /* 32-bit exports, depth export */
      key = fnv1a(&fp_ctrl_key, sizeof(fp_ctrl_key), key);
      key = fnv1a(&cube_mask, sizeof(cube_mask), key);
@@ -1180,7 +1203,7 @@ index 25791179..5b57e302 100644
      key = fnv1a(&vtex_mask, sizeof(vtex_mask), key);
      /* BRB/CLB outcomes are baked into the program (rsx_vp_set_branch_bits). */
      const int vp_branch_bits_used = rsx_vp_uses_branch_bits(vp_uc, vp_instrs * 16);
-@@ -4830,7 +5066,7 @@ static ID3D12PipelineState* get_pso(
+@@ -4830,7 +5082,7 @@ static ID3D12PipelineState* get_pso(
          key = fnv1a(&rs, sizeof(rs), key);
  #if defined(YZ_PERF_PROFILE)
      ld_profile_note_fp_variants(
@@ -1189,7 +1212,7 @@ index 25791179..5b57e302 100644
  #endif
      g_ld_current_pso.valid = 1;
      g_ld_current_pso.key = key;
-@@ -4895,9 +5131,13 @@ static ID3D12PipelineState* get_pso(
+@@ -4895,9 +5147,13 @@ static ID3D12PipelineState* get_pso(
      u32 decompiled_constant_count = 0;
      int fi;
      if (ld_fp_constants_buffered()) {
@@ -1206,7 +1229,7 @@ index 25791179..5b57e302 100644
          if (fi > 0 &&
              decompiled_constant_count != g.fp_constants.count)
              fi = -1;
-@@ -4907,7 +5147,7 @@ static ID3D12PipelineState* get_pso(
+@@ -4907,7 +5163,7 @@ static ID3D12PipelineState* get_pso(
              fi = -1;
          if (fi > 0) {
              const int np = rsx_fp_apply_unnorm_scale(
@@ -1215,7 +1238,7 @@ index 25791179..5b57e302 100644
              { static int n = 0;
                if (PS3_LOG_FIRST(n, 8))
                    fprintf(stderr, "[unnorm] mask=0x%X cube=0x%X dim0=%ux%u"
-@@ -6505,11 +6745,14 @@ static void live_draw_csv_emit(u32 prim, u32 n_tri, const char* outcome)
+@@ -6505,11 +6761,14 @@ static void live_draw_csv_emit(u32 prim, u32 n_tri, const char* outcome)
      /* LD_DRAW_DUMP=<dir> [LD_DRAW_DUMP_EVERY=k, default 10]: in the first
       * gated frame, read back each k-th draw's target BEFORE it is recorded,
       * named by frame-relative index -- bisects which draw changes a surface. */
@@ -1233,7 +1256,7 @@ index 25791179..5b57e302 100644
            (idx % every) == 0) {
            dumped_frame = frame;
            char path[MAX_PATH * 2];
-@@ -7423,6 +7666,25 @@ static void sink_end_impl(void* user, const rsx_dispatch* r)
+@@ -7423,6 +7682,25 @@ static void sink_end_impl(void* user, const rsx_dispatch* r)
                }
            }
        } }
@@ -1259,7 +1282,7 @@ index 25791179..5b57e302 100644
      for (u32 u = 0; u < SRV_TABLE_SIZE; u++) {
          rsx_dsp_texture t; rsx_dsp_get_texture(&g.rsx, u, &t);
          /* LD_PS1_BUF0=1 -- DIAGNOSTIC, not a fix. Force a 24-bit PS1 VRAM
-@@ -7559,7 +7821,7 @@ static void sink_end_impl(void* user, const rsx_dispatch* r)
+@@ -7559,7 +7837,7 @@ static void sink_end_impl(void* user, const rsx_dispatch* r)
                    }
                }
            } }

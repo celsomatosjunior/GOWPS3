@@ -348,9 +348,16 @@ fase estiver mais rápida.
     lqd/stqd: **mediana 8,6 q/s, média ~8,9**. Versão `gow3-fase-v4` (tag e `Projetos\versoes`);
   - `--spu-opt=-O3;-march=znver3`: sem efeito.
 
-**Próxima ação exata:** seguir no custo do código dos jobs EDGE (o laço da 0x10E20 ainda tem ~990 instruções
-x86 para ~120 SPU: derramamentos de registradores, testes de Inf/NaN, shufb) e no fixo de cada rodada do
-policy module Wws nas listas EDGE (~60 us; uma
+  - `GCM_DRAIN_MS=0` passou a ser o padrão (a thread de apresentação só cede a CPU): ~8,3 -> ~8,8 q/s.
+    Versão `gow3-fase-v5`. Neutros: LS por ponteiro local (`SPU_LSR/SPU_LSW`), `--merge-chunks` (`spu_jobs_mc`),
+    atalho do shufb sem seletores especiais, hash de texturas em quatro faixas.
+  - Cada buraco do Edge: ~65% do tempo o job EDGE roda na SPU, ~35% o RSX processa os comandos até o próximo
+    buraco (no RSX: `texture_content_hash`, decodificação de vértices na CPU `rsx_vertex_*`, `sink_end_impl`).
+
+**Próxima ação exata:** os dois lados do pingue-pongue Edge/RSX: (1) código dos jobs EDGE (o laço da 0x10E20
+ainda tem ~990 instruções x86 para ~120 SPU: derramamentos de registradores, testes de Inf/NaN) e o fixo de
+cada rodada do policy module Wws; (2) a CPU do live draw por desenho (decodificação de vértices,
+`sink_end_impl`). Medir sempre com duas execuções (`fps_fase2.py`): a variação entre execuções é de ~±5% (~60 us; uma
 rodada vazia custa ~45 us): perfilar a thread SPU que roda as EDGE (`GOW3_PROF` mostra o nome "spurs pm") e
 atacar o fixo por rodada (entrada do policy module, `spu_indirect_branch`/`spu_lifted_lookup`,
 `spu_coh_notify_write` nos PUTLLC, `spu_step` do interpretador se aparecer). Depois, reduzir o custo do runtime SPU nos saltos (`spu_indirect_branch`/`spu_lifted_lookup`:
