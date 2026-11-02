@@ -153,10 +153,18 @@ index 7e222c92..33b21296 100644
  }
  
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
-index 82ea66c6..a9609c5c 100644
+index 82ea66c6..23cac70a 100644
 --- a/libs/spurs/cellSpurs.c
 +++ b/libs/spurs/cellSpurs.c
-@@ -560,6 +560,8 @@ static s32 spurs_initialize_common(u32 spurs_ea, u32 nspus, const char* prefix)
+@@ -16,6 +16,7 @@
+ #include "spurs_taskset.h"  /* REAL BE CellSpursTaskset layout builders (fork Option-B) */
+ #include "../../runtime/ppu/ppu_memory.h"   /* vm_base (guest mem) */
+ #include "ps3emu/ps3_tprof.h"    /* PS3_TPROF: in-process samples of the SPU workers */
++#include "ps3emu/ps3_ftrace.h"   /* PS3_FTRACE: one SPU busy span per policy-module run */
+ #include <stdio.h>
+ #include <stdlib.h>   /* getenv -- an implicit decl returns int, truncating the pointer */
+ #include <string.h>
+@@ -560,6 +561,8 @@ static s32 spurs_initialize_common(u32 spurs_ea, u32 nspus, const char* prefix)
      memset(vm_base + spurs_ea, 0, SPURS_INST_SIZE);
      *(vm_base + spurs_ea + SPURS_NSPUS) = (u8)si->nspus;
      vm_write64(spurs_ea + SPURS_WKL_FLAG, 0xFFFFFFFFFFFFFFFFull); /* no receiver */
@@ -165,7 +173,7 @@ index 82ea66c6..a9609c5c 100644
  
      s32 start_rc = spurs_scheduler_start(si);
      AcquireSRWLockExclusive(&si->lock);
-@@ -874,6 +876,40 @@ static int spurs_guest_range_valid(u32 ea, u32 bytes)
+@@ -874,6 +877,40 @@ static int spurs_guest_range_valid(u32 ea, u32 bytes)
   * Taskset
   * =====================================================================*/
  
@@ -206,7 +214,7 @@ index 82ea66c6..a9609c5c 100644
  static s32 spurs_create_taskset(CellSpurs* spurs, CellSpursTaskset* taskset,
                                  u64 args, const u8* priority, u32 maxContention,
                                  u32 taskset_size)
-@@ -910,6 +946,7 @@ static s32 spurs_create_taskset(CellSpurs* spurs, CellSpursTaskset* taskset,
+@@ -910,6 +947,7 @@ static s32 spurs_create_taskset(CellSpurs* spurs, CellSpursTaskset* taskset,
      spurs_taskset_init(taskset_ea, spurs_ea, args, /*wid*/0,
                         taskset_size, /*evf1*/0, /*evf2*/0);
      g_ydkj_real_taskset_ea = taskset_ea;
@@ -214,7 +222,7 @@ index 82ea66c6..a9609c5c 100644
  
      g_ydkj_real_spurs_ea = spurs_ea;   /* capture for the taskset-policy handoff (LS[0x1C0]) */
      printf("[cellSpurs] CreateTaskset() ea=0x%08X spurs=0x%08X (real BE layout)\n", taskset_ea, spurs_ea);
-@@ -937,6 +974,84 @@ s32 cellSpursCreateTasksetWithAttribute(CellSpurs* spurs,
+@@ -937,6 +975,84 @@ s32 cellSpursCreateTasksetWithAttribute(CellSpurs* spurs,
      return spurs_create_taskset(spurs, taskset, 0, NULL, 0, size);
  }
  
@@ -299,7 +307,7 @@ index 82ea66c6..a9609c5c 100644
  s32 cellSpursDestroyTaskset(CellSpursTaskset* taskset)
  {
      taskset = GUEST_PTR(taskset, CellSpursTaskset*);
-@@ -1000,6 +1115,81 @@ s32 cellSpursTasksetAttributeSetName(CellSpursTasksetAttribute* attr,
+@@ -1000,6 +1116,81 @@ s32 cellSpursTasksetAttributeSetName(CellSpursTasksetAttribute* attr,
   * from an EA computed out of r3 = that argument (spu_0003 task main @0x17e70:
   * `wrch $ch18, f(r3.word3)`), so a zero argument makes it GET from EA 0 and
   * stall. lsPattern/argument arrive as guest EAs (generic adapter forwards r3..r10). */
@@ -381,7 +389,7 @@ index 82ea66c6..a9609c5c 100644
  s32 cellSpursCreateTask(CellSpursTaskset* taskset, CellSpursTaskId* taskId,
                          void* elf, void* context, u32 sizeContext,
                          u32 lsPattern_ea, u32 argument_ea)
-@@ -1714,6 +1904,23 @@ static WklPm* spurs_resolve_pm(u32 wid)
+@@ -1714,6 +1905,23 @@ static WklPm* spurs_resolve_pm(u32 wid)
   * occupies only its own slot; a later runnable producer can use another slot.
   * Admission and lifecycle state are serialized per instance. Guest execution
   * never runs under that lock, and only a genuine return releases contention. */
@@ -405,7 +413,7 @@ index 82ea66c6..a9609c5c 100644
  static DWORD WINAPI spurs_pm_worker(LPVOID p)
  {
      struct SpursPmSlot* slot = (struct SpursPmSlot*)p;
-@@ -1729,10 +1936,47 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
+@@ -1729,10 +1937,57 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
              SleepConditionVariableSRW(&si->wake, &si->lock, INFINITE, 0);
          if (si->stopping && !slot->busy) break;
          ReleaseSRWLockExclusive(&si->lock);
@@ -413,8 +421,18 @@ index 82ea66c6..a9609c5c 100644
 +        if (pmtr < 0) pmtr = getenv("SPURS_PM_TRACE") ? 1 : 0;
 +        unsigned long long t0 = GetTickCount64();
 +        LARGE_INTEGER q0; QueryPerformanceCounter(&q0);
++        const uint64_t ft0 = PS3_FT_ON() ? ps3_ft_now() : 0;
          spu_run_policy_module(slot->fn, slot->image_id, slot->pm, slot->pm_size,
                                slot->data, slot->wid, slot->ea, slot->spu_num);
++        /* A policy module (a Wws job manager) polls and returns instead of blocking on a
++         * channel, so the channel-wait spans never show it: one busy span per run, who =
++         * physical SPU (+8 for a second SPURS instance), b = workload id. */
++        if (ft0) {
++            const uint64_t ft1 = ps3_ft_now();
++            if (ft1 - ft0 >= ps3_ft_min_ns())
++                ps3_ft_span(PS3_FT_SPU_BUSY, slot->spu_num + (uint32_t)(si - s_inst) * 8u,
++                            (uint32_t)slot->image_id, slot->wid, ft0, ft1);
++        }
          extern SPU_THREAD_LOCAL volatile unsigned g_spurs_pm_polls;
          unsigned polls = g_spurs_pm_polls;
 +        if (pmtr) {
@@ -453,7 +471,7 @@ index 82ea66c6..a9609c5c 100644
          AcquireSRWLockExclusive(&si->lock);
          u32 wid = slot->wid;
          if (si->active[wid]) si->active[wid]--;
-@@ -1740,7 +1984,7 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
+@@ -1740,7 +1995,7 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
          vm_base[slot->ea + SPURS_WKL_CURCONT + wid] = si->active[wid];
          ef_line_end(slot->ea);
          if (polls) si->idle[wid] = 0;
@@ -462,7 +480,7 @@ index 82ea66c6..a9609c5c 100644
          slot->busy = 0;
          WakeAllConditionVariable(&si->wake);
      }
-@@ -1779,8 +2023,52 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1779,8 +2034,52 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
          if (!kick_pass) si->pass_no++;
          u32 enabled = vm_read32(ea + SPURS_WKL_ENABLED);
          for (u32 sn = 0; sn < si->nspus; sn++) {
@@ -515,7 +533,7 @@ index 82ea66c6..a9609c5c 100644
              for (u32 checked = 0; checked < 16; checked++) {
                  u32 wid = si->cursor;
                  si->cursor = (wid + 1) & 15;
-@@ -1796,7 +2084,11 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1796,7 +2095,11 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                  if (!pm) continue;
                  u32 signal = vm_read16(ea + SPURS_WKL_SIGNAL1);
                  u32 ready = vm_read8(ea + SPURS_WKL_READY1 + wid);
@@ -528,7 +546,7 @@ index 82ea66c6..a9609c5c 100644
                  if (kicked) si->idle[wid] = 0;
                  if (!kicked && (kick_pass || (si->pass_no & ((1u << si->idle[wid]) - 1))))
                      continue;
-@@ -1806,7 +2098,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1806,7 +2109,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                  if (ready) vm_base[ea + SPURS_WKL_READY1 + wid] = (u8)(ready - 1);
                  if (signal & (0x8000u >> wid))
                      ef_w16(ea + SPURS_WKL_SIGNAL1, (u16)(signal & ~(0x8000u >> wid)));
@@ -705,7 +723,7 @@ index bc05a308..815cb35b 100644
              u32 wslot = DRAW_SRV_BASE + _d * 4 + (u32)_u;
              dr->tex_rt[_u] = -1;
 diff --git a/libs/video/rsx_live_draw.c b/libs/video/rsx_live_draw.c
-index 25791179..090aff0d 100644
+index 25791179..5b57e302 100644
 --- a/libs/video/rsx_live_draw.c
 +++ b/libs/video/rsx_live_draw.c
 @@ -22,7 +22,7 @@
@@ -746,7 +764,52 @@ index 25791179..090aff0d 100644
      ID3D12Resource* tex;
      u64 content_hash;
      u32 last_hash_frame;
-@@ -1903,6 +1905,11 @@ static void decode_texel(u32 base_fmt, const u8* p, u32 remap, u8 d[4])
+@@ -1718,8 +1720,36 @@ static D3D12_GPU_DESCRIPTOR_HANDLE sampler_table(const u32 slots[SMP_TABLE_SIZE]
+ /* ---------------------------------------------------------------------------
+  * command list submit/wait (simple synchronous model, like the harness)
+  * -----------------------------------------------------------------------*/
++/* LD_FLUSH_STATS=<s>: every <s> seconds, how many times each reason flushed and how long the
++ * flushes took (each one waits for the GPU to finish the list), on stderr. */
++static int ld_flush_stats_secs(void)
++{
++    static int s = -1;
++    if (s < 0) { const char* e = getenv("LD_FLUSH_STATS"); s = e ? atoi(e) : 0; }
++    return s;
++}
++static void ld_flush_stats_note(ld_flush_reason reason, LONGLONG t0)
++{
++    static LARGE_INTEGER fq; static LONGLONG last;
++    static u64 n[LD_FLUSH_REASON_COUNT], qpc[LD_FLUSH_REASON_COUNT];
++    LARGE_INTEGER now; QueryPerformanceCounter(&now);
++    if (!fq.QuadPart) { QueryPerformanceFrequency(&fq); last = now.QuadPart; }
++    n[reason]++; qpc[reason] += (u64)(now.QuadPart - t0);
++    if (now.QuadPart - last < (LONGLONG)ld_flush_stats_secs() * fq.QuadPart) return;
++    static const char* nome[LD_FLUSH_REASON_COUNT] = { "present", "guest_ref", "vertex_ring", "vconst_ring",
++        "retire", "movie", "movie_present", "readback", "pconst_ring", "descriptor_ring", "shutdown" };
++    fprintf(stderr, "[ld-flush] %.1fs:", (double)(now.QuadPart - last) / (double)fq.QuadPart);
++    for (int i = 0; i < LD_FLUSH_REASON_COUNT; i++)
++        if (n[i]) fprintf(stderr, " %s=%llu/%.1fms", nome[i], (unsigned long long)n[i],
++                          (double)qpc[i] * 1000.0 / (double)fq.QuadPart);
++    fprintf(stderr, "\n");
++    memset(n, 0, sizeof n); memset(qpc, 0, sizeof qpc); last = now.QuadPart;
++}
++
+ static void ld_flush(ld_flush_reason reason)
+ {
++    LARGE_INTEGER stats_t0 = {0};
++    if (ld_flush_stats_secs()) QueryPerformanceCounter(&stats_t0);
+ #if defined(YZ_PERF_PROFILE)
+     const LONGLONG flush_begin = ld_profile_qpc();
+     g_ld_profile.total.flush_reason[reason]++;
+@@ -1783,6 +1813,7 @@ static void ld_flush(ld_flush_reason reason)
+     g.alloc->lpVtbl->Reset(g.alloc);
+     g.list->lpVtbl->Reset(g.list, g.alloc, NULL);
+     g.upload_used = 0;
++    if (stats_t0.QuadPart) ld_flush_stats_note(reason, stats_t0.QuadPart);
+ #if defined(YZ_PERF_PROFILE)
+     const u64 flush_ticks = (u64)(ld_profile_qpc() - flush_begin);
+     g_ld_profile.total.flush_qpc += flush_ticks;
+@@ -1903,6 +1934,11 @@ static void decode_texel(u32 base_fmt, const u8* p, u32 remap, u8 d[4])
          break;
      }
      case TEX_FMT_DEPTH24_D8: s[0] = 255; s[1] = s[2] = s[3] = p[0]; break;
@@ -758,7 +821,7 @@ index 25791179..090aff0d 100644
      default: s[0] = p[0]; s[1] = p[1]; s[2] = p[2]; s[3] = p[3]; break;
      }
      d[0] = remap_comp(s, remap, 1);
-@@ -2044,9 +2051,18 @@ static u32 texture_source_span(const rsx_dsp_texture* t)
+@@ -2044,9 +2080,18 @@ static u32 texture_source_span(const rsx_dsp_texture* t)
      case TEX_FMT_G8B8: texel_size = 2; break;
      case RSX_TEX_FMT_W16Z16Y16X16_FLOAT: texel_size = 8; break;
      case TEX_FMT_A8R8G8B8:
@@ -777,7 +840,7 @@ index 25791179..090aff0d 100644
      if (!t->width || !t->height || t->width > 4096 || t->height > 4096 ||
          t->dimension != 2)
          return 0;
-@@ -2141,11 +2157,99 @@ static u64 texture_content_hash(const rsx_dsp_texture* t, int* readable)
+@@ -2141,11 +2186,99 @@ static u64 texture_content_hash(const rsx_dsp_texture* t, int* readable)
      return hash;
  }
  
@@ -877,7 +940,7 @@ index 25791179..090aff0d 100644
      if (!w || !h || w > 4096 || h > 4096 || t->dimension != 2)
          return NULL;
      u32 n_mips = t->mipmaps ? t->mipmaps : 1;
-@@ -2226,6 +2330,7 @@ static ID3D12Resource* decode_guest_texture(const rsx_dsp_texture* t, u32 remap)
+@@ -2226,6 +2359,7 @@ static ID3D12Resource* decode_guest_texture(const rsx_dsp_texture* t, u32 remap)
      case TEX_FMT_R5G6B5:
      case TEX_FMT_G8B8: texel_size = 2; break;
      case TEX_FMT_A8R8G8B8:
@@ -885,7 +948,7 @@ index 25791179..090aff0d 100644
      case TEX_FMT_DEPTH24_D8: texel_size = 4; break;
      case RSX_TEX_FMT_W16Z16Y16X16_FLOAT: texel_size = 8; break;
      default: return NULL;
-@@ -2410,6 +2515,17 @@ static void write_texture_srv(u32 index, const texcache_t* entry)
+@@ -2410,6 +2544,17 @@ static void write_texture_srv(u32 index, const texcache_t* entry)
      const int compressed = base_fmt == TEX_FMT_DXT1 ||
                             base_fmt == TEX_FMT_DXT23 ||
                             base_fmt == TEX_FMT_DXT45;
@@ -903,7 +966,7 @@ index 25791179..090aff0d 100644
      if (entry->cubemap) {
          static const u32 sel2d3d[4] = { 3, 0, 1, 2 };
          static const u32 out2comp[4] = { 1, 2, 3, 0 };
-@@ -2475,7 +2591,8 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
+@@ -2475,7 +2620,8 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
          if (entry->location != t->location || entry->offset != t->offset ||
              entry->format != t->format || entry->width != t->width ||
              entry->height != t->height || entry->pitch != t->pitch ||
@@ -913,7 +976,7 @@ index 25791179..090aff0d 100644
              continue;
          if (refresh_enabled && entry->tex &&
              entry->last_hash_frame != g_ld_frames) {
-@@ -2591,6 +2708,7 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
+@@ -2591,6 +2737,7 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
      replacement.pitch = t->pitch;
      replacement.remap = remap;
      replacement.cubemap = t->cubemap;
@@ -921,7 +984,7 @@ index 25791179..090aff0d 100644
      replacement.last_hash_frame = g_ld_frames;
      replacement.last_use_serial = ++g_ld_texture_use_serial;
      {
-@@ -2612,10 +2730,12 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
+@@ -2612,10 +2759,12 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
              (g_ld_texture_decode_fail & (g_ld_texture_decode_fail - 1)) == 0)
              fprintf(stderr,
                      "[texture-cache] decode failed n=%llu src=%u:0x%08X "
@@ -936,7 +999,7 @@ index 25791179..090aff0d 100644
      }
      return replacement.tex ? SRV_TEXTURE_BASE + index : SRV_WHITE;
  }
-@@ -3157,10 +3277,94 @@ static int   s_csv_gate_open;
+@@ -3157,10 +3306,94 @@ static int   s_csv_gate_open;
  
  static int ld_blit_gpu(u32 src_loc, u32 src_abs, u32 src_pitch,
                         u32 dst_loc, u32 dst_abs, u32 dst_pitch, u32 w, u32 h);
@@ -1031,7 +1094,7 @@ index 25791179..090aff0d 100644
      if (s_csv_file && s_csv_gate_open) {
          fprintf(s_csv_file, "#blit,%u,%u:0x%X/%u,%u:0x%X/%u,%ux%u,gpu=%d\n", g_ld_frames,
                  src_loc, src_abs, src_pitch, dst_loc, dst_abs, dst_pitch, w, h, r);
-@@ -4708,12 +4912,14 @@ static ID3D12PipelineState* get_pso(
+@@ -4708,12 +4941,14 @@ static ID3D12PipelineState* get_pso(
      static int ctrl_auto = -1;
      if (ctrl_auto < 0) ctrl_auto = getenv("RSX_FP_CTRL_AUTO") ? 1 : 0;
      const u32 fp_ctrl = ctrl_auto ? RSX_FP_CTRL_AUTO : rsx_dsp_shader_control(&g.rsx);
@@ -1047,7 +1110,7 @@ index 25791179..090aff0d 100644
      }
      const u32 vtex_mask = vertex_texture_mask();
      const u32 txl_mask = vp_txl_unit_mask(vp_uc, vp_instrs);
-@@ -4765,6 +4971,7 @@ static ID3D12PipelineState* get_pso(
+@@ -4765,6 +5000,7 @@ static ID3D12PipelineState* get_pso(
      const u32 fp_ctrl_key = fp_ctrl & 0x4Eu;   /* 32-bit exports, depth export */
      key = fnv1a(&fp_ctrl_key, sizeof(fp_ctrl_key), key);
      key = fnv1a(&cube_mask, sizeof(cube_mask), key);
@@ -1055,7 +1118,7 @@ index 25791179..090aff0d 100644
      key = fnv1a(&vtex_mask, sizeof(vtex_mask), key);
      /* BRB/CLB outcomes are baked into the program (rsx_vp_set_branch_bits). */
      const int vp_branch_bits_used = rsx_vp_uses_branch_bits(vp_uc, vp_instrs * 16);
-@@ -4830,7 +5037,7 @@ static ID3D12PipelineState* get_pso(
+@@ -4830,7 +5066,7 @@ static ID3D12PipelineState* get_pso(
          key = fnv1a(&rs, sizeof(rs), key);
  #if defined(YZ_PERF_PROFILE)
      ld_profile_note_fp_variants(
@@ -1064,7 +1127,7 @@ index 25791179..090aff0d 100644
  #endif
      g_ld_current_pso.valid = 1;
      g_ld_current_pso.key = key;
-@@ -4895,9 +5102,13 @@ static ID3D12PipelineState* get_pso(
+@@ -4895,9 +5131,13 @@ static ID3D12PipelineState* get_pso(
      u32 decompiled_constant_count = 0;
      int fi;
      if (ld_fp_constants_buffered()) {
@@ -1081,7 +1144,7 @@ index 25791179..090aff0d 100644
          if (fi > 0 &&
              decompiled_constant_count != g.fp_constants.count)
              fi = -1;
-@@ -4907,7 +5118,7 @@ static ID3D12PipelineState* get_pso(
+@@ -4907,7 +5147,7 @@ static ID3D12PipelineState* get_pso(
              fi = -1;
          if (fi > 0) {
              const int np = rsx_fp_apply_unnorm_scale(
@@ -1090,7 +1153,7 @@ index 25791179..090aff0d 100644
              { static int n = 0;
                if (PS3_LOG_FIRST(n, 8))
                    fprintf(stderr, "[unnorm] mask=0x%X cube=0x%X dim0=%ux%u"
-@@ -6505,11 +6716,14 @@ static void live_draw_csv_emit(u32 prim, u32 n_tri, const char* outcome)
+@@ -6505,11 +6745,14 @@ static void live_draw_csv_emit(u32 prim, u32 n_tri, const char* outcome)
      /* LD_DRAW_DUMP=<dir> [LD_DRAW_DUMP_EVERY=k, default 10]: in the first
       * gated frame, read back each k-th draw's target BEFORE it is recorded,
       * named by frame-relative index -- bisects which draw changes a surface. */
@@ -1108,7 +1171,7 @@ index 25791179..090aff0d 100644
            (idx % every) == 0) {
            dumped_frame = frame;
            char path[MAX_PATH * 2];
-@@ -7423,6 +7637,25 @@ static void sink_end_impl(void* user, const rsx_dispatch* r)
+@@ -7423,6 +7666,25 @@ static void sink_end_impl(void* user, const rsx_dispatch* r)
                }
            }
        } }
@@ -1134,7 +1197,7 @@ index 25791179..090aff0d 100644
      for (u32 u = 0; u < SRV_TABLE_SIZE; u++) {
          rsx_dsp_texture t; rsx_dsp_get_texture(&g.rsx, u, &t);
          /* LD_PS1_BUF0=1 -- DIAGNOSTIC, not a fix. Force a 24-bit PS1 VRAM
-@@ -7559,7 +7792,7 @@ static void sink_end_impl(void* user, const rsx_dispatch* r)
+@@ -7559,7 +7821,7 @@ static void sink_end_impl(void* user, const rsx_dispatch* r)
                    }
                }
            } }
@@ -1474,7 +1537,7 @@ index 3ce8d0d6..e0ce995c 100644
  }
  
 diff --git a/templates/project/main.cpp b/templates/project/main.cpp
-index f1f3243b..2de74e4a 100644
+index f1f3243b..8b3eb53c 100644
 --- a/templates/project/main.cpp
 +++ b/templates/project/main.cpp
 @@ -110,6 +110,7 @@ void     cellGcmTickVBlank(void);
@@ -1485,7 +1548,7 @@ index f1f3243b..2de74e4a 100644
  unsigned cellGcm_flip_request_count(void);
  }
  
-@@ -201,8 +202,15 @@ static DWORD WINAPI frame_clock(LPVOID)
+@@ -201,8 +202,20 @@ static DWORD WINAPI frame_clock(LPVOID)
      unsigned  last_flip = 0;
      ULONGLONG next_tick = GetTickCount64();
  
@@ -1495,10 +1558,15 @@ index f1f3243b..2de74e4a 100644
 +     * default: it spins a core, and God of War III measured the same with and without it. */
 +    static int sema_spin = -1;
 +    if (sema_spin < 0) { const char* e = getenv("GCM_SEMA_SPIN"); sema_spin = (e && *e == '1') ? 1 : 0; }
++    /* GCM_DRAIN_MS=<ms> (default 4): the idle wait between drains. A command producer that only
++     * moves `put` -- an SPU job writing its own RSX commands, EDGE's ring buffer -- is seen at
++     * the next drain; 0 yields instead of sleeping. */
++    static int drain_ms = -1;
++    if (drain_ms < 0) { const char* e = getenv("GCM_DRAIN_MS"); drain_ms = e ? atoi(e) : 4; if (drain_ms < 0) drain_ms = 4; }
      for (;;) {
 -        Sleep(4);
-+        if (sema_spin && cellGcm_fifo_sema_blocked()) SwitchToThread();
-+        else Sleep(4);
++        if (drain_ms == 0 || (sema_spin && cellGcm_fifo_sema_blocked())) SwitchToThread();
++        else Sleep((DWORD)drain_ms);
          ULONGLONG now = GetTickCount64();
  
          int fired = 0;

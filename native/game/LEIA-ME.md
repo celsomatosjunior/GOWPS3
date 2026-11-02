@@ -314,7 +314,20 @@ fase estiver mais rápida.
   ~18% no runtime (`spu_lifted_lookup`, `spu_indirect_branch`, `spu_coh_notify_write`, `spu_drain_call`). A thread
   principal do PPU e a do RSX ficam ~20% ocupadas.
 
-**Próxima ação exata:** reduzir o custo do runtime SPU nos saltos (`spu_indirect_branch`/`spu_lifted_lookup`:
+- **Onde o quadro espera (02/11, manhã):** com `PS3_FTRACE=250:10:<arquivo>` e `ps3recomp/tools/ftrace_report.py`,
+  a thread principal passa ~257 ms de cada quadro de ~326 ms em usleep dentro de `func_0028DA14`: espera o halfword
+  em 0x649EC8 + 4*slot zerar, slot = (quadro+2) % 3. A PPU o põe em 1 ao enviar a lista (`func_0028E178`) e uma SPU
+  o zera por operação atômica quando a lista termina. As três listas são os workloads **Wws_Job/EDGE0, EDGE1 e EDGE2**
+  (wids 8, 9 e 10; nomes no log: `AddWorkloadWA ... name=`). Cada EDGE fica só ~28% ocupado, ou seja, as listas mais
+  esperam do que calculam. Mudar o código SPU (shufb, `--merge-chunks` em `spu_jobs_mc`) não mexe nos quadros/s,
+  e o A/B do `GCM_SEMA_SPIN` também não (~6,3 q/s nos dois). Workloads: 0 CollisL, 1 General, 2 SysMisc,
+  3 ModelServer, 4 ModelServerPrep, 5 BatchJobList, 6 BrBDblBufWrkld, 7 RenderJobs, 11 RsxSync.
+- Execuções às vezes entram, depois de ~280 s, num estado a ~115-140 q/s (outro estado do jogo, sem ninguém
+  jogando); o `fps_fase2.py` da pasta de trabalho descarta trechos acima de 40 q/s.
+
+**Próxima ação exata:** descobrir o que as listas EDGE esperam (hipótese: o anel de saída do EDGE espera o RSX
+consumir comandos, e o RSX só olha a FIFO a cada `Sleep(4)`; testar `GCM_DRAIN_MS=0/1`, nova opção do
+`templates/project/main.cpp`). Depois, reduzir o custo do runtime SPU nos saltos (`spu_indirect_branch`/`spu_lifted_lookup`:
 cache direto por pc no próprio local de chamada) e do `spu_coh_notify_write`; depois medir a fase de novo
 (`GOW3_PROF=250,70`, `SPURS_PM_STATS=10`) e comparar com ~6,3 quadros/s.
 

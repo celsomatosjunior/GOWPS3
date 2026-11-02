@@ -492,6 +492,9 @@ def step_rodar(args, work: Path, state: dict, progress):
     # Motor de desenho "live draw" (gow3_rsx.cpp): com ele aparecem o logo e a abertura; o backend
     # D3D12 padrão grava os desenhos para o flip e não mostra o que o jogo compõe pela memória.
     env.setdefault("RSX_LIVE_DRAW", "1")
+    # A thread de apresentação olha a FIFO a cada 1 ms em vez de 4 ms (GCM_DRAIN_MS do main.cpp do modelo): os jobs
+    # EDGE escrevem comandos e movem o put sem avisar ninguém. Fase: ~6,1 -> ~7,1 quadros/s.
+    env.setdefault("GCM_DRAIN_MS", "1")
     # Memória por thread do último motor MFC do ps3recomp (desligada por padrão lá): sem ela o mfc_for, que
     # procura o motor da SPU a cada acesso a canal, era 4 a 5% das threads SPU mais ocupadas na fase.
     env.setdefault("SPU_MFC_LOOKUP_CACHE", "1")

@@ -228,7 +228,9 @@ static int s_started = start_watchdog();
  * (deslocamento no executável, resolver com o GOW3Native.map); no fim imprime, por thread, até 4000 posições
  * mais vistas e o total de amostras. Só diagnóstico. */
 enum { PROF_SLOTS = 1 << 16, PROF_THREADS = 96 };
-struct prof_thread { DWORD tid; uint32_t total, outside; uint32_t key[PROF_SLOTS]; uint32_t n[PROF_SLOTS]; };
+enum { PROF_MODS = 24 };
+struct prof_thread { DWORD tid; uint32_t total, outside; uint32_t key[PROF_SLOTS]; uint32_t n[PROF_SLOTS];
+                     HMODULE mod[PROF_MODS]; uint32_t modn[PROF_MODS]; };
 static prof_thread* s_prof;
 
 static void prof_count(prof_thread* t, uint32_t off)
@@ -270,12 +272,24 @@ static DWORD WINAPI profiler(LPVOID arg)
                 SuspendThread(th);
                 CONTEXT c;
                 c.ContextFlags = CONTEXT_CONTROL;
+                uint64_t fora = 0;
                 if (GetThreadContext(th, &c)) {
                     if (c.Rip >= lo && c.Rip < hi) prof_count(&s_prof[i], (uint32_t)(c.Rip - lo));
-                    else { s_prof[i].total++; s_prof[i].outside++; }
+                    else { s_prof[i].total++; s_prof[i].outside++; fora = c.Rip; }
                 }
                 ResumeThread(th);
                 CloseHandle(th);
+                /* Fora do exe: o módulo (ntdll = esperando no kernel; d3d12/driver = trabalho do RSX). Depois do
+                 * ResumeThread: a busca toma o loader lock, que a thread suspensa poderia estar segurando. */
+                if (fora) {
+                    HMODULE m = NULL;
+                    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                       (LPCSTR)fora, &m);
+                    prof_thread* pt = &s_prof[i];
+                    int k = 0;
+                    while (k < PROF_MODS && pt->modn[k] && pt->mod[k] != m) k++;
+                    if (k < PROF_MODS) { pt->mod[k] = m; pt->modn[k]++; }
+                }
             } while (Thread32Next(snap, &te));
         }
         if (snap != INVALID_HANDLE_VALUE) CloseHandle(snap);
@@ -285,6 +299,12 @@ static DWORD WINAPI profiler(LPVOID arg)
         prof_thread* t = &s_prof[i];
         if (t->total - t->outside < 50) continue;
         fprintf(stderr, "[GOW3-PROF] tid %lu amostras %u fora_do_exe %u\n", (unsigned long)t->tid, t->total, t->outside);
+        for (int k = 0; k < PROF_MODS && t->modn[k]; k++) {
+            char nome[MAX_PATH] = "?";
+            if (t->mod[k]) GetModuleFileNameA(t->mod[k], nome, sizeof nome);
+            const char* b = strrchr(nome, '\\');
+            fprintf(stderr, "[GOW3-PROF]   modulo %s %u\n", b ? b + 1 : nome, t->modn[k]);
+        }
         for (int r = 0; r < 4000; r++) {   /* todas as posições vistas (cauda longa nos jobs SPU) */
             uint32_t best = 0, bk = 0;
             for (unsigned k = 0; k < PROF_SLOTS; k++)
