@@ -332,6 +332,24 @@ def add_spu_jobs(args, proj: Path, cm: Path):
                   f'target_include_directories(${{PROJECT_NAME}} PRIVATE "{rt}")\n', encoding="utf-8")
 
 
+def spu_dir_projeto(args, proj: Path) -> Path:
+    """A SPU_DIR que o CMake compila. Com --spu-reg-locais, um espelho dela no projeto com cada spu_recomp.c reescrito
+    para registradores locais (spu_reg_locals.py; o policy module Wws roda a cada job EDGE); a pasta de --spu-dir
+    fica como está."""
+    origem = Path(args.spu_dir).resolve()
+    if not args.spu_reg_locais:
+        return origem
+    sys.path.insert(0, str(Path(args.ps3recomp).resolve() / "tools"))
+    from spu_reg_locals import localize_source
+    destino = proj / "spu_dir_rl"
+    if destino.exists():
+        shutil.rmtree(destino)
+    shutil.copytree(origem, destino)
+    for c in destino.glob("*/spu_recomp.c"):
+        c.write_text(localize_source(c.read_text(encoding="utf-8")), encoding="utf-8")
+    return destino
+
+
 def spu_simd(args, cm: Path):
     """O modelo dá -O2 e SPU_USE_DISPATCH_MT só às imagens da SPU_DIR, e nenhuma fonte SPU recebe SIMD além do
     SSE2: o spu_shufb do código traduzido fica no laço de 16 bytes e fa/fm/fma do SPU, uma faixa por vez (os
@@ -416,7 +434,7 @@ def step_projeto(args, work: Path, state: dict, progress):
     cmd = ["cmake", "-S", proj, "-B", build, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
            f"-DPS3RECOMP_DIR={Path(args.ps3recomp).resolve()}", f"-DRECOMP_DIR={state['recomp_dir']}"] + cc
     if args.spu_dir:
-        cmd.append(f"-DSPU_DIR={Path(args.spu_dir).resolve()}")
+        cmd.append(f"-DSPU_DIR={spu_dir_projeto(args, proj)}")
     elif not args.sem_spu:
         cmd.append(f"-DPORT_SPU_INPUTS={state['elf']}")
     cmd += ffmpeg_cmake_args(args)
