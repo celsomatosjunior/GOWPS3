@@ -341,11 +341,14 @@ def spu_simd(args, cm: Path):
     # -w: no clang-cl o -Wall do modelo vale -Weverything, e a análise dos avisos nas funções longas com gotos e
     # registradores locais levava minutos por módulo de job.
     opts = "-O2;-ffp-contract=off;-w;" + ("-mavx2;-mfma" if args.spu_simd == "avx2" else "-msse4.1")
+    # --spu-float aprox: fa/fm/fma do SPU como as operações do host (SPU_FLOAT_APPROX do spu_helpers.h, como o
+    # "approximate xfloat" padrão do RPCS3); exato = a emulação bit a bit (truncamento, faixa estendida).
+    defs = "SPU_USE_DISPATCH_MT" + (";SPU_FLOAT_APPROX" if args.spu_float == "aprox" else "")
     cm.write_text(cm.read_text(encoding="utf-8") + "\n# GOW3: SIMD do host no código SPU traduzido\n"
                   'if(SPU_SOURCES AND (NOT MSVC OR CMAKE_C_COMPILER_ID MATCHES "Clang"))\n'
                   "    set_source_files_properties(${SPU_SOURCES} PROPERTIES\n"
                   '        INCLUDE_DIRECTORIES "${PS3RECOMP_DIR}/runtime/spu"\n'
-                  "        COMPILE_DEFINITIONS SPU_USE_DISPATCH_MT\n"
+                  f'        COMPILE_DEFINITIONS "{defs}"\n'
                   f'        COMPILE_OPTIONS "{opts}")\n'
                   "endif()\n", encoding="utf-8")
 
@@ -549,6 +552,8 @@ def main() -> int:
                                      "o cellVdec decodifica os vídeos do jogo")
     ap.add_argument("--spu-reg-locais", action=argparse.BooleanOptionalAction, default=True,
                     help="registradores SPU dos módulos de job em variáveis locais de cada função (padrão: ligado)")
+    ap.add_argument("--spu-float", choices=["aprox", "exato"], default="aprox",
+                    help="ponto flutuante do SPU: aprox = operações do host (como o RPCS3); exato = bit a bit")
     ap.add_argument("--spu-simd", choices=["avx2", "sse41"], default="avx2",
                     help="SIMD do host no código SPU traduzido: avx2 (padrão, com FMA3) ou sse41 (CPUs sem AVX2)")
     ap.add_argument("--spu-dir", help="SPU_DIR já montada (programas SPU e policy modules recompilados por fora)")
