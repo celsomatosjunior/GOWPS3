@@ -153,7 +153,7 @@ index 7e222c92..33b21296 100644
  }
  
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
-index 82ea66c6..23cac70a 100644
+index 82ea66c6..ccf5ab91 100644
 --- a/libs/spurs/cellSpurs.c
 +++ b/libs/spurs/cellSpurs.c
 @@ -16,6 +16,7 @@
@@ -389,7 +389,7 @@ index 82ea66c6..23cac70a 100644
  s32 cellSpursCreateTask(CellSpursTaskset* taskset, CellSpursTaskId* taskId,
                          void* elf, void* context, u32 sizeContext,
                          u32 lsPattern_ea, u32 argument_ea)
-@@ -1714,6 +1905,23 @@ static WklPm* spurs_resolve_pm(u32 wid)
+@@ -1714,6 +1905,31 @@ static WklPm* spurs_resolve_pm(u32 wid)
   * occupies only its own slot; a later runnable producer can use another slot.
   * Admission and lifecycle state are serialized per instance. Guest execution
   * never runs under that lock, and only a genuine return releases contention. */
@@ -400,6 +400,14 @@ index 82ea66c6..23cac70a 100644
 +    static int v = -1;
 +    if (v < 0) { const char* e = getenv("SPURS_IDLE_BACKOFF"); v = e ? atoi(e) : 4; if (v < 0 || v > 8) v = 4; }
 +    return (u32)v;
++}
++
++/* SPURS_PASS_US=<us> (default 0 = the 1 ms condition-variable wait): see spurs_kernel_thread. */
++static unsigned spurs_pass_us(void)
++{
++    static int v = -1;
++    if (v < 0) { const char* e = getenv("SPURS_PASS_US"); v = e ? atoi(e) : 0; if (v < 0) v = 0; }
++    return (unsigned)v;
 +}
 +
 +/* SPURS_PRIO_SELECT=0 turns the priority-weighted workload choice off (round robin only). */
@@ -413,7 +421,7 @@ index 82ea66c6..23cac70a 100644
  static DWORD WINAPI spurs_pm_worker(LPVOID p)
  {
      struct SpursPmSlot* slot = (struct SpursPmSlot*)p;
-@@ -1729,10 +1937,57 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
+@@ -1729,10 +1945,57 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
              SleepConditionVariableSRW(&si->wake, &si->lock, INFINITE, 0);
          if (si->stopping && !slot->busy) break;
          ReleaseSRWLockExclusive(&si->lock);
@@ -471,7 +479,7 @@ index 82ea66c6..23cac70a 100644
          AcquireSRWLockExclusive(&si->lock);
          u32 wid = slot->wid;
          if (si->active[wid]) si->active[wid]--;
-@@ -1740,7 +1995,7 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
+@@ -1740,7 +2003,7 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
          vm_base[slot->ea + SPURS_WKL_CURCONT + wid] = si->active[wid];
          ef_line_end(slot->ea);
          if (polls) si->idle[wid] = 0;
@@ -480,7 +488,32 @@ index 82ea66c6..23cac70a 100644
          slot->busy = 0;
          WakeAllConditionVariable(&si->wake);
      }
-@@ -1779,8 +2034,52 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1767,7 +2030,23 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+         if (__atomic_exchange_n(&si->kick, 0, __ATOMIC_ACQ_REL)) {
+             kick_pass = ++kick_run < 16;
+         } else {
+-            SleepConditionVariableSRW(&si->wake, &si->lock, 1, 0);
++            const unsigned pass_us = spurs_pass_us();
++            if (pass_us) {
++                /* SPURS_PASS_US: the next full pass in <pass_us> microseconds, yielding meanwhile,
++                 * instead of the 1 ms condition-variable timeout (1-2 ms with timeBeginPeriod(1)).
++                 * An un-kicked workload is probed every 2^idle passes, so the pass period is what
++                 * a Wws job list polling for a dependency waits per hand-off. A kick still ends
++                 * the wait at once. */
++                ReleaseSRWLockExclusive(&si->lock);
++                static LARGE_INTEGER fq; if (!fq.QuadPart) QueryPerformanceFrequency(&fq);
++                LARGE_INTEGER a, b; QueryPerformanceCounter(&a);
++                const LONGLONG until = a.QuadPart + (LONGLONG)pass_us * fq.QuadPart / 1000000;
++                do { SwitchToThread(); QueryPerformanceCounter(&b); }
++                while (b.QuadPart < until && !__atomic_load_n(&si->kick, __ATOMIC_ACQUIRE) &&
++                       !__atomic_load_n(&si->stopping, __ATOMIC_ACQUIRE));
++                AcquireSRWLockExclusive(&si->lock);
++            } else
++                SleepConditionVariableSRW(&si->wake, &si->lock, 1, 0);
+             /* This full pass reads the line after any commit that woke it. */
+             (void)__atomic_exchange_n(&si->kick, 0, __ATOMIC_ACQ_REL);
+         }
+@@ -1779,8 +2058,52 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
          if (!kick_pass) si->pass_no++;
          u32 enabled = vm_read32(ea + SPURS_WKL_ENABLED);
          for (u32 sn = 0; sn < si->nspus; sn++) {
@@ -533,7 +566,7 @@ index 82ea66c6..23cac70a 100644
              for (u32 checked = 0; checked < 16; checked++) {
                  u32 wid = si->cursor;
                  si->cursor = (wid + 1) & 15;
-@@ -1796,7 +2095,11 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1796,7 +2119,11 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                  if (!pm) continue;
                  u32 signal = vm_read16(ea + SPURS_WKL_SIGNAL1);
                  u32 ready = vm_read8(ea + SPURS_WKL_READY1 + wid);
@@ -546,7 +579,7 @@ index 82ea66c6..23cac70a 100644
                  if (kicked) si->idle[wid] = 0;
                  if (!kicked && (kick_pass || (si->pass_no & ((1u << si->idle[wid]) - 1))))
                      continue;
-@@ -1806,7 +2109,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1806,7 +2133,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                  if (ready) vm_base[ea + SPURS_WKL_READY1 + wid] = (u8)(ready - 1);
                  if (signal & (0x8000u >> wid))
                      ef_w16(ea + SPURS_WKL_SIGNAL1, (u16)(signal & ~(0x8000u >> wid)));
@@ -1222,10 +1255,18 @@ index 32e8a959..e3ac93e8 100644
      s_state.hdc = GetDC(s_state.hwnd);
      s_state.last_fps_time = GetTickCount64();
 diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
-index 5fc50208..7342e2c2 100644
+index 5fc50208..d14839e2 100644
 --- a/runtime/spu/spu_channels.c
 +++ b/runtime/spu/spu_channels.c
-@@ -660,6 +660,11 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
+@@ -577,6 +577,7 @@ volatile unsigned g_spu_putllc_sync_hit = 0;
+ #define SPU_JOB_RETURN_LS   0x3FF00u
+ 
+ /* Returns 1 if `cmd` is an atomic line op and was handled here, else 0. */
++static void spu_atomic_watch(const spu_context* ctx, uint32_t ea, const char* op);
+ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
+ {
+     /* Classify FIRST. Every MFC_Cmd write lands here, and only the switch at
+@@ -660,6 +661,11 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
       * threads and the PPU all write stderr, so a dump split across many fprintf
       * calls comes out shredded and unreadable exactly when it matters. */
      { static int s_ae = -1; static uint32_t s_aea;
@@ -1237,7 +1278,7 @@ index 5fc50208..7342e2c2 100644
        if (s_ae < 0) { const char* e = getenv("SPU_ATOM_EA");
          s_aea = e ? (uint32_t)strtoul(e, 0, 16) & ~127u : 0; s_ae = s_aea ? 1 : 0;
          if (s_ae == 1) { extern uint32_t g_barrier_sync_watch;
-@@ -677,8 +682,8 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
+@@ -677,8 +683,8 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
                /* lr (gpr[0]) as well as pc: these atomics sit in generic helpers,
                 * so pc names the HELPER and only lr names the real caller. */
                p += snprintf(buf + p, sizeof buf - p,
@@ -1248,7 +1289,52 @@ index 5fc50208..7342e2c2 100644
                              ctx->gpr[0]._u32[0] & SPU_LS_MASK, (uint32_t)ea);
                int nb = s_af == 2 ? 128 : s_af ? 64 : 8;   /* 64 covers +0x30 pendingRecv; =2 the whole line */
                p += snprintf(buf + p, sizeof buf - p, " RAM=");
-@@ -1942,6 +1947,13 @@ int spu_overlay_register_verified_region(uint32_t content_ea, uint32_t load_lsa,
+@@ -929,6 +935,7 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
+         ctx->resv_valid = 0;                           /* reservation consumed */
+         spu_lockline_unlock();
+         if (ctx->atomic_stat == 0) {
++            spu_atomic_watch(ctx, ea, "PUTLLC");
+             spu_taskset_line_committed(ea & ~127u);
+             if (g_spu_line_commit_hook) g_spu_line_commit_hook(ea & ~127u);
+         }
+@@ -948,6 +955,7 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
+         spu_coh_notify_write(ea);
+         ctx->resv_valid = 0; ctx->atomic_stat = 2;   /* PUTLLUC complete */
+         spu_lockline_unlock();
++        spu_atomic_watch(ctx, ea, "PUTLLUC");
+         spu_taskset_line_committed(ea & ~127u);
+         if (g_spu_line_commit_hook) g_spu_line_commit_hook(ea & ~127u);
+         return 1;
+@@ -1147,6 +1155,28 @@ static int spu_ch_ready(spu_context* ctx, uint32_t channel)
+     }
+ }
+ 
++
++/* SPU_ATOMIC_WATCH=<hex EA>: every atomic store (PUTLLC that succeeded, PUTLLUC) to the line of
++ * that EA, with the SPU, the workload id the kernel keeps at LS 0x1DC, the image, the word now at
++ * the EA and a timestamp, each time that word changes -- who releases a flag the PPU polls. */
++static void spu_atomic_watch(const spu_context* ctx, uint32_t ea, const char* op)
++{
++    static int on = -1; static uint32_t w;
++    if (on < 0) { const char* e = getenv("SPU_ATOMIC_WATCH"); w = e ? (uint32_t)strtoul(e, 0, 16) : 0; on = w != 0; }
++    if (!on || (ea & ~127u) != (w & ~127u) || !vm_base) return;
++    static unsigned long n; static uint32_t last = 0xFFFFFFFFu;
++    const uint8_t* l = ctx->ls + 0x1DC;
++    const uint8_t* m = vm_base + w;
++    const uint32_t now = (uint32_t)m[0] << 24 | (uint32_t)m[1] << 16 | (uint32_t)m[2] << 8 | m[3];
++    if (now == last || ++n > 4000) return;   /* only changes of the watched word */
++    last = now;
++    extern unsigned long long ps3_qpc_us(void);
++    fprintf(stderr, "[atomic-watch] t=%lluus %s spu%u wid=%u img=%d pc=0x%05X [0x%08X]=%02X%02X%02X%02X\n",
++            ps3_qpc_us(), op, (unsigned)(ctx->spu_id & 15u),
++            ((uint32_t)l[0] << 24 | (uint32_t)l[1] << 16 | (uint32_t)l[2] << 8 | l[3]), ctx->image_id,
++            (uint32_t)ctx->pc & SPU_LS_MASK, w, m[0], m[1], m[2], m[3]);
++}
++
+ /* Signal the per-SPU wait CV so a blocked spu_rdch re-checks its predicate.
+  * MUST be called by every producer AFTER it makes a read predicate true. */
+ void spu_ch_wake(spu_context* ctx)
+@@ -1942,6 +1972,13 @@ int spu_overlay_register_verified_region(uint32_t content_ea, uint32_t load_lsa,
      return 1;
  }
  
@@ -1262,7 +1348,7 @@ index 5fc50208..7342e2c2 100644
  static int spu_overlay_resident_verified(spu_context* ctx, unsigned slot)
  {
      int* state = &ctx->resident_code[slot].verify_state;
-@@ -1951,6 +1963,17 @@ static int spu_overlay_resident_verified(spu_context* ctx, unsigned slot)
+@@ -1951,6 +1988,17 @@ static int spu_overlay_resident_verified(spu_context* ctx, unsigned slot)
          for (unsigned i = 0; match && i < o->code_count; ++i)
              match = !memcmp(ctx->ls + o->code[i].lsa, o->code[i].bytes, o->code[i].size);
          *state = match ? SPU_OVERLAY_VERIFIED : SPU_OVERLAY_REJECTED;
@@ -1280,7 +1366,7 @@ index 5fc50208..7342e2c2 100644
      }
      return *state == SPU_OVERLAY_VERIFIED;
  }
-@@ -2139,6 +2162,9 @@ void spu_overlay_note_get(spu_context* ctx, uint32_t ea, const uint8_t* ls, uint
+@@ -2139,6 +2187,9 @@ void spu_overlay_note_get(spu_context* ctx, uint32_t ea, const uint8_t* ls, uint
          uint32_t end = base + ctx->resident_code[slot].size;
          if (lsa < end && lsa + size > base) {
              if (lsa < base || ea != ctx->resident_code[slot].source_ea + (lsa - base)) {
@@ -1290,7 +1376,7 @@ index 5fc50208..7342e2c2 100644
                  ctx->resident_code[slot].image_id = 0;
                  spu_dcache_residency_changed(ctx);
              } else if (ctx->resident_code[slot].verify_state) {
-@@ -2575,6 +2601,45 @@ static int spu_smc_microstep(spu_context* ctx)
+@@ -2575,6 +2626,45 @@ static int spu_smc_microstep(spu_context* ctx)
                fprintf(stderr, "[spu-smc] microstep img=%d pc=0x%05X word 0x%08X not in the"
                        " microstep set -- handing to the interpreter (steps=%d)\n",
                        ctx->image_id, pc, w, steps); }

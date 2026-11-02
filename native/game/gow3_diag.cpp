@@ -297,15 +297,26 @@ static DWORD WINAPI profiler(LPVOID arg)
     }
     for (int i = 0; i < nthreads; i++) {
         prof_thread* t = &s_prof[i];
-        if (t->total - t->outside < 50) continue;
+        /* Toda thread com amostras: as que rodam fora do exe (girando em ntdll, num driver) também contam. As
+         * posições no exe só para as que passaram ali 50 amostras ou mais. */
+        if (!t->total) continue;
         fprintf(stderr, "[GOW3-PROF] tid %lu amostras %u fora_do_exe %u\n", (unsigned long)t->tid, t->total, t->outside);
+        { /* o nome que o runtime deu à thread (ppu: o nome da thread do jogo) */
+            typedef HRESULT (WINAPI *desc_fn)(HANDLE, PWSTR*);
+            static desc_fn gtd = (desc_fn)(void*)GetProcAddress(GetModuleHandleA("kernel32.dll"), "GetThreadDescription");
+            HANDLE th = gtd ? OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, t->tid) : NULL;
+            PWSTR w = NULL;
+            if (th && SUCCEEDED(gtd(th, &w)) && w && *w) fprintf(stderr, "[GOW3-PROF]   nome %ls\n", w);
+            if (w) LocalFree(w);
+            if (th) CloseHandle(th);
+        }
         for (int k = 0; k < PROF_MODS && t->modn[k]; k++) {
             char nome[MAX_PATH] = "?";
             if (t->mod[k]) GetModuleFileNameA(t->mod[k], nome, sizeof nome);
             const char* b = strrchr(nome, '\\');
             fprintf(stderr, "[GOW3-PROF]   modulo %s %u\n", b ? b + 1 : nome, t->modn[k]);
         }
-        for (int r = 0; r < 4000; r++) {   /* todas as posições vistas (cauda longa nos jobs SPU) */
+        for (int r = 0; r < 4000 && t->total - t->outside >= 50; r++) {   /* todas as posições (cauda longa SPU) */
             uint32_t best = 0, bk = 0;
             for (unsigned k = 0; k < PROF_SLOTS; k++)
                 if (t->key[k] && t->n[k] > best) { best = t->n[k]; bk = k; }
