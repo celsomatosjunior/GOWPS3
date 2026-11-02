@@ -340,7 +340,17 @@ fase estiver mais rápida.
   - Não ajudaram (medidos): `SPURS_PASS_US` (100 us: 5,5 q/s; 250: 3,7), `SPURS_IDLE_BACKOFF` 6/8 (igual),
     `GCM_SEMA_SPIN` (igual), `LD_FLUSH_STATS` mostra os flushes da GPU em ~4% do tempo.
 
-**Próxima ação exata:** baixar o custo de cada rodada do policy module Wws nas listas EDGE (~60 us; uma
+- **Código dos jobs mais rápido (02/11, tarde):** o perfil da SPU que roda as EDGE mostra 57% no código dos
+  jobs (quase tudo `jobmod_14561`, a 0x10E20 sozinha ~10%) e ~15% no policy module e no runtime. Então:
+  - float aproximado com caminho rápido: a operação direto nos operandos e só um resultado Inf/NaN vai ao
+    caminho saturado (~8 instruções por fa/fm/fma em vez de 17-23): mediana 7,0 -> 7,3 q/s;
+  - `SPU_LS_NODIAG` (padrão no `gow3_build.py`; `--spu-ls-diag` volta): sem o teste das sondas de LS em cada
+    lqd/stqd: **mediana 8,6 q/s, média ~8,9**. Versão `gow3-fase-v4` (tag e `Projetos\versoes`);
+  - `--spu-opt=-O3;-march=znver3`: sem efeito.
+
+**Próxima ação exata:** seguir no custo do código dos jobs EDGE (o laço da 0x10E20 ainda tem ~990 instruções
+x86 para ~120 SPU: derramamentos de registradores, testes de Inf/NaN, shufb) e no fixo de cada rodada do
+policy module Wws nas listas EDGE (~60 us; uma
 rodada vazia custa ~45 us): perfilar a thread SPU que roda as EDGE (`GOW3_PROF` mostra o nome "spurs pm") e
 atacar o fixo por rodada (entrada do policy module, `spu_indirect_branch`/`spu_lifted_lookup`,
 `spu_coh_notify_write` nos PUTLLC, `spu_step` do interpretador se aparecer). Depois, reduzir o custo do runtime SPU nos saltos (`spu_indirect_branch`/`spu_lifted_lookup`:

@@ -1499,31 +1499,85 @@ index 5fc50208..995340a1 100644
          /* Stop at the drain's return point too: it sits mid-function, so it is
           * no lifted entry, and a job's return would otherwise run on through
 diff --git a/runtime/spu/spu_context.h b/runtime/spu/spu_context.h
-index c5ccbec7..4b0ba5a1 100644
+index c5ccbec7..9b929fe1 100644
 --- a/runtime/spu/spu_context.h
 +++ b/runtime/spu/spu_context.h
-@@ -622,8 +622,10 @@ static SPU_NOINLINE_COLD void spu_ls_read_diag(const spu_context* ctx, uint32_t
- static inline u128 spu_ls_read128(const spu_context* ctx, uint32_t lsa)
+@@ -619,13 +619,13 @@ static SPU_NOINLINE_COLD void spu_ls_read_diag(const spu_context* ctx, uint32_t
+     g_spu_ls_rdiag = g_spu_ls_probe || spu_ls_wws_probe_on() || g_spu_ls_watch_n != 0;
+ }
+ 
+-static inline u128 spu_ls_read128(const spu_context* ctx, uint32_t lsa)
++/* The LS access proper, on the LS pointer: lifted code that keeps ctx->ls in a local (spu_reg_locals.py,
++ * through SPU_LSR/SPU_LSW below) does not reload it after every store -- a byte store may alias it. */
++static inline u128 spu_ls_read128_p(const uint8_t* ls, uint32_t lsa)
  {
      u128 v;
-+#ifndef SPU_LS_NODIAG   /* SPU_LS_NODIAG: a title build without the LS read/write probes, no gate per access */
-     if (__builtin_expect(g_spu_ls_rdiag != 0, 0))
-         spu_ls_read_diag(ctx, lsa);
-+#endif
+-    if (__builtin_expect(g_spu_ls_rdiag != 0, 0))
+-        spu_ls_read_diag(ctx, lsa);
      lsa &= SPU_LS_MASK & ~0xFu;
-     const uint8_t* p = &ctx->ls[lsa];
+-    const uint8_t* p = &ctx->ls[lsa];
++    const uint8_t* p = &ls[lsa];
  #if defined(__ARM_NEON)
-@@ -739,8 +741,10 @@ static inline void spu_ls_write128(spu_context* ctx, uint32_t lsa, u128 val)
+     vst1q_u8(v._u8, vrev32q_u8(vld1q_u8(p)));     /* ldr q; rev32 */
+ #elif SPU_LS_FAST
+@@ -645,6 +645,15 @@ static inline u128 spu_ls_read128(const spu_context* ctx, uint32_t lsa)
+     return v;
+ }
+ 
++static inline u128 spu_ls_read128(const spu_context* ctx, uint32_t lsa)
++{
++#ifndef SPU_LS_NODIAG   /* SPU_LS_NODIAG: a title build without the LS read/write probes, no gate per access */
++    if (__builtin_expect(g_spu_ls_rdiag != 0, 0))
++        spu_ls_read_diag(ctx, lsa);
++#endif
++    return spu_ls_read128_p(ctx->ls, lsa);
++}
++
+ static SPU_NOINLINE_COLD void spu_ls_write_probe_pre(spu_context* ctx, uint32_t lsa, u128 val)
+ {
+     if (lsa == 0x1320 && ctx->image_id == 2 && ctx->policy_mode) {
+@@ -719,10 +728,10 @@ static SPU_NOINLINE_COLD void spu_ls_write_diag(spu_context* ctx, uint32_t lsa,
+     g_spu_ls_wdiag = spu_ls_wws_probe_on() || g_spu_smc_watch || g_spu_ls_watch_n != 0;
+ }
+ 
+-static inline void spu_ls_write128(spu_context* ctx, uint32_t lsa, u128 val)
++static inline void spu_ls_write128_p(uint8_t* ls, uint32_t lsa, u128 val)
+ {
+     lsa &= SPU_LS_MASK & ~0xFu;
+-    uint8_t* p = &ctx->ls[lsa];
++    uint8_t* p = &ls[lsa];
+ #if defined(__ARM_NEON)
+     vst1q_u8(p, vrev32q_u8(vld1q_u8(val._u8)));   /* rev32; str q */
+ #elif SPU_LS_FAST
+@@ -739,10 +748,27 @@ static inline void spu_ls_write128(spu_context* ctx, uint32_t lsa, u128 val)
          p[i*4 + 3] = (uint8_t)w;
      }
  #endif
++}
++
++static inline void spu_ls_write128(spu_context* ctx, uint32_t lsa, u128 val)
++{
++    spu_ls_write128_p(ctx->ls, lsa, val);
 +#ifndef SPU_LS_NODIAG
      if (__builtin_expect(g_spu_ls_wdiag != 0, 0))
-         spu_ls_write_diag(ctx, lsa, val);
+-        spu_ls_write_diag(ctx, lsa, val);
++        spu_ls_write_diag(ctx, lsa & (SPU_LS_MASK & ~0xFu), val);
 +#endif
  }
  
++/* What spu_reg_locals.py emits for lqd/stqd: on the cached LS pointer when the probes are compiled
++ * out, through the context otherwise (the probes need it). */
++#ifdef SPU_LS_NODIAG
++#  define SPU_LSR(ctx, ls, lsa)      spu_ls_read128_p((ls), (lsa))
++#  define SPU_LSW(ctx, ls, lsa, val) spu_ls_write128_p((ls), (lsa), (val))
++#else
++#  define SPU_LSR(ctx, ls, lsa)      spu_ls_read128((ctx), (lsa))
++#  define SPU_LSW(ctx, ls, lsa, val) spu_ls_write128((ctx), (lsa), (val))
++#endif
++
  /* ---------------------------------------------------------------------------
+  * Preferred slot extraction
+  *
 diff --git a/runtime/spu/spu_dma.h b/runtime/spu/spu_dma.h
 index 8c4ccaa8..ad9cdc25 100644
 --- a/runtime/spu/spu_dma.h
@@ -2030,10 +2084,10 @@ index 36cbc240..d18fb1db 100644
                                   if max(s, a) < min(e, b)})
 diff --git a/tools/spu_reg_locals.py b/tools/spu_reg_locals.py
 new file mode 100644
-index 00000000..daef0696
+index 00000000..efad94ca
 --- /dev/null
 +++ b/tools/spu_reg_locals.py
-@@ -0,0 +1,190 @@
+@@ -0,0 +1,196 @@
 +#!/usr/bin/env python3
 +"""
 +Keep SPU registers in C locals inside each lifted function (spu_lifter.py
@@ -2048,7 +2102,7 @@ index 00000000..daef0696
 +  * entry: ``u128 r_N = ctx->gpr[N];`` for every register the body touches
 +    (the compiler drops the ones overwritten before being read);
 +  * pure lines (register arithmetic, LS loads/stores, branches inside the
-+    function) use the locals;
++    function) use the locals, and LS accesses a cached ctx->ls (SPU_LSR/SPU_LSW);
 +  * an escape line -- anything else that touches ctx (calls, channels, stop,
 +    dispatch, tail branches, SPU_RET...) or returns -- is kept verbatim on
 +    ctx->gpr: the written locals are stored back before it and every local is
@@ -2085,7 +2139,11 @@ index 00000000..daef0696
 +
 +
 +def _local(stmt: str) -> str:
-+    return _GPR.sub(lambda m: f"r_{m.group(1)}", stmt)
++    stmt = _GPR.sub(lambda m: f"r_{m.group(1)}", stmt)
++    # LS accesses on the cached LS pointer (SPU_LSR/SPU_LSW, spu_context.h): a byte store may alias
++    # ctx->ls, so through ctx it is reloaded after every stqd.
++    return (stmt.replace("spu_ls_read128(ctx, ", "SPU_LSR(ctx, _ls, ")
++                .replace("spu_ls_write128(ctx, ", "SPU_LSW(ctx, _ls, "))
 +
 +
 +def _always_leaves(block: str) -> bool:
@@ -2167,8 +2225,10 @@ index 00000000..daef0696
 +    regs = sorted(used)
 +    wr = sorted(written)
 +    flush = " ".join(f"ctx->gpr[{n}] = r_{n};" for n in wr)
-+    reload = " ".join(f"r_{n} = ctx->gpr[{n}];" for n in regs)
-+    out = [indent + " ".join(f"u128 r_{n} = ctx->gpr[{n}];" for n in regs)]
++    uses_ls = any(k == "pure" and "spu_ls_" in s for k, s in plan)
++    reload = " ".join(f"r_{n} = ctx->gpr[{n}];" for n in regs) + (" _ls = ctx->ls;" if uses_ls else "")
++    out = [indent + " ".join(f"u128 r_{n} = ctx->gpr[{n}];" for n in regs)
++           + (" uint8_t* _ls = ctx->ls;" if uses_ls else "")]
 +    for kind, t in plan:
 +        if kind == "label":
 +            out.append(t)
@@ -2226,7 +2286,7 @@ index 00000000..daef0696
 +    main()
 diff --git a/tools/test_spu_reg_locals.py b/tools/test_spu_reg_locals.py
 new file mode 100644
-index 00000000..c16d1771
+index 00000000..217ea2ae
 --- /dev/null
 +++ b/tools/test_spu_reg_locals.py
 @@ -0,0 +1,89 @@
@@ -2257,10 +2317,10 @@ index 00000000..c16d1771
 +    def test_pure_lines_use_locals(self):
 +        out = localize_body(["    ctx->gpr[3] = spu_ai(ctx->gpr[4], 1);",
 +                             "    spu_ls_write128(ctx, ctx->gpr[1]._u32[0] + 0x10, ctx->gpr[3]);"])
-+        self.assertIn("u128 r_1 = ctx->gpr[1]; u128 r_3 = ctx->gpr[3]; u128 r_4 = ctx->gpr[4];",
-+                      out[0])
++        self.assertIn("u128 r_1 = ctx->gpr[1]; u128 r_3 = ctx->gpr[3]; u128 r_4 = ctx->gpr[4];"
++                      " uint8_t* _ls = ctx->ls;", out[0])
 +        self.assertEqual(out[1].strip(), "r_3 = spu_ai(r_4, 1);")
-+        self.assertEqual(out[2].strip(), "spu_ls_write128(ctx, r_1._u32[0] + 0x10, r_3);")
++        self.assertEqual(out[2].strip(), "SPU_LSW(ctx, _ls, r_1._u32[0] + 0x10, r_3);")
 +
 +    def test_escape_stores_back_and_reloads(self):
 +        out = localize_body(["    ctx->gpr[3] = spu_ai(ctx->gpr[3], 1);",
