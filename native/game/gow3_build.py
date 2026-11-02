@@ -343,7 +343,10 @@ def spu_simd(args, cm: Path):
     opts = (args.spu_opt or "-O2") + ";-ffp-contract=off;-w;" + ("-mavx2;-mfma" if args.spu_simd == "avx2" else "-msse4.1")
     # --spu-float aprox: fa/fm/fma do SPU como as operações do host (SPU_FLOAT_APPROX do spu_helpers.h, como o
     # "approximate xfloat" padrão do RPCS3); exato = a emulação bit a bit (truncamento, faixa estendida).
-    defs = "SPU_USE_DISPATCH_MT" + (";SPU_FLOAT_APPROX" if args.spu_float == "aprox" else "")
+    # SPU_LS_NODIAG: sem o teste das sondas de LS (SPU_LS_WATCH, SPU_SMC_WATCH...) em cada lqd/stqd; --spu-ls-diag
+    # volta a compilá-las.
+    defs = ("SPU_USE_DISPATCH_MT" + (";SPU_FLOAT_APPROX" if args.spu_float == "aprox" else "")
+            + ("" if args.spu_ls_diag else ";SPU_LS_NODIAG"))
     cm.write_text(cm.read_text(encoding="utf-8") + "\n# GOW3: SIMD do host no código SPU traduzido\n"
                   'if(SPU_SOURCES AND (NOT MSVC OR CMAKE_C_COMPILER_ID MATCHES "Clang"))\n'
                   "    set_source_files_properties(${SPU_SOURCES} PROPERTIES\n"
@@ -555,6 +558,8 @@ def main() -> int:
                                      "o cellVdec decodifica os vídeos do jogo")
     ap.add_argument("--spu-reg-locais", action=argparse.BooleanOptionalAction, default=True,
                     help="registradores SPU dos módulos de job em variáveis locais de cada função (padrão: ligado)")
+    ap.add_argument("--spu-ls-diag", action="store_true",
+                    help="compila as sondas de LS do runtime SPU (SPU_LS_WATCH etc.) no código traduzido")
     ap.add_argument("--spu-opt", default="",
                     help="opções de otimização das fontes SPU no lugar de -O2, separadas por ; (ex.: -O3;-march=znver3)")
     ap.add_argument("--spu-float", choices=["aprox", "exato"], default="aprox",
