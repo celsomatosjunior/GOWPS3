@@ -377,10 +377,19 @@ fase estiver mais rápida.
   vetores vivos para 16 registradores AVX2: o derramamento é inevitável nesta CPU (sem AVX-512).
 - O estado de ~115 q/s depois de ~280 s é a tela de morte ("Estás morto"), confirmado por `LD_FRAME_DUMP`.
 
-**Próxima ação exata:** o lado das SPUs. Medir quanto da espera de ~23% da SPU das EDGE é dependência de outros
-workloads (ModelServer w3/w4, BrBDblBufWrkld w6 na instância de 1 SPU) com `PS3_FTRACE` e `ft_wid.py`; se w6
-(~34% de uma SPU) estiver no caminho, ver se a instância "Little" pode rodar em paralelo sem mudar a semântica.
-Depois, custo fixo por job (despacho, `spu_drain_call`, canais) e os testes de Inf/NaN do float aproximado.
+- **Retorno direto do policy module (`SPURS_PM_STICKY=64`, padrão no `gow3_build.py`): ~9 -> ~12,3 q/s.** O
+  `PS3_FTRACE` mostrou a SPU 0 (a das listas EDGE) com ~29 mil execuções de ~52 us em 3 s e intervalos de ~19 us
+  entre elas (25% do tempo): cada execução devolvia a SPU à thread do kernel do SPURS, que a devolvia ao mesmo
+  workload (duas acordadas de thread). Agora o worker repete o workload quando o kernel o escolheria (ver
+  `spurs_pm_sticky_take` no `cellSpurs.c`). A SPU 0 passou a 90% ocupada. Versão `gow3-fase-v7`.
+- O policy module Wws reenvia o código do job a cada job (`SPU_OVL_STATS=10`: ~80 mil GETs e ~1,2 GB/s, ~20 mil
+  verificações de ~58 KB). `SPU_OVL_INCREMENTAL=1` compara só o trecho reenviado: corta as verificações a ~1/3,
+  mas a fase não muda; ficou desligado.
+- Perfil da SPU 0 com o retorno direto: 65% código dos jobs, 21% runtime, 9% ntdll, 5% memcpy.
+
+**Próxima ação exata:** a SPU 0 está ~90% ocupada no código dos jobs EDGE; o ganho seguinte é deixar esse código
+mais rápido (tradutor SPU: testes de Inf/NaN do float aproximado, inversão de bytes das leituras de LS, custo do
+despacho por job: `spu_indirect_branch`/`spu_lifted_lookup` ~4,5%, `spu_wrch`/`spu_drain_call` ~2,6%).
 
 ## LLE seletivo da libsre (LFQueue)
 
