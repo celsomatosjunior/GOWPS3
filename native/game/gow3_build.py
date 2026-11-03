@@ -520,6 +520,9 @@ def step_rodar(args, work: Path, state: dict, progress):
     # Memória por thread do último motor MFC do ps3recomp (desligada por padrão lá): sem ela o mfc_for, que
     # procura o motor da SPU a cada acesso a canal, era 4 a 5% das threads SPU mais ocupadas na fase.
     env.setdefault("SPU_MFC_LOOKUP_CACHE", "1")
+    # Um policy module que fez trabalho roda de novo na mesma SPU sem devolver a vez à thread do kernel
+    # do SPURS (cellSpurs.c, spurs_pm_sticky_take): cada devolução custava ~20 us por job EDGE.
+    env.setdefault("SPURS_PM_STICKY", "64")
     if args.jogo:
         root = Path(args.jogo)
         if (root / "PS3_GAME").is_dir():
