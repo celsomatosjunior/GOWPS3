@@ -423,9 +423,19 @@ fase estiver mais rápida.
   ~2%), ~7% memcpy (o reenvio do código, ~1,5 GB/s) e ~7% ntdll (sondagem por DMA repetido, `Sleep`/
   `SwitchToThread` do `mfc_submit`).
 
+- **Sondagens (`SPU_DMA_POLL_STATS=1`, tempo de parede por thread e por workload com o contador de desempenho):** as
+  listas EDGE (wids 8-10) não sondam nada; quem espera por DMA repetido são General, ModelServer, MSPrep e
+  RenderJobs nas outras SPUs (semáforos que o RSX libera em 0x7010E4xx/0x7012E5xx, via `gcm_3d_method`; o PPU os
+  reinicia com 0xFFFFFFFF). A SPU das EDGE só calcula.
+- Assembly do laço da 0x10E20: cada fa/fm/fma termina num teste e desvio (o caminho saturado), o que faz de cada
+  operação de float um bloco básico. `-mllvm -pre-RA-sched=list-burr` tira só ~5% dos derramamentos. A CPU
+  (Ryzen 9 5950X, Zen 3) não tem AVX-512. O custo das fronteiras entre funções (`ctx->gpr`) é ~5-8%.
+- Testado e descartado: float aproximado **sem desvio** (o resultado saturado direto, NaN -> 0, sem refazer a
+  operação com os operandos saturados). O laço executa quase as mesmas instruções (~900), mas as EDGE subiram para
+  **~85 ms por quadro** (antes ~72; 11-12 q/s) em duas execuções. Código removido.
+
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`). Candidatos:
-(1) o que a EDGE sonda por DMA repetido (`SPU_DMA_REPEAT_LOG=20`: se espera o RSX, o tempo de espera conta como
-EDGE); (2) a entrada/saída das funções curtas dos jobs (cada uma carrega e grava dezenas de registradores do
+(1) a entrada/saída das funções curtas dos jobs (cada uma carrega e grava dezenas de registradores do
 `ctx->gpr`); (3) as chamadas indiretas (`bisl`) dos jobs, que passam por `spu_indirect_branch` + `spu_drain_call`.
 
 ## LLE seletivo da libsre (LFQueue)

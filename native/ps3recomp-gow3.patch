@@ -1854,10 +1854,63 @@ index c5ccbec7..9b929fe1 100644
   * Preferred slot extraction
   *
 diff --git a/runtime/spu/spu_dma.h b/runtime/spu/spu_dma.h
-index 8c4ccaa8..ad9cdc25 100644
+index 8c4ccaa8..eda86478 100644
 --- a/runtime/spu/spu_dma.h
 +++ b/runtime/spu/spu_dma.h
-@@ -1024,6 +1024,8 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
+@@ -956,6 +956,52 @@ static inline int mfc_enqueue(mfc_engine* mfc, spu_context* spu)
+     return 0;
+ }
+ 
++static SPU_THREAD_LOCAL struct { uint64_t t0, last_print; uint32_t wid; uint64_t acc[16], n[16]; } t_dma_poll;
++static inline uint64_t spu_dma_poll_now_ns(void)
++{
++#ifdef _WIN32
++    static LARGE_INTEGER f; LARGE_INTEGER c;
++    if (!f.QuadPart) QueryPerformanceFrequency(&f);
++    QueryPerformanceCounter(&c);
++    return (uint64_t)((double)c.QuadPart * 1e9 / (double)f.QuadPart);
++#else
++    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
++    return (uint64_t)ts.tv_sec * 1000000000u + (uint64_t)ts.tv_nsec;
++#endif
++}
++/* same: this transfer repeats the previous one; rep: repeats so far (before this one). Per SPURS
++ * workload: the id a policy module run keeps at LS 0x1DC. */
++static inline void spu_dma_poll_stats(int same, uint32_t rep, const spu_context* spu)
++{
++    const uint64_t now = spu_dma_poll_now_ns();
++    if (same && rep == 0) {
++        t_dma_poll.t0 = now;
++        t_dma_poll.wid = ((uint32_t)spu->ls[0x1DC] << 24 | (uint32_t)spu->ls[0x1DD] << 16 |
++                          (uint32_t)spu->ls[0x1DE] << 8 | spu->ls[0x1DF]) & 15u;
++    } else if (!same && rep >= 8 && t_dma_poll.t0) {
++        t_dma_poll.acc[t_dma_poll.wid] += now - t_dma_poll.t0; t_dma_poll.n[t_dma_poll.wid]++;
++    }
++    if (!same) t_dma_poll.t0 = 0;
++    if (!t_dma_poll.last_print) t_dma_poll.last_print = now;
++    if (now - t_dma_poll.last_print >= 10000000000ull) {
++        char b[512]; int k = 0;
++        for (int w = 0; w < 16; w++)
++            if (t_dma_poll.n[w] && k < 440)
++                k += snprintf(b + k, sizeof b - k, " w%d=%llux/%.0fms", w, (unsigned long long)t_dma_poll.n[w],
++                              t_dma_poll.acc[w] / 1e6);
++        b[k] = 0;
++#ifdef _WIN32
++        const unsigned long tid = (unsigned long)GetCurrentThreadId();
++#else
++        const unsigned long tid = 0;
++#endif
++        if (k) fprintf(stderr, "[dma-poll] tid=%lu %.1f s:%s\n", tid,
++                       (now - t_dma_poll.last_print) / 1e9, b);
++        memset(t_dma_poll.acc, 0, sizeof t_dma_poll.acc); memset(t_dma_poll.n, 0, sizeof t_dma_poll.n);
++        t_dma_poll.last_print = now;
++    }
++}
++
+ /*
+  * Submit and immediately execute an MFC command.
+  * This is the main entry point called when the SPU writes to MFC_Cmd.
+@@ -1024,6 +1070,8 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
      uint32_t size = spu->mfc_size;
      uint32_t tag  = spu->mfc_tag & 0x1F;
      int rc = 0;
@@ -1866,7 +1919,20 @@ index 8c4ccaa8..ad9cdc25 100644
  
      /* SPU_WATCHEA=<hex guest addr>: report every DMA whose destination range
       * covers one word, with the SPU id, its pc and the value the word holds
-@@ -1573,6 +1575,24 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
+@@ -1347,6 +1395,12 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
+        * only when such episodes are. Unset: no cost beyond the existing test. */
+       static int64_t s_log = -1;
+       if (s_log < 0) { const char* e = getenv("SPU_DMA_REPEAT_LOG"); s_log = e ? atoll(e) : 0; }
++      /* SPU_DMA_POLL_STATS=1: wall time each SPU thread spends in repeat episodes of 8+ identical
++       * transfers (a job polling a word another agent writes), from the first repeat, with the
++       * performance counter; one line per thread about every 10 s. */
++      static int s_ps = -1;
++      if (s_ps < 0) s_ps = getenv("SPU_DMA_POLL_STATS") ? 1 : 0;
++      if (s_ps) spu_dma_poll_stats((uint32_t)ea == s_last_ea && lsa == s_last_lsa, s_rep, spu);
+       if ((uint32_t)ea == s_last_ea && lsa == s_last_lsa) {
+           if (++s_rep >= s_limit) {
+               unsigned long long now = ps3_ms_now();
+@@ -1573,6 +1627,24 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
          }
      }
  
