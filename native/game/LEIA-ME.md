@@ -434,7 +434,19 @@ fase estiver mais rápida.
   operação com os operandos saturados). O laço executa quase as mesmas instruções (~900), mas as EDGE subiram para
   **~85 ms por quadro** (antes ~72; 11-12 q/s) em duas execuções. Código removido.
 
-**Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`). Candidatos:
+- **A cadeia EDGE é serial por natureza:** no rastreio de 3 s há sempre exatamente uma lista EDGE ativa (2952 ms
+  de 3000) e duas nunca se sobrepõem; a lista do quadro seguinte só começa quando a anterior termina.
+- **Medir velocidade por µs por job, não por fps:** o `edge_ms.py` agora imprime ms por quadro, jobs por quadro e
+  µs por job. As execuções variam entre ~1150 e ~1500 jobs EDGE por quadro conforme a cena da luta (por isso o fps
+  oscila entre 13 e 16 q/s na mesma versão); o µs por job (~50-56) é o que mede o código.
+- **Retorno direto sem a trava da instância:** o `spurs_pm_worker` repete o workload sem pegar `si->lock`, que a
+  thread do kernel segura durante passadas inteiras (o perfil mostrava a SPU das EDGE ~8% no ntdll, chamada pelo
+  `spurs_pm_worker`). µs por job: ~54,8 -> ~52,9 (quatro execuções contra duas).
+- Afinidade (script `rodar_af.ps1` do scratchpad): só o CCD 0 (0xFFFF) não ajuda (52,8/56,3 µs por job); um
+  processador lógico por núcleo (0x55555555) dá ~51,7, perto do ruído.
+- `GOW3_PROF` agora guarda os handles das threads e roda com prioridade alta: ~400 amostras/s por thread (eram ~15).
+
+**Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o µs por job). Candidatos:
 (1) a entrada/saída das funções curtas dos jobs (cada uma carrega e grava dezenas de registradores do
 `ctx->gpr`); (3) as chamadas indiretas (`bisl`) dos jobs, que passam por `spu_indirect_branch` + `spu_drain_call`.
 

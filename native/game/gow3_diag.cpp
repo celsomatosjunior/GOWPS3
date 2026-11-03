@@ -254,66 +254,77 @@ static DWORD WINAPI profiler(LPVOID arg)
     s_prof = (prof_thread*)calloc(PROF_THREADS, sizeof(prof_thread));
     if (!s_prof) return 0;
     Sleep((DWORD)start * 1000);
+    /* Acima das threads que só giram (apresentação, sondagens): sem isso a taxa de amostras caía a ~15/s. */
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     fprintf(stderr, "[GOW3-PROF] início (%d s)\n", secs);
     DWORD me = GetCurrentThreadId(), pid = GetCurrentProcessId();
     ULONGLONG fim = GetTickCount64() + (ULONGLONG)secs * 1000;
     int nthreads = 0;
+    /* Os handles ficam abertos e a lista de threads é refeita a cada 0,5 s: reabrir as ~55 threads a cada volta
+     * levava a taxa a ~15 amostras/s por thread. */
+    static HANDLE hth[PROF_THREADS];
+    ULONGLONG next_snap = 0;
     while (GetTickCount64() < fim) {
-        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-        THREADENTRY32 te;
-        te.dwSize = sizeof te;
-        if (snap != INVALID_HANDLE_VALUE && Thread32First(snap, &te)) {
-            do {
-                if (te.th32OwnerProcessID != pid || te.th32ThreadID == me) continue;
-                int i = 0;
-                while (i < nthreads && s_prof[i].tid != te.th32ThreadID) i++;
-                if (i == nthreads) { if (nthreads == PROF_THREADS) continue; s_prof[nthreads++].tid = te.th32ThreadID; }
-                HANDLE th = OpenThread(THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, te.th32ThreadID);
-                if (!th) continue;
-                SuspendThread(th);
-                CONTEXT c;
-                c.ContextFlags = s_prof_stack ? CONTEXT_FULL : CONTEXT_CONTROL;
-                uint64_t fora = 0;
-                if (GetThreadContext(th, &c)) {
-                    if (c.Rip >= lo && c.Rip < hi) prof_count(&s_prof[i], (uint32_t)(c.Rip - lo));
-                    else {
-                        s_prof[i].total++; s_prof[i].outside++; fora = c.Rip;
-                        /* Quem no exe levou a thread para fora: desenrola a pilha (thread suspensa) até o
-                         * primeiro quadro no exe e conta esse endereço de retorno com o bit 31 (chamador). */
-                        for (int f = 0; f < 24 && s_prof_stack; f++) {
-                            DWORD64 base = 0;
-                            PRUNTIME_FUNCTION rf = RtlLookupFunctionEntry(c.Rip, &base, NULL);
-                            if (!rf) { if (!c.Rsp) break; c.Rip = *(DWORD64*)c.Rsp; c.Rsp += 8; }
-                            else {
-                                void* hd = NULL; DWORD64 ef = 0;
-                                RtlVirtualUnwind(UNW_FLAG_NHANDLER, base, c.Rip, rf, &c, &hd, &ef, NULL);
-                            }
-                            if (!c.Rip) break;
-                            if (c.Rip >= lo && c.Rip < hi) {
-                                prof_count(&s_prof[i], (uint32_t)(c.Rip - lo) | 0x80000000u, 0);
-                                break;
-                            }
+        if (GetTickCount64() >= next_snap) {
+            next_snap = GetTickCount64() + 500;
+            HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+            THREADENTRY32 te;
+            te.dwSize = sizeof te;
+            if (snap != INVALID_HANDLE_VALUE && Thread32First(snap, &te)) {
+                do {
+                    if (te.th32OwnerProcessID != pid || te.th32ThreadID == me) continue;
+                    int i = 0;
+                    while (i < nthreads && s_prof[i].tid != te.th32ThreadID) i++;
+                    if (i < nthreads || nthreads == PROF_THREADS) continue;
+                    s_prof[nthreads].tid = te.th32ThreadID;
+                    hth[nthreads++] = OpenThread(THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, te.th32ThreadID);
+                } while (Thread32Next(snap, &te));
+            }
+            if (snap != INVALID_HANDLE_VALUE) CloseHandle(snap);
+        }
+        for (int i = 0; i < nthreads; i++) {
+            HANDLE th = hth[i];
+            if (!th) continue;
+            if (SuspendThread(th) == (DWORD)-1) { CloseHandle(th); hth[i] = NULL; continue; }   /* terminou */
+            CONTEXT c;
+            c.ContextFlags = s_prof_stack ? CONTEXT_FULL : CONTEXT_CONTROL;
+            uint64_t fora = 0;
+            if (GetThreadContext(th, &c)) {
+                if (c.Rip >= lo && c.Rip < hi) prof_count(&s_prof[i], (uint32_t)(c.Rip - lo));
+                else {
+                    s_prof[i].total++; s_prof[i].outside++; fora = c.Rip;
+                    /* Quem no exe levou a thread para fora: desenrola a pilha (thread suspensa) até o
+                     * primeiro quadro no exe e conta esse endereço de retorno com o bit 31 (chamador). */
+                    for (int f = 0; f < 24 && s_prof_stack; f++) {
+                        DWORD64 base = 0;
+                        PRUNTIME_FUNCTION rf = RtlLookupFunctionEntry(c.Rip, &base, NULL);
+                        if (!rf) { if (!c.Rsp) break; c.Rip = *(DWORD64*)c.Rsp; c.Rsp += 8; }
+                        else {
+                            void* hd = NULL; DWORD64 ef = 0;
+                            RtlVirtualUnwind(UNW_FLAG_NHANDLER, base, c.Rip, rf, &c, &hd, &ef, NULL);
+                        }
+                        if (!c.Rip) break;
+                        if (c.Rip >= lo && c.Rip < hi) {
+                            prof_count(&s_prof[i], (uint32_t)(c.Rip - lo) | 0x80000000u, 0);
+                            break;
                         }
                     }
                 }
-                ResumeThread(th);
-                CloseHandle(th);
-                /* Fora do exe: o módulo (ntdll = esperando no kernel; d3d12/driver = trabalho do RSX). Depois do
-                 * ResumeThread: a busca toma o loader lock, que a thread suspensa poderia estar segurando. */
-                if (fora) {
-                    HMODULE m = NULL;
-                    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                                       (LPCSTR)fora, &m);
-                    prof_thread* pt = &s_prof[i];
-                    int k = 0;
-                    while (k < PROF_MODS && pt->modn[k] && pt->mod[k] != m) k++;
-                    if (k < PROF_MODS) { pt->mod[k] = m; pt->modn[k]++; }
-                }
-            } while (Thread32Next(snap, &te));
+            }
+            ResumeThread(th);
+            if (fora) {
+                HMODULE m = NULL;
+                GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                   (LPCSTR)fora, &m);
+                prof_thread* pt = &s_prof[i];
+                int k = 0;
+                while (k < PROF_MODS && pt->modn[k] && pt->mod[k] != m) k++;
+                if (k < PROF_MODS) { pt->mod[k] = m; pt->modn[k]++; }
+            }
         }
-        if (snap != INVALID_HANDLE_VALUE) CloseHandle(snap);
-        Sleep(2);
+        Sleep(1);
     }
+    for (int i = 0; i < nthreads; i++) if (hth[i]) CloseHandle(hth[i]);
     for (int i = 0; i < nthreads; i++) {
         prof_thread* t = &s_prof[i];
         /* Toda thread com amostras: as que rodam fora do exe (girando em ntdll, num driver) também contam. As

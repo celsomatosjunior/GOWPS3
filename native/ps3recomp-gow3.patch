@@ -153,7 +153,7 @@ index 7e222c92..33b21296 100644
  }
  
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
-index 82ea66c6..844d5661 100644
+index 82ea66c6..2313613a 100644
 --- a/libs/spurs/cellSpurs.c
 +++ b/libs/spurs/cellSpurs.c
 @@ -16,6 +16,7 @@
@@ -397,7 +397,7 @@ index 82ea66c6..844d5661 100644
  s32 cellSpursCreateTask(CellSpursTaskset* taskset, CellSpursTaskId* taskId,
                          void* elf, void* context, u32 sizeContext,
                          u32 lsPattern_ea, u32 argument_ea)
-@@ -1714,6 +1906,101 @@ static WklPm* spurs_resolve_pm(u32 wid)
+@@ -1714,6 +1906,102 @@ static WklPm* spurs_resolve_pm(u32 wid)
   * occupies only its own slot; a later runnable producer can use another slot.
   * Admission and lifecycle state are serialized per instance. Guest execution
   * never runs under that lock, and only a genuine return releases contention. */
@@ -434,8 +434,9 @@ index 82ea66c6..844d5661 100644
 +           vm_read8(ea + SPURS_WKL_MAXCONT + wid) && spurs_resolve_pm(wid);
 +}
 +
-+/* Called by the worker with si->lock held, its run just finished and its contention not yet
-+ * released. Returns 1 when the lane keeps the same workload (slot stays busy). */
++/* Called by the worker without si->lock, its run just finished and its contention not yet
++ * released (the other lanes' busy flags are read racily: a hint, as on the PS3). Returns 1 when
++ * the lane keeps the same workload (slot stays busy). */
 +static int spurs_pm_sticky_take(struct SpursInst* si, struct SpursPmSlot* slot)
 +{
 +    const int lim = spurs_pm_sticky();
@@ -499,69 +500,76 @@ index 82ea66c6..844d5661 100644
  static DWORD WINAPI spurs_pm_worker(LPVOID p)
  {
      struct SpursPmSlot* slot = (struct SpursPmSlot*)p;
-@@ -1729,18 +2016,69 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
+@@ -1729,10 +2017,64 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
              SleepConditionVariableSRW(&si->wake, &si->lock, INFINITE, 0);
          if (si->stopping && !slot->busy) break;
          ReleaseSRWLockExclusive(&si->lock);
-+        static int pmtr = -1; static volatile LONG pm_runs[16];
-+        if (pmtr < 0) pmtr = getenv("SPURS_PM_TRACE") ? 1 : 0;
-+        unsigned long long t0 = GetTickCount64();
-+        LARGE_INTEGER q0; QueryPerformanceCounter(&q0);
-+        const uint64_t ft0 = PS3_FT_ON() ? ps3_ft_now() : 0;
-         spu_run_policy_module(slot->fn, slot->image_id, slot->pm, slot->pm_size,
-                               slot->data, slot->wid, slot->ea, slot->spu_num);
-+        /* A policy module (a Wws job manager) polls and returns instead of blocking on a
-+         * channel, so the channel-wait spans never show it: one busy span per run, who =
-+         * physical SPU (+8 for a second SPURS instance), b = workload id. */
-+        if (ft0) {
-+            const uint64_t ft1 = ps3_ft_now();
-+            if (ft1 - ft0 >= ps3_ft_min_ns())
-+                ps3_ft_span(PS3_FT_SPU_BUSY, slot->spu_num + (uint32_t)(si - s_inst) * 8u,
-+                            (uint32_t)slot->image_id, slot->wid, ft0, ft1);
-+        }
-         extern SPU_THREAD_LOCAL volatile unsigned g_spurs_pm_polls;
-         unsigned polls = g_spurs_pm_polls;
-+        if (pmtr) {
-+            LONG n = InterlockedIncrement(&pm_runs[slot->wid & 15]);
-+            if (n <= 12 || (n & (n - 1)) == 0)
-+                fprintf(stderr, "[pmtrace] wid=%u run#%ld spu=%u %llums polls=%u flag=%08X recv=%u\n",
-+                        slot->wid, n, slot->spu_num, GetTickCount64() - t0, polls,
-+                        vm_read32(slot->ea + 0x6C), vm_read8(slot->ea + 0x77));
-+        }
-+        { /* SPURS_PM_STATS=<s>: per workload, the host time its policy module ran, the runs, the
-+           * empty runs (no poll) and the SPUs it ran on, printed every <s> seconds. */
-+          static int st = -1; static volatile LONG64 st_us[16], st_runs[16], st_empty[16], st_spus[16];
-+          static volatile LONG64 st_last;
-+          if (st < 0) { const char* e = getenv("SPURS_PM_STATS"); st = e ? atoi(e) : 0; }
-+          if (st > 0) {
-+              static LARGE_INTEGER fq; if (!fq.QuadPart) QueryPerformanceFrequency(&fq);
-+              LARGE_INTEGER now; QueryPerformanceCounter(&now);
-+              const u32 w = slot->wid & 15;
-+              InterlockedAdd64(&st_us[w], (LONG64)((now.QuadPart - q0.QuadPart) * 1000000 / fq.QuadPart));
-+              InterlockedIncrement64(&st_runs[w]);
-+              if (!polls) InterlockedIncrement64(&st_empty[w]);
-+              InterlockedOr64(&st_spus[w], 1ll << (slot->spu_num & 15));
-+              const LONG64 tick = now.QuadPart / fq.QuadPart, last = st_last;
-+              if (tick - last >= st && InterlockedCompareExchange64(&st_last, tick, last) == last && last) {
-+                  for (int i = 0; i < 16; i++) {
-+                      const LONG64 r = InterlockedExchange64(&st_runs[i], 0);
-+                      const LONG64 us = InterlockedExchange64(&st_us[i], 0);
-+                      const LONG64 em = InterlockedExchange64(&st_empty[i], 0);
-+                      const LONG64 sp = InterlockedExchange64(&st_spus[i], 0);
-+                      if (r) fprintf(stderr, "[pmstats] spurs=0x%08X wid=%d runs=%lld vazias=%lld ms=%lld spus=0x%llX "
-+                                     "prio=%016llX\n", slot->ea, i, r, em, us / 1000, (unsigned long long)sp,
-+                                     (unsigned long long)vm_read64(slot->ea + SPURS_WKL_INFO1 + i * SPURS_WKL_INFO_SZ + 0x18));
-+                  }
-+              } else if (!last) InterlockedCompareExchange64(&st_last, tick, 0);
-+          } }
+-        spu_run_policy_module(slot->fn, slot->image_id, slot->pm, slot->pm_size,
+-                              slot->data, slot->wid, slot->ea, slot->spu_num);
+-        extern SPU_THREAD_LOCAL volatile unsigned g_spurs_pm_polls;
+-        unsigned polls = g_spurs_pm_polls;
++        unsigned polls;
++        /* The re-runs of spurs_pm_sticky_take happen here, without si->lock: they keep the slot busy
++         * and the workload's contention as it is, which is all that lock serializes, and the kernel
++         * thread holds it through whole runs of kick passes -- the EDGE SPU of God of War III waited
++         * on it before every job (~8% of its time in ntdll). */
++        do {
++            static int pmtr = -1; static volatile LONG pm_runs[16];
++            if (pmtr < 0) pmtr = getenv("SPURS_PM_TRACE") ? 1 : 0;
++            unsigned long long t0 = GetTickCount64();
++            LARGE_INTEGER q0; QueryPerformanceCounter(&q0);
++            const uint64_t ft0 = PS3_FT_ON() ? ps3_ft_now() : 0;
++            spu_run_policy_module(slot->fn, slot->image_id, slot->pm, slot->pm_size,
++                                  slot->data, slot->wid, slot->ea, slot->spu_num);
++            /* A policy module (a Wws job manager) polls and returns instead of blocking on a
++             * channel, so the channel-wait spans never show it: one busy span per run, who =
++             * physical SPU (+8 for a second SPURS instance), b = workload id. */
++            if (ft0) {
++                const uint64_t ft1 = ps3_ft_now();
++                if (ft1 - ft0 >= ps3_ft_min_ns())
++                    ps3_ft_span(PS3_FT_SPU_BUSY, slot->spu_num + (uint32_t)(si - s_inst) * 8u,
++                                (uint32_t)slot->image_id, slot->wid, ft0, ft1);
++            }
++            extern SPU_THREAD_LOCAL volatile unsigned g_spurs_pm_polls;
++            polls = g_spurs_pm_polls;
++            if (pmtr) {
++                LONG n = InterlockedIncrement(&pm_runs[slot->wid & 15]);
++                if (n <= 12 || (n & (n - 1)) == 0)
++                    fprintf(stderr, "[pmtrace] wid=%u run#%ld spu=%u %llums polls=%u flag=%08X recv=%u\n",
++                            slot->wid, n, slot->spu_num, GetTickCount64() - t0, polls,
++                            vm_read32(slot->ea + 0x6C), vm_read8(slot->ea + 0x77));
++            }
++            { /* SPURS_PM_STATS=<s>: per workload, the host time its policy module ran, the runs, the
++               * empty runs (no poll) and the SPUs it ran on, printed every <s> seconds. */
++              static int st = -1; static volatile LONG64 st_us[16], st_runs[16], st_empty[16], st_spus[16];
++              static volatile LONG64 st_last;
++              if (st < 0) { const char* e = getenv("SPURS_PM_STATS"); st = e ? atoi(e) : 0; }
++              if (st > 0) {
++                  static LARGE_INTEGER fq; if (!fq.QuadPart) QueryPerformanceFrequency(&fq);
++                  LARGE_INTEGER now; QueryPerformanceCounter(&now);
++                  const u32 w = slot->wid & 15;
++                  InterlockedAdd64(&st_us[w], (LONG64)((now.QuadPart - q0.QuadPart) * 1000000 / fq.QuadPart));
++                  InterlockedIncrement64(&st_runs[w]);
++                  if (!polls) InterlockedIncrement64(&st_empty[w]);
++                  InterlockedOr64(&st_spus[w], 1ll << (slot->spu_num & 15));
++                  const LONG64 tick = now.QuadPart / fq.QuadPart, last = st_last;
++                  if (tick - last >= st && InterlockedCompareExchange64(&st_last, tick, last) == last && last) {
++                      for (int i = 0; i < 16; i++) {
++                          const LONG64 r = InterlockedExchange64(&st_runs[i], 0);
++                          const LONG64 us = InterlockedExchange64(&st_us[i], 0);
++                          const LONG64 em = InterlockedExchange64(&st_empty[i], 0);
++                          const LONG64 sp = InterlockedExchange64(&st_spus[i], 0);
++                          if (r) fprintf(stderr, "[pmstats] spurs=0x%08X wid=%d runs=%lld vazias=%lld ms=%lld spus=0x%llX "
++                                         "prio=%016llX\n", slot->ea, i, r, em, us / 1000, (unsigned long long)sp,
++                                         (unsigned long long)vm_read64(slot->ea + SPURS_WKL_INFO1 + i * SPURS_WKL_INFO_SZ + 0x18));
++                      }
++                  } else if (!last) InterlockedCompareExchange64(&st_last, tick, 0);
++              } }
++        } while (polls && spurs_pm_sticky_take(si, slot));   /* same workload again, no hand-off */
          AcquireSRWLockExclusive(&si->lock);
          u32 wid = slot->wid;
-+        if (polls && spurs_pm_sticky_take(si, slot)) {   /* same workload again, no hand-off */
-+            si->idle[wid] = 0;
-+            continue;
-+        }
          if (si->active[wid]) si->active[wid]--;
-         spu_lockline_lock();
+@@ -1740,7 +2082,7 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
          vm_base[slot->ea + SPURS_WKL_CURCONT + wid] = si->active[wid];
          ef_line_end(slot->ea);
          if (polls) si->idle[wid] = 0;
@@ -570,7 +578,7 @@ index 82ea66c6..844d5661 100644
          slot->busy = 0;
          WakeAllConditionVariable(&si->wake);
      }
-@@ -1767,7 +2105,23 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1767,7 +2109,23 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
          if (__atomic_exchange_n(&si->kick, 0, __ATOMIC_ACQ_REL)) {
              kick_pass = ++kick_run < 16;
          } else {
@@ -595,7 +603,7 @@ index 82ea66c6..844d5661 100644
              /* This full pass reads the line after any commit that woke it. */
              (void)__atomic_exchange_n(&si->kick, 0, __ATOMIC_ACQ_REL);
          }
-@@ -1779,8 +2133,52 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1779,8 +2137,52 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
          if (!kick_pass) si->pass_no++;
          u32 enabled = vm_read32(ea + SPURS_WKL_ENABLED);
          for (u32 sn = 0; sn < si->nspus; sn++) {
@@ -648,7 +656,7 @@ index 82ea66c6..844d5661 100644
              for (u32 checked = 0; checked < 16; checked++) {
                  u32 wid = si->cursor;
                  si->cursor = (wid + 1) & 15;
-@@ -1796,7 +2194,11 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1796,7 +2198,11 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                  if (!pm) continue;
                  u32 signal = vm_read16(ea + SPURS_WKL_SIGNAL1);
                  u32 ready = vm_read8(ea + SPURS_WKL_READY1 + wid);
@@ -661,7 +669,7 @@ index 82ea66c6..844d5661 100644
                  if (kicked) si->idle[wid] = 0;
                  if (!kicked && (kick_pass || (si->pass_no & ((1u << si->idle[wid]) - 1))))
                      continue;
-@@ -1806,7 +2208,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1806,7 +2212,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                  if (ready) vm_base[ea + SPURS_WKL_READY1 + wid] = (u8)(ready - 1);
                  if (signal & (0x8000u >> wid))
                      ef_w16(ea + SPURS_WKL_SIGNAL1, (u16)(signal & ~(0x8000u >> wid)));
