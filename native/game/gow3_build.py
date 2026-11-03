@@ -523,6 +523,10 @@ def step_rodar(args, work: Path, state: dict, progress):
     # Um policy module que fez trabalho roda de novo na mesma SPU sem devolver a vez à thread do kernel
     # do SPURS (cellSpurs.c, spurs_pm_sticky_take): cada devolução custava ~20 us por job EDGE.
     env.setdefault("SPURS_PM_STICKY", "64")
+    # O policy module Wws reenvia o código do job a cada job (~100 mil GETs por segundo): compara só o trecho
+    # reenviado e mantém o módulo verificado e o cache de despacho (spu_overlay_note_get). Verificações completas
+    # de ~58 KB: ~7 mil -> ~700 por segundo.
+    env.setdefault("SPU_OVL_INCREMENTAL", "1")
     if args.jogo:
         root = Path(args.jogo)
         if (root / "PS3_GAME").is_dir():

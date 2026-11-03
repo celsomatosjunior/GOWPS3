@@ -406,9 +406,27 @@ fase estiver mais rápida.
   `SwitchToThread` do `mfc_submit` (sondagem por DMA repetido de uma palavra que outro agente escreve). A SPU 0
   deixou de estar saturada: o resto do quadro (PPU, RSX, outras listas) volta a pesar.
 
-**Próxima ação exata:** medir de novo a cadeia do quadro com `PS3_FTRACE` (quem a SPU 0 espera agora: RSX, PPU ou
-outra lista) e atacar o novo caminho crítico; no código dos jobs, o despacho por job (`spu_lifted_lookup`,
-`spu_step`, `spu_coh_notify_write`) ainda soma ~7%.
+- **Estimativas nativas (03/11, fim da tarde):** com `SPU_FLOAT_APPROX`, `frest`/`frsqest` viram 1/x e 1/sqrt|x| do
+  host e o `fi` devolve a estimativa, como no "approximate xfloat" do RPCS3 (a tabela exata custava ~35 instruções e o
+  `fi` ~20; `-DSPU_EST_EXACT` volta à tabela). O `shufb` perdeu duas instruções (índice e máscara do "vem de b" sem
+  and/cmpeq). A/B de duas execuções cada, com `edge_ms.py` (pasta de trabalho: ms de SPU das listas EDGE por
+  quadro, do `SPURS_PM_STATS=10`): **~72 ms (nativas) contra ~74,5 ms (exatas)**, mediana 13,4-13,7 contra
+  11,9-12,9 q/s. Imagem conferida por `LD_FRAME_DUMP`.
+- `SPU_OVL_INCREMENTAL=1` agora funciona e é padrão no `rodar`: o reenvio do código com o cabeçalho do módulo
+  registrava o slot de novo como pendente e desfazia a verificação incremental; agora um reenvio idêntico do
+  mesmo módulo no mesmo lugar mantém o slot verificado. Verificações completas: ~7 mil -> ~700 por segundo.
+- **Retrato da fase agora:** as listas EDGE (wids 8-10) somam ~9,75 s de SPU a cada 10 s, ou seja uma SPU inteira,
+  e o quadro é ~1000 / (ms das EDGE por quadro). O jogo registra cada lista com maxContention=1 e nunca muda
+  (como no PS3): não dá para dividir uma lista entre SPUs. As SPUs 1-4 ficam quase paradas.
+- Por dentro da SPU das EDGE: ~63% código dos jobs (espalhado: a 0x10E20 ~9%, dezenas de funções de 1-3%), ~22%
+  runtime (`spu_indirect_branch` ~5%, `spu_coh_notify_write` ~3%, `spu_lifted_lookup_full` ~2%, `spu_drain_call`
+  ~2%), ~7% memcpy (o reenvio do código, ~1,5 GB/s) e ~7% ntdll (sondagem por DMA repetido, `Sleep`/
+  `SwitchToThread` do `mfc_submit`).
+
+**Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`). Candidatos:
+(1) o que a EDGE sonda por DMA repetido (`SPU_DMA_REPEAT_LOG=20`: se espera o RSX, o tempo de espera conta como
+EDGE); (2) a entrada/saída das funções curtas dos jobs (cada uma carrega e grava dezenas de registradores do
+`ctx->gpr`); (3) as chamadas indiretas (`bisl`) dos jobs, que passam por `spu_indirect_branch` + `spu_drain_call`.
 
 ## LLE seletivo da libsre (LFQueue)
 

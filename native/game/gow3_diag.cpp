@@ -232,6 +232,7 @@ enum { PROF_MODS = 24 };
 struct prof_thread { DWORD tid; uint32_t total, outside; uint32_t key[PROF_SLOTS]; uint32_t n[PROF_SLOTS];
                      HMODULE mod[PROF_MODS]; uint32_t modn[PROF_MODS]; };
 static prof_thread* s_prof;
+static int s_prof_stack;   /* GOW3_PROF=<início>,<duração>,1: também os chamadores (mais lento: menos amostras) */
 
 static void prof_count(prof_thread* t, uint32_t off, int total = 1)
 {
@@ -271,7 +272,7 @@ static DWORD WINAPI profiler(LPVOID arg)
                 if (!th) continue;
                 SuspendThread(th);
                 CONTEXT c;
-                c.ContextFlags = CONTEXT_FULL;
+                c.ContextFlags = s_prof_stack ? CONTEXT_FULL : CONTEXT_CONTROL;
                 uint64_t fora = 0;
                 if (GetThreadContext(th, &c)) {
                     if (c.Rip >= lo && c.Rip < hi) prof_count(&s_prof[i], (uint32_t)(c.Rip - lo));
@@ -279,7 +280,7 @@ static DWORD WINAPI profiler(LPVOID arg)
                         s_prof[i].total++; s_prof[i].outside++; fora = c.Rip;
                         /* Quem no exe levou a thread para fora: desenrola a pilha (thread suspensa) até o
                          * primeiro quadro no exe e conta esse endereço de retorno com o bit 31 (chamador). */
-                        for (int f = 0; f < 24; f++) {
+                        for (int f = 0; f < 24 && s_prof_stack; f++) {
                             DWORD64 base = 0;
                             PRUNTIME_FUNCTION rf = RtlLookupFunctionEntry(c.Rip, &base, NULL);
                             if (!rf) { if (!c.Rsp) break; c.Rip = *(DWORD64*)c.Rsp; c.Rsp += 8; }
@@ -353,7 +354,7 @@ static int start_profiler()
 {
     const char* e = getenv("GOW3_PROF");
     int start = 0, secs = 20;
-    if (!e || sscanf(e, "%d,%d", &start, &secs) < 1) return 0;
+    if (!e || sscanf(e, "%d,%d,%d", &start, &secs, &s_prof_stack) < 1) return 0;
     CreateThread(NULL, 0, profiler, (LPVOID)(((intptr_t)start << 16) | (secs & 0xFFFF)), 0, NULL);
     return 1;
 }

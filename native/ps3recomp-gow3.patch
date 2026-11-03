@@ -1444,7 +1444,7 @@ index 32e8a959..e3ac93e8 100644
      s_state.hdc = GetDC(s_state.hwnd);
      s_state.last_fps_time = GetTickCount64();
 diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
-index 5fc50208..4f3cd20a 100644
+index 5fc50208..46aa659e 100644
 --- a/runtime/spu/spu_channels.c
 +++ b/runtime/spu/spu_channels.c
 @@ -576,7 +576,46 @@ volatile unsigned g_spu_putllc_sync_hit = 0;
@@ -1627,7 +1627,14 @@ index 5fc50208..4f3cd20a 100644
      }
      return *state == SPU_OVERLAY_VERIFIED;
  }
-@@ -2139,11 +2249,38 @@ void spu_overlay_note_get(spu_context* ctx, uint32_t ea, const uint8_t* ls, uint
+@@ -2133,17 +2243,45 @@ void spu_overlay_note_get(spu_context* ctx, uint32_t ea, const uint8_t* ls, uint
+ {
+     uint32_t lsa = (uint32_t)(ls - ctx->ls);
+     spu_ovl_dump(ctx, ea, lsa, ls, size);
++    unsigned kept_slots = 0;   /* slots the incremental check kept verified (bit per slot) */
+     for (unsigned slot = 0; slot < 4; ++slot) {
+         if (!ctx->resident_code[slot].image_id) continue;
+         uint32_t base = ctx->resident_code[slot].lsa;
          uint32_t end = base + ctx->resident_code[slot].size;
          if (lsa < end && lsa + size > base) {
              if (lsa < base || ea != ctx->resident_code[slot].source_ea + (lsa - base)) {
@@ -1664,11 +1671,24 @@ index 5fc50208..4f3cd20a 100644
 +                if (!kept) {
 +                    ctx->resident_code[slot].verify_state = SPU_OVERLAY_PENDING;
 +                    spu_dcache_residency_changed(ctx);
-+                }
++                } else kept_slots |= 1u << slot;
              }
          }
      }
-@@ -2575,6 +2712,45 @@ static int spu_smc_microstep(spu_context* ctx)
+@@ -2161,6 +2299,12 @@ void spu_overlay_note_get(spu_context* ctx, uint32_t ea, const uint8_t* ls, uint
+                 for (unsigned slot = 0; slot < 4; ++slot) {
+                     if (ctx->resident_code[slot].image_id && ctx->resident_code[slot].lsa != lsa)
+                         continue;
++                    /* The same module re-sent to the same place, its bytes just checked: the
++                     * registration would only throw the verification and the dispatch cache away. */
++                    if ((kept_slots >> slot & 1u) && ctx->resident_code[slot].image_id == o->image_id &&
++                        ctx->resident_code[slot].source_ea == ea && ctx->resident_code[slot].source_index == i &&
++                        ctx->resident_code[slot].size == o->span)
++                        return;
+                     ctx->resident_code[slot].lsa = lsa;
+                     ctx->resident_code[slot].size = o->span;
+                     ctx->resident_code[slot].source_ea = ea;
+@@ -2575,6 +2719,45 @@ static int spu_smc_microstep(spu_context* ctx)
                fprintf(stderr, "[spu-smc] microstep img=%d pc=0x%05X word 0x%08X not in the"
                        " microstep set -- handing to the interpreter (steps=%d)\n",
                        ctx->image_id, pc, w, steps); }
@@ -1714,7 +1734,7 @@ index 5fc50208..4f3cd20a 100644
          ctx->pc = pc;
          /* Stop at the drain's return point too: it sits mid-function, so it is
           * no lifted entry, and a job's return would otherwise run on through
-@@ -2658,6 +2834,38 @@ void spu_indirect_branch(spu_context* ctx)
+@@ -2658,6 +2841,38 @@ void spu_indirect_branch(spu_context* ctx)
              return;
          }
      }
@@ -1872,10 +1892,10 @@ index 8c4ccaa8..ad9cdc25 100644
       * List commands (GETL/PUTL...): per CBEA the LIST's local-store address is
       * carried in MFC_EAL (the PM writes EAL=list, LSA=dest) and each element
 diff --git a/runtime/spu/spu_helpers.h b/runtime/spu/spu_helpers.h
-index f04fda63..8d1cd62a 100644
+index f04fda63..8d886330 100644
 --- a/runtime/spu/spu_helpers.h
 +++ b/runtime/spu/spu_helpers.h
-@@ -467,18 +467,22 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) { return spu_selb_ref(a, b,
+@@ -467,18 +467,25 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) { return spu_selb_ref(a, b,
   * as the byte loop). SPU byte P lives at host byte SPU_W(P), i.e. the bytes
   * of each 32-bit word reversed, so swap into SPU order, select, swap back. */
  static inline u128 spu_shufb(u128 a, u128 b, u128 c) {
@@ -1886,8 +1906,12 @@ index f04fda63..8d1cd62a 100644
      __m128i A, B, C; memcpy(&A, &a, 16); memcpy(&B, &b, 16); memcpy(&C, &c, 16);
 -    A = _mm_shuffle_epi8(A, sw); B = _mm_shuffle_epi8(B, sw); C = _mm_shuffle_epi8(C, sw);
 -    const __m128i idx = _mm_and_si128(C, _mm_set1_epi8(0x0F));
-+    const __m128i idx = _mm_xor_si128(_mm_and_si128(C, _mm_set1_epi8(0x0F)), _mm_set1_epi8(3));
-     const __m128i fromb = _mm_cmpeq_epi8(_mm_and_si128(C, _mm_set1_epi8(0x10)), _mm_set1_epi8(0x10));
+-    const __m128i fromb = _mm_cmpeq_epi8(_mm_and_si128(C, _mm_set1_epi8(0x10)), _mm_set1_epi8(0x10));
++    /* pshufb reads only bits 0-3 of the index (bit 7 zeroes the byte, and those selectors are
++     * redone below), and blendv only bit 7 of the mask: a 16-bit shift by 3 puts each byte's bit 4
++     * ("from b") there, without carrying anything into the other byte's bit 7. */
++    const __m128i idx = _mm_xor_si128(C, _mm_set1_epi8(3));
++    const __m128i fromb = _mm_slli_epi16(C, 3);
      __m128i r = _mm_blendv_epi8(_mm_shuffle_epi8(A, idx), _mm_shuffle_epi8(B, idx), fromb);
 -    /* Special selectors: 10x -> 0x00, 110 -> 0xFF, 111 -> 0x80. */
 -    const __m128i m80 = _mm_cmpeq_epi8(_mm_and_si128(C, _mm_set1_epi8((char)0x80)), _mm_set1_epi8((char)0x80));
@@ -1907,7 +1931,7 @@ index f04fda63..8d1cd62a 100644
      u128 out; memcpy(&out, &r, 16); return out;
  }
  #elif defined(__ARM_NEON)
-@@ -787,7 +791,73 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
+@@ -787,7 +794,73 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
  SPU__SF_V3(spu__fma_s,  spu__fma_any(x, y, z, 0, 0))
  SPU__SF_V3(spu__fms_s,  spu__fma_any(x, y, z, 0, 0x80000000u))
  SPU__SF_V3(spu__fnms_s, spu__fma_any(x, y, z, 0x80000000u, 0))
@@ -1982,6 +2006,61 @@ index f04fda63..8d1cd62a 100644
  /* Four lanes at a time, every lane exact, with no FPCR change. The host rounds to nearest (the
   * thread's default FPCR: RN, no flush-to-zero -- writing FPCR per op serializes, ~17 ns on an
   * M4); the SPU truncates. A result rounded to nearest is either the truncated one or one step
+@@ -1575,7 +1648,7 @@ SPU__XE_INLINE __m128i spu__xe_narrow(__m256i v) {
+ /* (2^13 | base) * 2^19 - step * y is 2^32 + d with d = base * 2^19 - step * y (base < 2^13,
+  * step * y < 2^29): the magnitude is >= 2^32 exactly when base * 2^19 >= step * y, and its low
+  * 32 bits are d mod 2^32 either way, so 32-bit lanes suffice. */
+-SPU__XE_INLINE u128 spu_fi(u128 a, u128 b) {
++SPU__XE_INLINE u128 spu_fi_xe(u128 a, u128 b) {
+     const __m128i est = spu__xe_ld(b), y = _mm_and_si128(spu__xe_ld(a), _mm_set1_epi32(0x7FFFF));
+     const __m128i exp = _mm_and_si128(_mm_srli_epi32(est, 23), _mm_set1_epi32(0xFF));
+     const __m128i b19 = _mm_slli_epi32(_mm_and_si128(_mm_srli_epi32(est, 10), _mm_set1_epi32(0x1FFF)), 19);
+@@ -1603,7 +1676,7 @@ SPU__XE_INLINE __m128i spu__xe_lut(const uint32_t* tbl, int n, __m128i idx) {
+     }
+     return r;
+ }
+-SPU__XE_INLINE u128 spu_frest(u128 a) {
++SPU__XE_INLINE u128 spu_frest_xe(u128 a) {
+     const __m128i x = spu__xe_ld(a);
+     const __m128i exp = _mm_and_si128(_mm_srli_epi32(x, 23), _mm_set1_epi32(0xFF));
+     const __m128i idx = _mm_and_si128(_mm_srli_epi32(x, 18), _mm_set1_epi32(0x1F));
+@@ -1614,7 +1687,7 @@ SPU__XE_INLINE u128 spu_frest(u128 a) {
+     return spu__xe_st(_mm_or_si128(_mm_or_si128(_mm_and_si128(x, _mm_set1_epi32((int)0x80000000u)),
+                                                 _mm_slli_epi32(rexp, 23)), frac));
+ }
+-SPU__XE_INLINE u128 spu_frsqest(u128 a) {
++SPU__XE_INLINE u128 spu_frsqest_xe(u128 a) {
+     const __m128i x = spu__xe_ld(a);
+     const __m128i exp = _mm_and_si128(_mm_srli_epi32(x, 23), _mm_set1_epi32(0xFF));
+     const __m128i idx = _mm_and_si128(_mm_srli_epi32(x, 18), _mm_set1_epi32(0x3F));
+@@ -1673,6 +1746,27 @@ SPU__XE_INLINE u128 spu_cuflt(u128 a, int i8) {
+     const __m128i nz = _mm_xor_si128(_mm_cmpeq_epi32(v, _mm_setzero_si128()), _mm_set1_epi32(-1));
+     return spu__xe_st(spu__xe_cxflt(d, _mm_setzero_si128(), nz, i8));
+ }
++#if defined(SPU_FLOAT_APPROX) && defined(__FMA__) && !defined(SPU_EST_EXACT)
++/* SPU_FLOAT_APPROX: the estimates as the host's own reciprocal and reciprocal square root, like
++ * RPCS3's approximate xfloat, and fi passes the estimate through. The SPU pair (frest/frsqest, then
++ * fi) is good to ~12 bits and the code refines it with a Newton step; an exact 1/x or 1/sqrt|x| only
++ * makes that step land closer. Operands as the other approximate ops read them (spu__ax_sat: zero
++ * and denormal are +0, extended range saturates); 1/0 is +Inf, an exponent-255 word as the SPU's own
++ * estimate of 0 is. About 5 instructions instead of ~35 (table lookup) plus ~20 (fi).
++ * SPU_EST_EXACT=1 at build time keeps the bit-exact table versions. */
++SPU__XE_INLINE u128 spu_fi(u128 a, u128 b) { (void)a; return b; }
++SPU__XE_INLINE u128 spu_frest(u128 a) {
++    u128 r; _mm_storeu_ps(r._f32, _mm_div_ps(_mm_set1_ps(1.0f), spu__ax_ld(a))); return r;
++}
++SPU__XE_INLINE u128 spu_frsqest(u128 a) {
++    const __m128 x = _mm_andnot_ps(_mm_set1_ps(-0.0f), spu__ax_ld(a));
++    u128 r; _mm_storeu_ps(r._f32, _mm_div_ps(_mm_set1_ps(1.0f), _mm_sqrt_ps(x))); return r;
++}
++#else
++SPU__XE_INLINE u128 spu_fi(u128 a, u128 b) { return spu_fi_xe(a, b); }
++SPU__XE_INLINE u128 spu_frest(u128 a) { return spu_frest_xe(a); }
++SPU__XE_INLINE u128 spu_frsqest(u128 a) { return spu_frsqest_xe(a); }
++#endif
+ #else
+ static inline u128 spu_fi(u128 a, u128 b)      { return spu_fi_ref(a, b); }
+ static inline u128 spu_frest(u128 a)           { return spu_frest_ref(a); }
 diff --git a/runtime/spu/spu_workload.c b/runtime/spu/spu_workload.c
 index 3ce8d0d6..e0ce995c 100644
 --- a/runtime/spu/spu_workload.c
