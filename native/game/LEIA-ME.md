@@ -394,9 +394,21 @@ fase estiver mais rápida.
   perdas; `AUDIO_PEAK=1`: picos de até 0,4).
 - `SPURS_PM_STICKY=1024` em vez de 64: igual (11,9-13,7 q/s, no ruído).
 
-**Próxima ação exata:** a SPU 0 está ~90% ocupada no código dos jobs EDGE; o ganho seguinte é deixar esse código
-mais rápido (tradutor SPU: testes de Inf/NaN do float aproximado, inversão de bytes das leituras de LS, custo do
-despacho por job: `spu_indirect_branch`/`spu_lifted_lookup` ~4,5%, `spu_wrch`/`spu_drain_call` ~2,6%).
+- **Float aproximado sem chamada fria (03/11, tarde): ~12,0 -> ~13,4-14,9 q/s de mediana** (médias 13,9 e 16,6 em
+  duas execuções; antes 12,8). O caminho saturado de cada fa/fm/fma era uma função fora de linha (`noinline, cold`),
+  e no Win64 um u128 vai por ponteiro: cada operação de float num laço era um ponto de chamada, e os vetores vivos
+  através dela só podiam ficar em xmm6-15. Agora o caminho saturado fica em linha num bloco frio
+  (`SPU__AX_SATFN` no `spu_helpers.h`; `-DSPU_AX_SAT_CALL=1` volta à chamada). Resultados idênticos bit a bit
+  (2 milhões de operações aleatórias com expoente 255, máscaras e denormais). As leituras de LS já eram
+  `vmovdqu` + `vpshufb` (conferido no assembly). Versão `gow3-fase-v8` (tag e `Projetos\versoes\gow3-fase-v8`).
+- `GOW3_PROF` agora desenrola a pilha das amostras fora do exe e imprime `chamador 0x...` (quem no exe levou a
+  thread ao ntdll). Na SPU das EDGE: ~21% esperando trabalho no `spurs_pm_worker` e ~7% no `Sleep`/
+  `SwitchToThread` do `mfc_submit` (sondagem por DMA repetido de uma palavra que outro agente escreve). A SPU 0
+  deixou de estar saturada: o resto do quadro (PPU, RSX, outras listas) volta a pesar.
+
+**Próxima ação exata:** medir de novo a cadeia do quadro com `PS3_FTRACE` (quem a SPU 0 espera agora: RSX, PPU ou
+outra lista) e atacar o novo caminho crítico; no código dos jobs, o despacho por job (`spu_lifted_lookup`,
+`spu_step`, `spu_coh_notify_write`) ainda soma ~7%.
 
 ## LLE seletivo da libsre (LFQueue)
 

@@ -1872,7 +1872,7 @@ index 8c4ccaa8..ad9cdc25 100644
       * List commands (GETL/PUTL...): per CBEA the LIST's local-store address is
       * carried in MFC_EAL (the PM writes EAL=list, LSA=dest) and each element
 diff --git a/runtime/spu/spu_helpers.h b/runtime/spu/spu_helpers.h
-index f04fda63..bd10e77a 100644
+index f04fda63..8d1cd62a 100644
 --- a/runtime/spu/spu_helpers.h
 +++ b/runtime/spu/spu_helpers.h
 @@ -467,18 +467,22 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) { return spu_selb_ref(a, b,
@@ -1907,7 +1907,7 @@ index f04fda63..bd10e77a 100644
      u128 out; memcpy(&out, &r, 16); return out;
  }
  #elif defined(__ARM_NEON)
-@@ -787,7 +791,65 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
+@@ -787,7 +791,73 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
  SPU__SF_V3(spu__fma_s,  spu__fma_any(x, y, z, 0, 0))
  SPU__SF_V3(spu__fms_s,  spu__fma_any(x, y, z, 0, 0x80000000u))
  SPU__SF_V3(spu__fnms_s, spu__fma_any(x, y, z, 0x80000000u, 0))
@@ -1950,14 +1950,22 @@ index f04fda63..bd10e77a 100644
 +    const __m128i keep = _mm_cmpgt_epi32(mag, _mm_set1_epi32(0x007FFFFF));
 +    u128 o; _mm_storeu_si128((__m128i*)o._u32, _mm_and_si128(_mm_castps_si128(r), keep)); return o;
 +}
++/* The saturating path stays inline, in a cold block: as an out-of-line call (u128 passed by pointer on
++ * Win64) every fa/fm/fma in a loop was a call site, and the vectors live across it could only stay in
++ * the callee-saved xmm6-15. SPU_AX_SAT_CALL=1 at build time brings the call back. */
++#if defined(SPU_AX_SAT_CALL) && SPU_AX_SAT_CALL
++#define SPU__AX_SATFN static __attribute__((noinline, cold))
++#else
++#define SPU__AX_SATFN SPU__AX_INLINE
++#endif
 +#define SPU__AX_OP2(name, op) \
-+    static __attribute__((noinline, cold)) u128 name##_sat(u128 a, u128 b) { \
++    SPU__AX_SATFN u128 name##_sat(u128 a, u128 b) { \
 +        return spu__ax_st(op(spu__ax_ld(a), spu__ax_ld(b))); } \
 +    SPU__AX_INLINE u128 name(u128 a, u128 b) { \
 +        const __m128 r = op(spu__ax_raw(a), spu__ax_raw(b)); const __m128i mag = spu__ax_mag(r); \
 +        return __builtin_expect(spu__ax_bad(mag), 0) ? name##_sat(a, b) : spu__ax_fin(r, mag); }
 +#define SPU__AX_OP3(name, op) \
-+    static __attribute__((noinline, cold)) u128 name##_sat(u128 a, u128 b, u128 c) { \
++    SPU__AX_SATFN u128 name##_sat(u128 a, u128 b, u128 c) { \
 +        return spu__ax_st(op(spu__ax_ld(a), spu__ax_ld(b), spu__ax_ld(c))); } \
 +    SPU__AX_INLINE u128 name(u128 a, u128 b, u128 c) { \
 +        const __m128 r = op(spu__ax_raw(a), spu__ax_raw(b), spu__ax_raw(c)); const __m128i mag = spu__ax_mag(r); \

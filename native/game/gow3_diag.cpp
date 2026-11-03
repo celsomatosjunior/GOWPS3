@@ -233,9 +233,9 @@ struct prof_thread { DWORD tid; uint32_t total, outside; uint32_t key[PROF_SLOTS
                      HMODULE mod[PROF_MODS]; uint32_t modn[PROF_MODS]; };
 static prof_thread* s_prof;
 
-static void prof_count(prof_thread* t, uint32_t off)
+static void prof_count(prof_thread* t, uint32_t off, int total = 1)
 {
-    t->total++;
+    t->total += total;
     uint32_t h = (off * 2654435761u) >> 16;
     for (unsigned k = 0; k < PROF_SLOTS; k++, h = (h + 1) & (PROF_SLOTS - 1)) {
         if (t->key[h] == off + 1) { t->n[h]++; return; }
@@ -271,11 +271,29 @@ static DWORD WINAPI profiler(LPVOID arg)
                 if (!th) continue;
                 SuspendThread(th);
                 CONTEXT c;
-                c.ContextFlags = CONTEXT_CONTROL;
+                c.ContextFlags = CONTEXT_FULL;
                 uint64_t fora = 0;
                 if (GetThreadContext(th, &c)) {
                     if (c.Rip >= lo && c.Rip < hi) prof_count(&s_prof[i], (uint32_t)(c.Rip - lo));
-                    else { s_prof[i].total++; s_prof[i].outside++; fora = c.Rip; }
+                    else {
+                        s_prof[i].total++; s_prof[i].outside++; fora = c.Rip;
+                        /* Quem no exe levou a thread para fora: desenrola a pilha (thread suspensa) até o
+                         * primeiro quadro no exe e conta esse endereço de retorno com o bit 31 (chamador). */
+                        for (int f = 0; f < 24; f++) {
+                            DWORD64 base = 0;
+                            PRUNTIME_FUNCTION rf = RtlLookupFunctionEntry(c.Rip, &base, NULL);
+                            if (!rf) { if (!c.Rsp) break; c.Rip = *(DWORD64*)c.Rsp; c.Rsp += 8; }
+                            else {
+                                void* hd = NULL; DWORD64 ef = 0;
+                                RtlVirtualUnwind(UNW_FLAG_NHANDLER, base, c.Rip, rf, &c, &hd, &ef, NULL);
+                            }
+                            if (!c.Rip) break;
+                            if (c.Rip >= lo && c.Rip < hi) {
+                                prof_count(&s_prof[i], (uint32_t)(c.Rip - lo) | 0x80000000u, 0);
+                                break;
+                            }
+                        }
+                    }
                 }
                 ResumeThread(th);
                 CloseHandle(th);
@@ -321,7 +339,9 @@ static DWORD WINAPI profiler(LPVOID arg)
             for (unsigned k = 0; k < PROF_SLOTS; k++)
                 if (t->key[k] && t->n[k] > best) { best = t->n[k]; bk = k; }
             if (!best) break;
-            fprintf(stderr, "[GOW3-PROF]   0x%X %u\n", t->key[bk] - 1, best);
+            const uint32_t o = t->key[bk] - 1;
+            if (o & 0x80000000u) fprintf(stderr, "[GOW3-PROF]   chamador 0x%X %u\n", o & 0x7FFFFFFFu, best);
+            else fprintf(stderr, "[GOW3-PROF]   0x%X %u\n", o, best);
             t->n[bk] = 0;
         }
     }
