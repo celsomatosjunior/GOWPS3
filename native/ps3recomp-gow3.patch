@@ -1444,7 +1444,7 @@ index 32e8a959..e3ac93e8 100644
      s_state.hdc = GetDC(s_state.hwnd);
      s_state.last_fps_time = GetTickCount64();
 diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
-index 5fc50208..640891b9 100644
+index 5fc50208..4f3cd20a 100644
 --- a/runtime/spu/spu_channels.c
 +++ b/runtime/spu/spu_channels.c
 @@ -576,7 +576,46 @@ volatile unsigned g_spu_putllc_sync_hit = 0;
@@ -1570,7 +1570,7 @@ index 5fc50208..640891b9 100644
  /* Signal the per-SPU wait CV so a blocked spu_rdch re-checks its predicate.
   * MUST be called by every producer AFTER it makes a read predicate true. */
  void spu_ch_wake(spu_context* ctx)
-@@ -1942,6 +2011,13 @@ int spu_overlay_register_verified_region(uint32_t content_ea, uint32_t load_lsa,
+@@ -1942,15 +2011,56 @@ int spu_overlay_register_verified_region(uint32_t content_ea, uint32_t load_lsa,
      return 1;
  }
  
@@ -1581,10 +1581,35 @@ index 5fc50208..640891b9 100644
 +    return s_t;
 +}
 +
++/* SPU_OVL_STATS=<s>: every <s> seconds, how many GETs landed on a resident code slot of the same
++ * source (a job manager re-streaming code that is already there) and their bytes, and how many
++ * verifications compared how many bytes. Says what keeping a module resident costs per job. */
++static volatile LONG64 s_ovl_st_regets, s_ovl_st_reget_bytes, s_ovl_st_verifies, s_ovl_st_verify_bytes;
++static void spu_ovl_stats_tick(void)
++{
++    static int st = -1; static volatile LONG64 last;
++    if (st < 0) { const char* e = getenv("SPU_OVL_STATS"); st = e ? atoi(e) : 0; }
++    if (st <= 0) return;
++    const LONG64 now = (LONG64)(GetTickCount64() / 1000), l = last;
++    if (!l) { InterlockedCompareExchange64(&last, now, 0); return; }
++    if (now - l < st || InterlockedCompareExchange64(&last, now, l) != l) return;
++    fprintf(stderr, "[ovl-stats] %ds: regets=%lld bytes=%lld verifies=%lld bytes=%lld\n", st,
++            (long long)InterlockedExchange64(&s_ovl_st_regets, 0),
++            (long long)InterlockedExchange64(&s_ovl_st_reget_bytes, 0),
++            (long long)InterlockedExchange64(&s_ovl_st_verifies, 0),
++            (long long)InterlockedExchange64(&s_ovl_st_verify_bytes, 0));
++}
++
  static int spu_overlay_resident_verified(spu_context* ctx, unsigned slot)
  {
      int* state = &ctx->resident_code[slot].verify_state;
-@@ -1951,6 +2027,17 @@ static int spu_overlay_resident_verified(spu_context* ctx, unsigned slot)
+     if (*state == SPU_OVERLAY_PENDING) {
+         const spu_ovl_src* o = &s_ovl_src[ctx->resident_code[slot].source_index];
+         int match = 1;
++        { static int on = -1; if (on < 0) on = getenv("SPU_OVL_STATS") != NULL;
++          if (on) { LONG64 nb = 0; for (unsigned i = 0; i < o->code_count; ++i) nb += o->code[i].size;
++                    InterlockedIncrement64(&s_ovl_st_verifies); InterlockedAdd64(&s_ovl_st_verify_bytes, nb);
++                    spu_ovl_stats_tick(); } }
          for (unsigned i = 0; match && i < o->code_count; ++i)
              match = !memcmp(ctx->ls + o->code[i].lsa, o->code[i].bytes, o->code[i].size);
          *state = match ? SPU_OVERLAY_VERIFIED : SPU_OVERLAY_REJECTED;
@@ -1602,7 +1627,7 @@ index 5fc50208..640891b9 100644
      }
      return *state == SPU_OVERLAY_VERIFIED;
  }
-@@ -2139,6 +2226,9 @@ void spu_overlay_note_get(spu_context* ctx, uint32_t ea, const uint8_t* ls, uint
+@@ -2139,11 +2249,38 @@ void spu_overlay_note_get(spu_context* ctx, uint32_t ea, const uint8_t* ls, uint
          uint32_t end = base + ctx->resident_code[slot].size;
          if (lsa < end && lsa + size > base) {
              if (lsa < base || ea != ctx->resident_code[slot].source_ea + (lsa - base)) {
@@ -1612,7 +1637,38 @@ index 5fc50208..640891b9 100644
                  ctx->resident_code[slot].image_id = 0;
                  spu_dcache_residency_changed(ctx);
              } else if (ctx->resident_code[slot].verify_state) {
-@@ -2575,6 +2665,45 @@ static int spu_smc_microstep(spu_context* ctx)
+-                ctx->resident_code[slot].verify_state = SPU_OVERLAY_PENDING;
+-                spu_dcache_residency_changed(ctx);
++                { static int on = -1; if (on < 0) on = getenv("SPU_OVL_STATS") != NULL;
++                  if (on) { InterlockedIncrement64(&s_ovl_st_regets); InterlockedAdd64(&s_ovl_st_reget_bytes, size); } }
++                /* SPU_OVL_INCREMENTAL=1: a job manager re-streaming code that is already
++                 * resident and verified (God of War III's Wws PM re-sends the job's code with
++                 * every job, ~80k GETs and ~1.2 GB a second) compares only the bytes this GET
++                 * wrote; if they are the expected code the slot stays verified and the
++                 * dispatch cache keeps its entries. Otherwise, or with it off, the whole span
++                 * is compared again at the next dispatch -- which also catches an untracked
++                 * SPU store elsewhere in the span, the reason it stays opt-in. */
++                static int s_inc = -1;
++                if (s_inc < 0) { const char* e = getenv("SPU_OVL_INCREMENTAL"); s_inc = e && e[0] == '1'; }
++                int kept = 0;
++                if (s_inc && ctx->resident_code[slot].verify_state == SPU_OVERLAY_VERIFIED) {
++                    const spu_ovl_src* o = &s_ovl_src[ctx->resident_code[slot].source_index];
++                    kept = 1;   /* bytes outside the code segments are the job's data */
++                    for (unsigned i = 0; kept && i < o->code_count; ++i) {
++                        const uint32_t c0 = o->code[i].lsa, c1 = c0 + o->code[i].size;
++                        const uint32_t a0 = lsa > c0 ? lsa : c0, a1 = lsa + size < c1 ? lsa + size : c1;
++                        if (a0 >= a1) continue;
++                        kept = !memcmp(ctx->ls + a0, o->code[i].bytes + (a0 - c0), a1 - a0);
++                    }
++                }
++                if (!kept) {
++                    ctx->resident_code[slot].verify_state = SPU_OVERLAY_PENDING;
++                    spu_dcache_residency_changed(ctx);
++                }
+             }
+         }
+     }
+@@ -2575,6 +2712,45 @@ static int spu_smc_microstep(spu_context* ctx)
                fprintf(stderr, "[spu-smc] microstep img=%d pc=0x%05X word 0x%08X not in the"
                        " microstep set -- handing to the interpreter (steps=%d)\n",
                        ctx->image_id, pc, w, steps); }
@@ -1658,7 +1714,7 @@ index 5fc50208..640891b9 100644
          ctx->pc = pc;
          /* Stop at the drain's return point too: it sits mid-function, so it is
           * no lifted entry, and a job's return would otherwise run on through
-@@ -2658,6 +2787,38 @@ void spu_indirect_branch(spu_context* ctx)
+@@ -2658,6 +2834,38 @@ void spu_indirect_branch(spu_context* ctx)
              return;
          }
      }
