@@ -1307,7 +1307,7 @@ index 32e8a959..e3ac93e8 100644
      s_state.hdc = GetDC(s_state.hwnd);
      s_state.last_fps_time = GetTickCount64();
 diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
-index 5fc50208..995340a1 100644
+index 5fc50208..640891b9 100644
 --- a/runtime/spu/spu_channels.c
 +++ b/runtime/spu/spu_channels.c
 @@ -576,7 +576,46 @@ volatile unsigned g_spu_putllc_sync_hit = 0;
@@ -1521,6 +1521,45 @@ index 5fc50208..995340a1 100644
          ctx->pc = pc;
          /* Stop at the drain's return point too: it sits mid-function, so it is
           * no lifted entry, and a job's return would otherwise run on through
+@@ -2658,6 +2787,38 @@ void spu_indirect_branch(spu_context* ctx)
+             return;
+         }
+     }
++    /* A policy module branching into a job module that sits in a resident code
++     * slot (lift_jobmods.py's verified regions): the slot owns its span, and
++     * spu_lifted_lookup below checks the slots first, so nothing between here
++     * and there changes the answer -- the taskset syscall, the CRI hack and
++     * the job-return probe all exclude this case, and with no resident task
++     * the taskset residency bookkeeping has nothing to update. Resolve it now:
++     * the lifted job modules call spu_indirect_branch directly for every
++     * bisl/bi, and God of War III's EDGE jobs spent ~6% of their SPU in this
++     * resolver. SPU_IB_RESIDENT_FAST=0 turns it off. */
++    if (ctx->policy_mode && !ctx->resident_task && ctx->pc != SPURS_TASKSET_PM_SYSCALL_LS &&
++        ctx->image_id != SPU_RESOLVER_ONLY_IMAGE_ID) {
++        static int s_rf = -1;
++        if (s_rf < 0) { const char* e = getenv("SPU_IB_RESIDENT_FAST"); s_rf = !(e && e[0] == '0'); }
++        if (s_rf) {
++            const uint32_t pc = ctx->pc;
++            for (unsigned s = 0; s < 4; ++s)
++                if (ctx->resident_code[s].image_id &&
++                    pc - ctx->resident_code[s].lsa < ctx->resident_code[s].size) {
++                    spu_fn fn = spu_lifted_lookup(ctx, pc);
++                    if (fn) {
++                        spu_check_stack_reset(ctx, fn);
++#if defined(__clang__)
++                        __attribute__((musttail)) return fn(ctx);
++#else
++                        fn(ctx);
++                        return;
++#endif
++                    }
++                    break;
++                }
++        }
++    }
+     /* Synthetic HLE tasks have no resident taskset policy at 0xA70. Real
+      * tasksets use the SAME syscall address, so the API table alone is not
+      * evidence that this is an HLE context. LLE tasks must enter Sony's policy
 diff --git a/runtime/spu/spu_context.h b/runtime/spu/spu_context.h
 index c5ccbec7..9b929fe1 100644
 --- a/runtime/spu/spu_context.h
