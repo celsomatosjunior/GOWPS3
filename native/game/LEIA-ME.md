@@ -387,6 +387,13 @@ fase estiver mais rápida.
   mas a fase não muda; ficou desligado.
 - Perfil da SPU 0 com o retorno direto: 65% código dos jobs, 21% runtime, 9% ntdll, 5% memcpy.
 
+- **Estabilidade (15 min, 03/11):** X a cada 20 s depois de 240 s (ataca na fase, e na tela de morte escolhe
+  "Reiniciar a partir do último ponto de verificação"): a fase recarregou duas vezes (PSDNINT.M2V aberto 3 vezes),
+  nenhum erro, nenhuma SPU parada; memória estável (~1,1 GB em uso, privada 2,2-2,9 GB, sem crescer), 55-58
+  threads; 10-13 q/s na fase. O áudio sai pelo WASAPI em tempo real (`AUDIO_RATE=1`: 187,5 blocos/s, sem
+  perdas; `AUDIO_PEAK=1`: picos de até 0,4).
+- `SPURS_PM_STICKY=1024` em vez de 64: igual (11,9-13,7 q/s, no ruído).
+
 **Próxima ação exata:** a SPU 0 está ~90% ocupada no código dos jobs EDGE; o ganho seguinte é deixar esse código
 mais rápido (tradutor SPU: testes de Inf/NaN do float aproximado, inversão de bytes das leituras de LS, custo do
 despacho por job: `spu_indirect_branch`/`spu_lifted_lookup` ~4,5%, `spu_wrch`/`spu_drain_call` ~2,6%).
