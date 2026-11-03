@@ -363,15 +363,24 @@ fase estiver mais rápida.
   - O estado de 115-140 q/s que algumas execuções alcançam depois de ~280 s deve ser a tela de morte: sem
     ninguém jogando, o Kratos apanha cercado e com pouca vida (quadros de `LD_FRAME_DUMP` no fim da fase).
 
-**Próxima ação exata:** os dois lados do pingue-pongue Edge/RSX: (1) código dos jobs EDGE (o laço da 0x10E20
-ainda tem ~990 instruções x86 para ~120 SPU: derramamentos de registradores, testes de Inf/NaN) e o fixo de
-cada rodada do policy module Wws; (2) a CPU do live draw por desenho (decodificação de vértices,
-`sink_end_impl`). Medir sempre com duas execuções (`fps_fase2.py`): a variação entre execuções é de ~±5% (~60 us; uma
-rodada vazia custa ~45 us): perfilar a thread SPU que roda as EDGE (`GOW3_PROF` mostra o nome "spurs pm") e
-atacar o fixo por rodada (entrada do policy module, `spu_indirect_branch`/`spu_lifted_lookup`,
-`spu_coh_notify_write` nos PUTLLC, `spu_step` do interpretador se aparecer). Depois, reduzir o custo do runtime SPU nos saltos (`spu_indirect_branch`/`spu_lifted_lookup`:
-cache direto por pc no próprio local de chamada) e do `spu_coh_notify_write`; depois medir a fase de novo
-(`GOW3_PROF=250,70`, `SPURS_PM_STATS=10`) e comparar com ~6,3 quadros/s.
+**03/11 (terça; envio semanal feito aos dois repositórios às 8h50):**
+- **Fase de pé:** a cena 3D saía de ponta-cabeça sob o HUD certo (notado pelo Celso). O live draw não passava ao
+  shader a origem do `SET_SHADER_WINDOW` (fp_alpha.y/.z do `_rsx_wpos`), e os passos de tela cheia que montam a UV
+  a partir do WPOS espelhavam a cena. Corrigido; versão `gow3-fase-v6` (tag e `Projetos\versoes\gow3-fase-v6`).
+- Atalho no `spu_indirect_branch` para saltos de policy module dentro de código de job residente
+  (`SPU_IB_RESIDENT_FAST=0` desliga): neutro a levemente positivo (~8,6 -> ~9,9 q/s em duas execuções, no ruído).
+- Medidos e descartados como caminho crítico: hash de textura (`RSX_NO_TEX_REFRESH=1`: 8,8 q/s), a CPU por desenho
+  do live draw (`LD_SPIN_US=10`, +23 ms por quadro no RSX: 9,0 q/s, igual) e o `Sleep(1)` das sondagens de DMA
+  (`SPU_DMA_REPEAT_BACKOFF_MS` enorme: igual). **O caminho crítico é o lado das SPUs.**
+- Perfil da SPU das EDGE (`prof_cat.py` no scratchpad da sessão, por categoria): 48% código dos jobs, 23% runtime
+  (despacho ~7%, canais/DMA ~6%, coerência ~2%), 23% esperando (ntdll), 5,5% memcpy. O laço da 0x10E20 tem >50
+  vetores vivos para 16 registradores AVX2: o derramamento é inevitável nesta CPU (sem AVX-512).
+- O estado de ~115 q/s depois de ~280 s é a tela de morte ("Estás morto"), confirmado por `LD_FRAME_DUMP`.
+
+**Próxima ação exata:** o lado das SPUs. Medir quanto da espera de ~23% da SPU das EDGE é dependência de outros
+workloads (ModelServer w3/w4, BrBDblBufWrkld w6 na instância de 1 SPU) com `PS3_FTRACE` e `ft_wid.py`; se w6
+(~34% de uma SPU) estiver no caminho, ver se a instância "Little" pode rodar em paralelo sem mudar a semântica.
+Depois, custo fixo por job (despacho, `spu_drain_call`, canais) e os testes de Inf/NaN do float aproximado.
 
 ## LLE seletivo da libsre (LFQueue)
 
