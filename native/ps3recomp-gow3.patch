@@ -785,7 +785,7 @@ index bc05a308..815cb35b 100644
              u32 wslot = DRAW_SRV_BASE + _d * 4 + (u32)_u;
              dr->tex_rt[_u] = -1;
 diff --git a/libs/video/rsx_live_draw.c b/libs/video/rsx_live_draw.c
-index 25791179..b12dc0a6 100644
+index 25791179..3f334961 100644
 --- a/libs/video/rsx_live_draw.c
 +++ b/libs/video/rsx_live_draw.c
 @@ -22,7 +22,7 @@
@@ -826,7 +826,18 @@ index 25791179..b12dc0a6 100644
      ID3D12Resource* tex;
      u64 content_hash;
      u32 last_hash_frame;
-@@ -1718,8 +1720,36 @@ static D3D12_GPU_DESCRIPTOR_HANDLE sampler_table(const u32 slots[SMP_TABLE_SIZE]
+@@ -366,6 +368,10 @@ typedef struct {
+     u32                        ps_cb_used;
+     rsx_fp_constant_block      fp_constants;
+     float                      fp_alpha_ref;
++    /* fp_alpha.y/.z for the decompiler's _rsx_wpos: the SET_SHADER_WINDOW
++     * height when its origin is BOTTOM (0 otherwise) and the pixel-center
++     * bias (-0.5 for INTEGER centers), as rsx_draw_engine.c passes them. */
++    float                      fp_alpha_win[2];
+     char                       fp_constant_mode;
+ 
+     ID3D12Resource*            vb;
+@@ -1718,8 +1724,36 @@ static D3D12_GPU_DESCRIPTOR_HANDLE sampler_table(const u32 slots[SMP_TABLE_SIZE]
  /* ---------------------------------------------------------------------------
   * command list submit/wait (simple synchronous model, like the harness)
   * -----------------------------------------------------------------------*/
@@ -863,7 +874,7 @@ index 25791179..b12dc0a6 100644
  #if defined(YZ_PERF_PROFILE)
      const LONGLONG flush_begin = ld_profile_qpc();
      g_ld_profile.total.flush_reason[reason]++;
-@@ -1783,6 +1813,7 @@ static void ld_flush(ld_flush_reason reason)
+@@ -1783,6 +1817,7 @@ static void ld_flush(ld_flush_reason reason)
      g.alloc->lpVtbl->Reset(g.alloc);
      g.list->lpVtbl->Reset(g.list, g.alloc, NULL);
      g.upload_used = 0;
@@ -871,7 +882,7 @@ index 25791179..b12dc0a6 100644
  #if defined(YZ_PERF_PROFILE)
      const u64 flush_ticks = (u64)(ld_profile_qpc() - flush_begin);
      g_ld_profile.total.flush_qpc += flush_ticks;
-@@ -1903,6 +1934,11 @@ static void decode_texel(u32 base_fmt, const u8* p, u32 remap, u8 d[4])
+@@ -1903,6 +1938,11 @@ static void decode_texel(u32 base_fmt, const u8* p, u32 remap, u8 d[4])
          break;
      }
      case TEX_FMT_DEPTH24_D8: s[0] = 255; s[1] = s[2] = s[3] = p[0]; break;
@@ -883,7 +894,7 @@ index 25791179..b12dc0a6 100644
      default: s[0] = p[0]; s[1] = p[1]; s[2] = p[2]; s[3] = p[3]; break;
      }
      d[0] = remap_comp(s, remap, 1);
-@@ -2044,9 +2080,18 @@ static u32 texture_source_span(const rsx_dsp_texture* t)
+@@ -2044,9 +2084,18 @@ static u32 texture_source_span(const rsx_dsp_texture* t)
      case TEX_FMT_G8B8: texel_size = 2; break;
      case RSX_TEX_FMT_W16Z16Y16X16_FLOAT: texel_size = 8; break;
      case TEX_FMT_A8R8G8B8:
@@ -902,7 +913,7 @@ index 25791179..b12dc0a6 100644
      if (!t->width || !t->height || t->width > 4096 || t->height > 4096 ||
          t->dimension != 2)
          return 0;
-@@ -2127,6 +2172,22 @@ static u64 texture_content_hash(const rsx_dsp_texture* t, int* readable)
+@@ -2127,6 +2176,22 @@ static u64 texture_content_hash(const rsx_dsp_texture* t, int* readable)
       * deliberately cheap; this is a mutation detector, not a content ID. */
      u64 hash = 1469598103934665603ull;
      u32 i = 0;
@@ -925,7 +936,7 @@ index 25791179..b12dc0a6 100644
      for (; i + 8 <= span; i += 8) {
          u64 word;
          memcpy(&word, src + i, sizeof(word));
-@@ -2141,11 +2202,99 @@ static u64 texture_content_hash(const rsx_dsp_texture* t, int* readable)
+@@ -2141,11 +2206,99 @@ static u64 texture_content_hash(const rsx_dsp_texture* t, int* readable)
      return hash;
  }
  
@@ -1025,7 +1036,7 @@ index 25791179..b12dc0a6 100644
      if (!w || !h || w > 4096 || h > 4096 || t->dimension != 2)
          return NULL;
      u32 n_mips = t->mipmaps ? t->mipmaps : 1;
-@@ -2226,6 +2375,7 @@ static ID3D12Resource* decode_guest_texture(const rsx_dsp_texture* t, u32 remap)
+@@ -2226,6 +2379,7 @@ static ID3D12Resource* decode_guest_texture(const rsx_dsp_texture* t, u32 remap)
      case TEX_FMT_R5G6B5:
      case TEX_FMT_G8B8: texel_size = 2; break;
      case TEX_FMT_A8R8G8B8:
@@ -1033,7 +1044,7 @@ index 25791179..b12dc0a6 100644
      case TEX_FMT_DEPTH24_D8: texel_size = 4; break;
      case RSX_TEX_FMT_W16Z16Y16X16_FLOAT: texel_size = 8; break;
      default: return NULL;
-@@ -2410,6 +2560,17 @@ static void write_texture_srv(u32 index, const texcache_t* entry)
+@@ -2410,6 +2564,17 @@ static void write_texture_srv(u32 index, const texcache_t* entry)
      const int compressed = base_fmt == TEX_FMT_DXT1 ||
                             base_fmt == TEX_FMT_DXT23 ||
                             base_fmt == TEX_FMT_DXT45;
@@ -1051,7 +1062,7 @@ index 25791179..b12dc0a6 100644
      if (entry->cubemap) {
          static const u32 sel2d3d[4] = { 3, 0, 1, 2 };
          static const u32 out2comp[4] = { 1, 2, 3, 0 };
-@@ -2475,7 +2636,8 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
+@@ -2475,7 +2640,8 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
          if (entry->location != t->location || entry->offset != t->offset ||
              entry->format != t->format || entry->width != t->width ||
              entry->height != t->height || entry->pitch != t->pitch ||
@@ -1061,7 +1072,7 @@ index 25791179..b12dc0a6 100644
              continue;
          if (refresh_enabled && entry->tex &&
              entry->last_hash_frame != g_ld_frames) {
-@@ -2591,6 +2753,7 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
+@@ -2591,6 +2757,7 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
      replacement.pitch = t->pitch;
      replacement.remap = remap;
      replacement.cubemap = t->cubemap;
@@ -1069,7 +1080,7 @@ index 25791179..b12dc0a6 100644
      replacement.last_hash_frame = g_ld_frames;
      replacement.last_use_serial = ++g_ld_texture_use_serial;
      {
-@@ -2612,10 +2775,12 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
+@@ -2612,10 +2779,12 @@ static u32 texture_srv_slot(const rsx_dsp_texture* t)
              (g_ld_texture_decode_fail & (g_ld_texture_decode_fail - 1)) == 0)
              fprintf(stderr,
                      "[texture-cache] decode failed n=%llu src=%u:0x%08X "
@@ -1084,7 +1095,7 @@ index 25791179..b12dc0a6 100644
      }
      return replacement.tex ? SRV_TEXTURE_BASE + index : SRV_WHITE;
  }
-@@ -3157,10 +3322,94 @@ static int   s_csv_gate_open;
+@@ -3157,10 +3326,94 @@ static int   s_csv_gate_open;
  
  static int ld_blit_gpu(u32 src_loc, u32 src_abs, u32 src_pitch,
                         u32 dst_loc, u32 dst_abs, u32 dst_pitch, u32 w, u32 h);
@@ -1179,7 +1190,7 @@ index 25791179..b12dc0a6 100644
      if (s_csv_file && s_csv_gate_open) {
          fprintf(s_csv_file, "#blit,%u,%u:0x%X/%u,%u:0x%X/%u,%ux%u,gpu=%d\n", g_ld_frames,
                  src_loc, src_abs, src_pitch, dst_loc, dst_abs, dst_pitch, w, h, r);
-@@ -4708,12 +4957,14 @@ static ID3D12PipelineState* get_pso(
+@@ -4708,12 +4961,14 @@ static ID3D12PipelineState* get_pso(
      static int ctrl_auto = -1;
      if (ctrl_auto < 0) ctrl_auto = getenv("RSX_FP_CTRL_AUTO") ? 1 : 0;
      const u32 fp_ctrl = ctrl_auto ? RSX_FP_CTRL_AUTO : rsx_dsp_shader_control(&g.rsx);
@@ -1195,7 +1206,22 @@ index 25791179..b12dc0a6 100644
      }
      const u32 vtex_mask = vertex_texture_mask();
      const u32 txl_mask = vp_txl_unit_mask(vp_uc, vp_instrs);
-@@ -4765,6 +5016,7 @@ static ID3D12PipelineState* get_pso(
+@@ -4751,6 +5006,14 @@ static ID3D12PipelineState* get_pso(
+     }
+     g.fp_alpha_ref = rsx_fp_alpha_ref(
+         rs.alpha_ref_raw, rs.alpha_ref_format);
++    {   /* Left 0 the shader saw the host position (origin top left), and a
++         * full-screen pass that builds its UV from WPOS with the RSX origin at
++         * the BOTTOM mirrored its source: God of War III's level rendered
++         * upside down under a correct HUD. */
++        const u32 win = rsx_dsp_reg(&g.rsx, 0x1D88);
++        g.fp_alpha_win[0] = ((win >> 12) & 0xFu) ? (float)(win & 0xFFFu) : 0.0f;
++        g.fp_alpha_win[1] = ((win >> 16) & 0xFu) ? -0.5f : 0.0f;
++    }
+ 
+     u64 key = fnv1a(
+         vp_uc, vp_instrs * 16, 1469598103934665603ull);
+@@ -4765,6 +5028,7 @@ static ID3D12PipelineState* get_pso(
      const u32 fp_ctrl_key = fp_ctrl & 0x4Eu;   /* 32-bit exports, depth export */
      key = fnv1a(&fp_ctrl_key, sizeof(fp_ctrl_key), key);
      key = fnv1a(&cube_mask, sizeof(cube_mask), key);
@@ -1203,7 +1229,7 @@ index 25791179..b12dc0a6 100644
      key = fnv1a(&vtex_mask, sizeof(vtex_mask), key);
      /* BRB/CLB outcomes are baked into the program (rsx_vp_set_branch_bits). */
      const int vp_branch_bits_used = rsx_vp_uses_branch_bits(vp_uc, vp_instrs * 16);
-@@ -4830,7 +5082,7 @@ static ID3D12PipelineState* get_pso(
+@@ -4830,7 +5094,7 @@ static ID3D12PipelineState* get_pso(
          key = fnv1a(&rs, sizeof(rs), key);
  #if defined(YZ_PERF_PROFILE)
      ld_profile_note_fp_variants(
@@ -1212,7 +1238,7 @@ index 25791179..b12dc0a6 100644
  #endif
      g_ld_current_pso.valid = 1;
      g_ld_current_pso.key = key;
-@@ -4895,9 +5147,13 @@ static ID3D12PipelineState* get_pso(
+@@ -4895,9 +5159,13 @@ static ID3D12PipelineState* get_pso(
      u32 decompiled_constant_count = 0;
      int fi;
      if (ld_fp_constants_buffered()) {
@@ -1229,7 +1255,7 @@ index 25791179..b12dc0a6 100644
          if (fi > 0 &&
              decompiled_constant_count != g.fp_constants.count)
              fi = -1;
-@@ -4907,7 +5163,7 @@ static ID3D12PipelineState* get_pso(
+@@ -4907,7 +5175,7 @@ static ID3D12PipelineState* get_pso(
              fi = -1;
          if (fi > 0) {
              const int np = rsx_fp_apply_unnorm_scale(
@@ -1238,7 +1264,18 @@ index 25791179..b12dc0a6 100644
              { static int n = 0;
                if (PS3_LOG_FIRST(n, 8))
                    fprintf(stderr, "[unnorm] mask=0x%X cube=0x%X dim0=%ux%u"
-@@ -6505,11 +6761,14 @@ static void live_draw_csv_emit(u32 prim, u32 n_tri, const char* outcome)
+@@ -5050,6 +5318,10 @@ static int ld_upload_pixel_constants(u32* out_offset)
+     memcpy(
+         destination + value_slots * 16u,
+         &g.fp_alpha_ref, sizeof(g.fp_alpha_ref));
++    if (!getenv("LD_NO_WPOS_WINDOW"))   /* diagnostic: the old host-origin WPOS */
++        memcpy(
++            destination + value_slots * 16u + sizeof(g.fp_alpha_ref),
++            g.fp_alpha_win, sizeof(g.fp_alpha_win));
+     g.ps_cb_used += allocation_bytes;
+ #if defined(YZ_PERF_PROFILE)
+     g_ld_profile.total.ps_constant_allocations++;
+@@ -6505,11 +6777,14 @@ static void live_draw_csv_emit(u32 prim, u32 n_tri, const char* outcome)
      /* LD_DRAW_DUMP=<dir> [LD_DRAW_DUMP_EVERY=k, default 10]: in the first
       * gated frame, read back each k-th draw's target BEFORE it is recorded,
       * named by frame-relative index -- bisects which draw changes a surface. */
@@ -1256,7 +1293,25 @@ index 25791179..b12dc0a6 100644
            (idx % every) == 0) {
            dumped_frame = frame;
            char path[MAX_PATH * 2];
-@@ -7423,6 +7682,25 @@ static void sink_end_impl(void* user, const rsx_dispatch* r)
+@@ -7069,6 +7344,17 @@ static void sink_end_impl(void* user, const rsx_dispatch* r)
+     if (g_ld_movie_mode && !ld_movie_composite_ui_enabled()) return;
+     if (!dc.n_packets) { g_ld_stats.groups_empty++; return; }
+     g_ld_stats.groups_seen++;
++    /* LD_SPIN_US=<us>: busy-wait that long per draw group. Diagnostic only:
++     * how much the frame rate follows the RSX thread's CPU per draw says
++     * whether that thread is on the frame's critical path. */
++    { static int s_spin = -1;
++      if (s_spin < 0) { const char* e = getenv("LD_SPIN_US"); s_spin = e ? atoi(e) : 0; }
++      if (s_spin > 0) {
++          LARGE_INTEGER f, a, b;
++          QueryPerformanceFrequency(&f); QueryPerformanceCounter(&a);
++          const LONGLONG until = a.QuadPart + f.QuadPart * s_spin / 1000000;
++          do QueryPerformanceCounter(&b); while (b.QuadPart < until);
++      } }
+     /*
+      * a010's native per-mesh constant builder can overwrite the otherwise
+      * valid reconstructed camera with NaNs after the ordinary camera upload.
+@@ -7423,6 +7709,25 @@ static void sink_end_impl(void* user, const rsx_dispatch* r)
                }
            }
        } }
@@ -1282,7 +1337,7 @@ index 25791179..b12dc0a6 100644
      for (u32 u = 0; u < SRV_TABLE_SIZE; u++) {
          rsx_dsp_texture t; rsx_dsp_get_texture(&g.rsx, u, &t);
          /* LD_PS1_BUF0=1 -- DIAGNOSTIC, not a fix. Force a 24-bit PS1 VRAM
-@@ -7559,7 +7837,7 @@ static void sink_end_impl(void* user, const rsx_dispatch* r)
+@@ -7559,7 +7864,7 @@ static void sink_end_impl(void* user, const rsx_dispatch* r)
                    }
                }
            } }
