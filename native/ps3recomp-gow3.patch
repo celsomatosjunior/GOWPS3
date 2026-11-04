@@ -2103,7 +2103,7 @@ index 49bc2b94..53fb66b4 100644
  #include "spu_lockstep.h"
  #include <setjmp.h>
 diff --git a/runtime/spu/spu_helpers.h b/runtime/spu/spu_helpers.h
-index f04fda63..7fe4c487 100644
+index f04fda63..bd9c36ec 100644
 --- a/runtime/spu/spu_helpers.h
 +++ b/runtime/spu/spu_helpers.h
 @@ -467,18 +467,24 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) { return spu_selb_ref(a, b,
@@ -2141,7 +2141,7 @@ index f04fda63..7fe4c487 100644
      u128 out; memcpy(&out, &r, 16); return out;
  }
  #elif defined(__ARM_NEON)
-@@ -787,7 +793,117 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
+@@ -787,7 +793,122 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
  SPU__SF_V3(spu__fma_s,  spu__fma_any(x, y, z, 0, 0))
  SPU__SF_V3(spu__fms_s,  spu__fma_any(x, y, z, 0, 0x80000000u))
  SPU__SF_V3(spu__fnms_s, spu__fma_any(x, y, z, 0x80000000u, 0))
@@ -2230,10 +2230,15 @@ index f04fda63..7fe4c487 100644
 +}
 +SPU__AX_INLINE u128 spu__ax_clo(__m128 r) { u128 o; _mm_storeu_ps(o._f32, spu__ax_cl(r)); return o; }
 +SPU__AX_INLINE u128 SPU_AXI(u128 x) { return spu__ax_clo(spu__ax_raw(x)); }
++/* name##_u: the same op without the clamp, for a result tools/spu_float_inputs.py (unclamp_chains) found
++ * is only ever read by another of these ops, which clamps its own result. */
++SPU__AX_INLINE u128 spu__ax_uo(__m128 r) { u128 o; _mm_storeu_ps(o._f32, r); return o; }
 +#define SPU__AX_OP2(name, op) \
-+    SPU__AX_INLINE u128 name(u128 a, u128 b) { return spu__ax_clo(op(spu__ax_raw(a), spu__ax_raw(b))); }
++    SPU__AX_INLINE u128 name(u128 a, u128 b) { return spu__ax_clo(op(spu__ax_raw(a), spu__ax_raw(b))); } \
++    SPU__AX_INLINE u128 name##_u(u128 a, u128 b) { return spu__ax_uo(op(spu__ax_raw(a), spu__ax_raw(b))); }
 +#define SPU__AX_OP3(name, op) \
-+    SPU__AX_INLINE u128 name(u128 a, u128 b, u128 c) { return spu__ax_clo(op(spu__ax_raw(a), spu__ax_raw(b), spu__ax_raw(c))); }
++    SPU__AX_INLINE u128 name(u128 a, u128 b, u128 c) { return spu__ax_clo(op(spu__ax_raw(a), spu__ax_raw(b), spu__ax_raw(c))); } \
++    SPU__AX_INLINE u128 name##_u(u128 a, u128 b, u128 c) { return spu__ax_uo(op(spu__ax_raw(a), spu__ax_raw(b), spu__ax_raw(c))); }
 +#else
 +#define SPU__AX_OP2(name, op) \
 +    SPU__AX_SATFN u128 name##_sat(u128 a, u128 b) { SPU__AX_COUNT(); \
@@ -2260,7 +2265,7 @@ index f04fda63..7fe4c487 100644
  /* Four lanes at a time, every lane exact, with no FPCR change. The host rounds to nearest (the
   * thread's default FPCR: RN, no flush-to-zero -- writing FPCR per op serializes, ~17 ns on an
   * M4); the SPU truncates. A result rounded to nearest is either the truncated one or one step
-@@ -1575,7 +1691,7 @@ SPU__XE_INLINE __m128i spu__xe_narrow(__m256i v) {
+@@ -1575,7 +1696,7 @@ SPU__XE_INLINE __m128i spu__xe_narrow(__m256i v) {
  /* (2^13 | base) * 2^19 - step * y is 2^32 + d with d = base * 2^19 - step * y (base < 2^13,
   * step * y < 2^29): the magnitude is >= 2^32 exactly when base * 2^19 >= step * y, and its low
   * 32 bits are d mod 2^32 either way, so 32-bit lanes suffice. */
@@ -2269,7 +2274,7 @@ index f04fda63..7fe4c487 100644
      const __m128i est = spu__xe_ld(b), y = _mm_and_si128(spu__xe_ld(a), _mm_set1_epi32(0x7FFFF));
      const __m128i exp = _mm_and_si128(_mm_srli_epi32(est, 23), _mm_set1_epi32(0xFF));
      const __m128i b19 = _mm_slli_epi32(_mm_and_si128(_mm_srli_epi32(est, 10), _mm_set1_epi32(0x1FFF)), 19);
-@@ -1603,7 +1719,7 @@ SPU__XE_INLINE __m128i spu__xe_lut(const uint32_t* tbl, int n, __m128i idx) {
+@@ -1603,7 +1724,7 @@ SPU__XE_INLINE __m128i spu__xe_lut(const uint32_t* tbl, int n, __m128i idx) {
      }
      return r;
  }
@@ -2278,7 +2283,7 @@ index f04fda63..7fe4c487 100644
      const __m128i x = spu__xe_ld(a);
      const __m128i exp = _mm_and_si128(_mm_srli_epi32(x, 23), _mm_set1_epi32(0xFF));
      const __m128i idx = _mm_and_si128(_mm_srli_epi32(x, 18), _mm_set1_epi32(0x1F));
-@@ -1614,7 +1730,7 @@ SPU__XE_INLINE u128 spu_frest(u128 a) {
+@@ -1614,7 +1735,7 @@ SPU__XE_INLINE u128 spu_frest(u128 a) {
      return spu__xe_st(_mm_or_si128(_mm_or_si128(_mm_and_si128(x, _mm_set1_epi32((int)0x80000000u)),
                                                  _mm_slli_epi32(rexp, 23)), frac));
  }
@@ -2287,7 +2292,7 @@ index f04fda63..7fe4c487 100644
      const __m128i x = spu__xe_ld(a);
      const __m128i exp = _mm_and_si128(_mm_srli_epi32(x, 23), _mm_set1_epi32(0xFF));
      const __m128i idx = _mm_and_si128(_mm_srli_epi32(x, 18), _mm_set1_epi32(0x3F));
-@@ -1673,6 +1789,38 @@ SPU__XE_INLINE u128 spu_cuflt(u128 a, int i8) {
+@@ -1673,6 +1794,38 @@ SPU__XE_INLINE u128 spu_cuflt(u128 a, int i8) {
      const __m128i nz = _mm_xor_si128(_mm_cmpeq_epi32(v, _mm_setzero_si128()), _mm_set1_epi32(-1));
      return spu__xe_st(spu__xe_cxflt(d, _mm_setzero_si128(), nz, i8));
  }
@@ -2326,13 +2331,19 @@ index f04fda63..7fe4c487 100644
  #else
  static inline u128 spu_fi(u128 a, u128 b)      { return spu_fi_ref(a, b); }
  static inline u128 spu_frest(u128 a)           { return spu_frest_ref(a); }
-@@ -2330,4 +2478,32 @@ static inline u128 spu_fsmh(u128 a) { return spu_fsmh_ref(a); }
+@@ -2330,4 +2483,38 @@ static inline u128 spu_fsmh(u128 a) { return spu_fsmh_ref(a); }
  static inline u128 spu_fsmb(u128 a) { return spu_fsmb_ref(a); }
  #endif
  
 +/* Operand marks of tools/spu_float_inputs.py: a clamp in SPU_AX_CLAMP, nothing otherwise. */
 +#if !(defined(SPU_FLOAT_APPROX) && defined(SPU_AX_CLAMP) && SPU_AX_CLAMP && defined(__FMA__) && !defined(SPU_SCALAR_HELPERS))
 +#define SPU_AXI(x) (x)
++#define spu_fa_u   spu_fa
++#define spu_fs_u   spu_fs
++#define spu_fm_u   spu_fm
++#define spu_fma_u  spu_fma
++#define spu_fms_u  spu_fms
++#define spu_fnms_u spu_fnms
 +#endif
 +
 +/* SPU_INLINE_WRCH=1 (a title build sets it for the translated SPU sources only): the MFC parameter
@@ -2707,10 +2718,10 @@ index a657ba61..6c1bc03f 100644
              # .got + 0x8000 (the ELFv1 TOC bias). Without the right TOC every
 diff --git a/tools/spu_float_inputs.py b/tools/spu_float_inputs.py
 new file mode 100644
-index 00000000..e28e7884
+index 00000000..7b57a642
 --- /dev/null
 +++ b/tools/spu_float_inputs.py
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,171 @@
 +#!/usr/bin/env python3
 +"""Mark the float-op operands that need the extended-range clamp (spu_helpers.h SPU_AX_CLAMP).
 +
@@ -2777,8 +2788,87 @@ index 00000000..e28e7884
 +    return out, wrapped
 +
 +
-+def mark_float_inputs(src: str) -> tuple[str, int]:
-+    """Whole translation unit: returns the rewritten source and how many operands were wrapped."""
++_LOCAL = re.compile(r"\br_(\d+)\b")
++_LOCAL_FLOAT = re.compile(rf"^(\s*)r_(\d+) = ({'|'.join(_FOPS)})\(((?:SPU_AXI\()?r_\d+\)?(?:, (?:SPU_AXI\()?r_\d+\)?)*)\);\s*$")
++_LOCAL_ASSIGN = re.compile(r"^\s*r_(\d+) = [^;{}]*;\s*$")
++_GOTO = re.compile(r"^goto (\w+);$")
++_IFGOTO_L = re.compile(r"^if \(([^{};]*)\) goto (\w+);$")
++_ALL = "*"
++
++
++def _node(raw: str):
++    """(written local or None, locals read as float operands, other locals read or _ALL, jump label,
++    falls through)."""
++    s = raw.strip()
++    if not s or s.startswith("/*") and s.endswith("*/;") or _LABEL.match(raw):
++        return None, (), (), None, True
++    m = _LOCAL_FLOAT.match(raw)
++    if m:
++        return int(m.group(2)), tuple(int(x) for x in _LOCAL.findall(m.group(4))), (), None, True
++    g = _GOTO.match(s)
++    if g:
++        return None, (), (), g.group(1), False
++    g = _IFGOTO_L.match(s)
++    if g and "ctx" not in g.group(1):
++        return None, (), tuple(int(x) for x in _LOCAL.findall(g.group(1))), g.group(2), True
++    if "ctx->gpr" in s or _CALLISH.search(s) or "{" in s or "}" in s:
++        return None, (), _ALL, None, True        # a store-back, call or leaving block reads everything
++    if s.startswith("SPU_LSW("):
++        return None, (), tuple(int(x) for x in _LOCAL.findall(s)), None, True
++    m = _LOCAL_ASSIGN.match(raw)
++    if m:
++        return int(m.group(1)), (), tuple(int(x) for x in _LOCAL.findall(s.split("=", 1)[1])), None, True
++    return None, (), _ALL, None, True
++
++
++def unclamp_chains(lines: list[str]) -> tuple[list[str], int]:
++    """In a function on register locals (spu_reg_locals.py), use the unclamped form (spu_fma_u ...) of a
++    float op whose result, on every path until the register is written again, is read only as an operand
++    of another of these ops. That op clamps its own result, so only an intermediate that overflowed to
++    +-Inf (or became NaN) on the host can differ from the clamped chain, and it still leaves the chain as
++    +-FLT_MAX (a NaN as -FLT_MAX). The two clamp instructions were on the critical path of every fma
++    chain. A store-back, call, branch out or unrecognised line counts as reading every register."""
++    if not lines or "u128 r_" not in lines[0]:
++        return lines, 0
++    nodes = [_node(l) for l in lines]
++    nodes[0] = (None, (), (), None, True)        # the entry loads
++    labels = {l.strip()[:-1]: k for k, l in enumerate(lines) if _LABEL.match(l)}
++    succ = []
++    for _, _, _, jl, ft in nodes:
++        if jl is not None and jl not in labels:
++            succ.append(None)                     # a jump this pass cannot follow
++            continue
++        succ.append(([len(succ) + 1] if ft else []) + ([labels[jl]] if jl is not None else []))
++
++    def float_only(k0: int, reg: int) -> bool:
++        seen, stack = set(), [k0 + 1]
++        while stack:
++            k = stack.pop()
++            if k in seen:
++                continue
++            seen.add(k)
++            if k >= len(nodes) or succ[k] is None:
++                return False                      # falls off the end / unknown jump
++            d, _, other, _, _ = nodes[k]
++            if other == _ALL or reg in other:
++                return False
++            if d == reg:
++                continue                          # written again (its operands are read first)
++            stack.extend(succ[k])
++        return True
++
++    out, n = list(lines), 0
++    for k, (d, fops, _, _, _) in enumerate(nodes):
++        if d is not None and fops and float_only(k, d):
++            m = _LOCAL_FLOAT.match(lines[k])
++            out[k] = lines[k].replace(f"= {m.group(3)}(", f"= {m.group(3)}_u(", 1)
++            n += 1
++    return out, n
++
++
++def mark_float_inputs(src: str, chains: bool = False) -> tuple[str, int]:
++    """Whole translation unit: returns the rewritten source and how many operands were wrapped.
++    chains=True also applies unclamp_chains to every function."""
 +    lines = src.split("\n")
 +    out, total, i = [], 0, 0
 +    while i < len(lines):
@@ -2788,12 +2878,13 @@ index 00000000..e28e7884
 +            while j < len(lines) and lines[j] != "}":
 +                j += 1
 +            body, n = mark_body(lines[i + 1:j])
++            if chains:
++                body, _ = unclamp_chains(body)
 +            out.extend(body); total += n
 +            i = j
 +            continue
 +        i += 1
 +    return "\n".join(out), total
-+
 +
 +if __name__ == "__main__":
 +    for p in sys.argv[1:]:
@@ -3250,15 +3341,15 @@ index 00000000..2920aede
 +    main()
 diff --git a/tools/test_spu_float_inputs.py b/tools/test_spu_float_inputs.py
 new file mode 100644
-index 00000000..e39bf162
+index 00000000..dc775a02
 --- /dev/null
 +++ b/tools/test_spu_float_inputs.py
-@@ -0,0 +1,49 @@
+@@ -0,0 +1,95 @@
 +#!/usr/bin/env python3
 +"""spu_float_inputs.py: which float-op operands get SPU_AXI()."""
 +import unittest
 +
-+from spu_float_inputs import mark_body, mark_float_inputs
++from spu_float_inputs import mark_body, mark_float_inputs, unclamp_chains
 +
 +
 +class MarkBody(unittest.TestCase):
@@ -3299,6 +3390,52 @@ index 00000000..e39bf162
 +        out, n = mark_float_inputs(src)
 +        self.assertIn("r_4 = spu_fm(SPU_AXI(r_3), SPU_AXI(r_3));", out)
 +        self.assertEqual(n, 4)
++
++
++ENTRY = "        u128 r_1 = ctx->gpr[1]; u128 r_2 = ctx->gpr[2]; u128 r_3 = ctx->gpr[3]; u128 r_4 = ctx->gpr[4];"
++
++
++class UnclampChains(unittest.TestCase):
++    def test_intermediate_read_only_by_float_ops(self):
++        out, n = unclamp_chains([ENTRY,
++                                 "        r_3 = spu_fm(r_1, r_2);",
++                                 "        r_4 = spu_fma(r_3, r_1, r_3);",
++                                 "        r_3 = spu_il(0);",
++                                 "        SPU_LSW(ctx, _ls, r_2._u32[0] + 0x0, r_4);",
++                                 "        SPU_RET(ctx);"])
++        self.assertEqual(out[1].strip(), "r_3 = spu_fm_u(r_1, r_2);")
++        self.assertEqual(out[2].strip(), "r_4 = spu_fma(r_3, r_1, r_3);")   # stored: keeps the clamp
++        self.assertEqual(n, 1)
++
++    def test_value_reaching_an_exit_keeps_the_clamp(self):
++        out, n = unclamp_chains([ENTRY,
++                                 "        r_3 = spu_fm(r_1, r_2);",
++                                 "        r_4 = spu_fa(r_3, r_1);",
++                                 "        SPU_RET(ctx);"])
++        self.assertEqual(n, 0)    # r_3 and r_4 are both live at the return
++
++    def test_loop_back_edge_is_followed(self):
++        out, n = unclamp_chains([ENTRY,
++                                 "loc_00000100:",
++                                 "        r_3 = spu_fm(r_1, r_2);",
++                                 "        r_4 = spu_fa(r_3, r_4);",
++                                 "        if (r_1._u32[0] != 0) goto loc_00000100;",
++                                 "        r_3 = spu_il(0);",
++                                 "        SPU_LSW(ctx, _ls, r_2._u32[0] + 0x0, r_4);",
++                                 "        { SPU_DIRECT(ctx, 0x200, f); }"])
++        self.assertEqual(out[2].strip(), "r_3 = spu_fm_u(r_1, r_2);")
++        self.assertEqual(out[3].strip(), "r_4 = spu_fa(r_3, r_4);")
++
++    def test_non_float_reader_keeps_the_clamp(self):
++        for reader in ("        r_9 = spu_ori(r_3, 0);", "        if (r_3._u32[0] != 0) goto loc_00000100;",
++                       "        SPU_LSW(ctx, _ls, r_2._u32[0] + 0x0, r_3);"):
++            out, n = unclamp_chains([ENTRY, "loc_00000100:", "        r_3 = spu_fm(r_1, r_2);", reader,
++                                     "        r_3 = spu_il(0);", "        SPU_RET(ctx);"])
++            self.assertEqual(n, 0, reader)
++
++    def test_gpr_functions_are_left_alone(self):
++        body = ["    ctx->gpr[3] = spu_fm(ctx->gpr[1], ctx->gpr[2]);", "    SPU_RET(ctx);"]
++        self.assertEqual(unclamp_chains(body), (body, 0))
 +
 +
 +if __name__ == "__main__":

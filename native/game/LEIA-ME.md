@@ -562,6 +562,17 @@ fase estiver mais rápida.
   27 funções que voltam a si mesmas. **us/job(60s) 44,0/42,6/43,8 (contra ~46,7), medianas 16,7/15,9/18,05 q/s.**
   Imagem conferida por `LD_FRAME_DUMP`; testes do `test_spu_reg_locals.py` (com o clang no PATH, os de interrupção
   também rodam).
+- **Cadeias de float sem o limite no meio (04/11, manhã):** com os laços nos locais, a função mais quente ficou presa à
+  latência das cadeias de fma, e cada elo pagava o max/min do `SPU_AX_CLAMP`. O `spu_float_inputs.py`
+  (`unclamp_chains`, padrão; `--sem-cadeias` desliga) segue o grafo da função (rótulos, gotos) e usa
+  `spu_fma_u`/`spu_fm_u`/... (sem limite) num resultado que, em todo caminho até ser regravado, só é lido como
+  operando de outra operação de float, que limita o próprio resultado. Diferença possível só quando um intermediário
+  estoura para ±Inf/NaN no host, e mesmo assim a cadeia sai em ±FLT_MAX. 648 das 2327 operações do módulo quente.
+  **us/job(60s) 43,6/41,9/41,5 (contra ~43,5), medianas 16,5/17,7/18,9 q/s**; imagem conferida; 10 inicializações sem
+  travar (também 10 com os laços locais). Versão **`gow3-fase-v13`** (tag e `Projetos\versoes\gow3-fase-v13`).
+- Perfil depois das duas mudanças: o código dos jobs tem ~22% derramamento na pilha (laços com ~80 vetores vivos
+  para 16 registradores), ~14% movimentações; o runtime ~19% (`spu_indirect_branch`, `spu_lifted_lookup`,
+  `spu_coh_notify_write`).
 
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o
 `us/job(60s)`). Teste do controle pelo Celso na v12. Caminho seguinte no código: a entrada/saída das funções

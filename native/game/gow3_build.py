@@ -325,7 +325,7 @@ def add_spu_jobs(args, proj: Path, cm: Path):
                 texto = inline_fallthrough(texto, max_lines=args.fundir_linhas, max_depth=args.fundir_trechos)[0]
             texto = localize_source(texto, max_lines=args.fundir_linhas + 100)
             if args.spu_float == "aprox":   # operandos de float a limitar (SPU_AX_CLAMP, ver spu_simd)
-                texto = mark_float_inputs(texto)[0]
+                texto = mark_float_inputs(texto, chains=not args.sem_cadeias)[0]
             alvo = d / "spu_recomp.c"
             if not alvo.is_file() or alvo.read_text(encoding="utf-8") != texto:
                 alvo.write_text(texto, encoding="utf-8")
@@ -360,7 +360,7 @@ def spu_dir_projeto(args, proj: Path) -> Path:
             texto = inline_fallthrough(texto, max_lines=args.fundir_linhas, max_depth=args.fundir_trechos)[0]
         texto = localize_source(texto, max_lines=args.fundir_linhas + 100)
         if args.spu_float == "aprox":
-            texto = mark_float_inputs(texto)[0]
+            texto = mark_float_inputs(texto, chains=not args.sem_cadeias)[0]
         c.write_text(texto, encoding="utf-8")
     return destino
 
@@ -639,6 +639,8 @@ def main() -> int:
     ap.add_argument("--sem-fundir", action="store_true",
                     help="não juntar a função SPU traduzida com o trecho seguinte (spu_inline_fallthrough.py)")
     ap.add_argument("--fundir-linhas", type=int, default=500, help="tamanho máximo de uma função fundida")
+    ap.add_argument("--sem-cadeias", action="store_true",
+                    help="limitar a ±FLT_MAX também os resultados de float que só alimentam outra operação de float")
     ap.add_argument("--fundir-trechos", type=int, default=4, help="quantos trechos seguintes fundir no máximo")
     ap.add_argument("--spu-pgo", default="",
                     help="PGO do código SPU: 'gerar' instrumenta; um arquivo .profdata compila com o perfil")
