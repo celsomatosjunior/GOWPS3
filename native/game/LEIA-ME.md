@@ -533,8 +533,16 @@ fase estiver mais rápida.
 - Também testados nesta madrugada (us/job(60s), três execuções): `SPU_EST_HOSTEST=1` 46,5/45,8 (neutro);
   `list-burr` 47,7/46,8/47,0 (neutro); fusão 8/1200 47,2/47,3 (neutro).
 
+- Teto 1024 medido: us/job(60s) 45,8/47,3/47,0, medianas 14,9-16,1 q/s (o ganho de cache do teto maior se mantém).
+- **Versão `gow3-fase-v12` (04/11, 5h20; tag e `Projetos\versoes\gow3-fase-v12\rodar_fase.ps1`):** tudo da noite,
+  com `SPURS_PM_STICKY=1024`, `SPURS_PM_AFFINITY=1`, `SPU_OVL_INCREMENTAL=1` e `SPU_FTZ=1`. Teste de 15 min (X a cada
+  20 s): quadros até o fim, nenhuma SPU derrubada, a fase recarregou 3 vezes depois de mortes, memória plana (~1,1 GB
+  em uso, privada 2,1-2,7 GB), **mediana 15,05 q/s** (a v10 dava 13,1 no mesmo teste); us/job 46,7.
+- No dia 03->04/11: ~54,8 -> ~46,7 µs por job EDGE (-15%); fase de ~12 para ~15 q/s.
+
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o
-`us/job(60s)`). Candidatos:
+`us/job(60s)`). Teste do controle pelo Celso na v12. Caminho seguinte no código: a entrada/saída das funções
+traduzidas (cargas e gravações de `ctx->gpr`) e o despacho indireto por job. Candidatos:
 (1) a entrada/saída das funções curtas dos jobs (cada uma carrega e grava dezenas de registradores do
 `ctx->gpr`); (3) as chamadas indiretas (`bisl`) dos jobs, que passam por `spu_indirect_branch` + `spu_drain_call`.
 
