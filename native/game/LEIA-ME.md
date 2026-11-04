@@ -540,6 +540,13 @@ fase estiver mais rápida.
   em uso, privada 2,1-2,7 GB), **mediana 15,05 q/s** (a v10 dava 13,1 no mesmo teste); us/job 46,7.
 - No dia 03->04/11: ~54,8 -> ~46,7 µs por job EDGE (-15%); fase de ~12 para ~15 q/s.
 
+- **Correção da causa do travamento (04/11, 7h):** a culpada era **a afinidade (`SPURS_PM_AFFINITY=1`)**, não o teto.
+  Inicializações de 55 s com `SPURS_PM_STATS=10` (que muda o tempo e expõe a corrida): 2 travadas em 12 com
+  afinidade, 0 em 12 sem. No total, 6 travamentos em 34 execuções com afinidade e 0 em 22 sem; o teste com teto de
+  100000 que travou 1 em 12 também estava com afinidade. Fixar cada thread de SPU num processador lógico só deixava
+  alguma sem CPU e as listas Wws paravam. Afinidade fora do padrão (continua opcional, não usar); teto 1024 mantido
+  por precaução (mesmo desempenho). Roteiro da `gow3-fase-v12` corrigido (sem afinidade).
+
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o
 `us/job(60s)`). Teste do controle pelo Celso na v12. Caminho seguinte no código: a entrada/saída das funções
 traduzidas (cargas e gravações de `ctx->gpr`) e o despacho indireto por job. Candidatos:

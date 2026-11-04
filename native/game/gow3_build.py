@@ -564,8 +564,8 @@ def step_rodar(args, work: Path, state: dict, progress):
     # que o kernel só sonda de tempos em tempos (as listas Wws sem chute), ficava sem vez: o jogo travou 2 vezes em 15
     # na inicialização. 1024 repetições são ~50 ms.
     env.setdefault("SPURS_PM_STICKY", "1024")
-    # Cada thread de SPU num núcleo físico próprio (cellSpurs.c): caches quentes; us/job(60s) ~48,0 -> ~47,5.
-    env.setdefault("SPURS_PM_AFFINITY", "1")
+    # SPURS_PM_AFFINITY=1 (cada thread de SPU num núcleo próprio) dava ~1% (us/job(60s) ~48,0 -> ~47,5), mas travava a
+    # abertura às vezes (6 em 34 execuções com ela, 0 em 22 sem): fica desligada.
     # O policy module Wws reenvia o código do job a cada job (~100 mil GETs por segundo): compara só o trecho
     # reenviado e mantém o módulo verificado e o cache de despacho (spu_overlay_note_get). Verificações completas
     # de ~58 KB: ~7 mil -> ~700 por segundo.
