@@ -579,6 +579,7 @@ fase estiver mais rápida.
   Uma análise de definições pelo grafo inteiro não tiraria nenhum `SPU_AXI` além dos do trecho reto (0 de 3905).
 - Testar `ctx->irq_saved` antes de chamar `spu_irq_regs_maybe_restore` no despacho indireto: 42,2/42,4/43,3, neutro
   (revertido).
+- `SPURS_PM_STICKY=8192` (em vez de 1024): 43,0/42,8/42,4, neutro; fica 1024.
 - **Teste de 15 min da v13 (04/11, 11h40; X a cada 20 s depois de 240 s):** quadros até o fim (899 s), nenhuma SPU
   derrubada, a fase abriu 6 vezes (recargas depois de mortes), memória plana (~1,1 GB em uso, privada 2,0-2,7 GB,
   55-66 threads), mediana 15,85 q/s (a v12 deu 15,6 no mesmo teste; o teste mistura telas de morte e recargas, o
