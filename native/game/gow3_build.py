@@ -365,13 +365,26 @@ def spu_simd(args, cm: Path):
     # volta a compilá-las.
     defs = ("SPU_USE_DISPATCH_MT" + (";SPU_FLOAT_APPROX" if args.spu_float == "aprox" else "")
             + ("" if args.spu_ls_diag else ";SPU_LS_NODIAG"))
+    # --spu-pgo: otimização guiada por perfil só no código SPU. "gerar" instrumenta (rodar com GOW3_PGO=<início>,<fim>
+    # e LLVM_PROFILE_FILE, depois llvm-profdata merge); um caminho .profdata compila usando esse perfil.
+    pgo_link = ""
+    if args.spu_pgo == "gerar":
+        opts += ";-fprofile-instr-generate"
+        cl = shutil.which("clang-cl", path=(vs_environment() or {}).get("PATH")) or shutil.which("clang-cl")
+        rt = Path(cl or ".").resolve().parent.parent / "lib" / "clang"
+        libs = sorted(rt.glob("*/lib/windows/clang_rt.profile-x86_64.lib")) if rt.is_dir() else []
+        if not libs:
+            raise StepError("clang_rt.profile-x86_64.lib não encontrada ao lado do clang-cl (--spu-pgo gerar)")
+        pgo_link = f'target_link_libraries(${{PROJECT_NAME}} PRIVATE "{libs[-1].as_posix()}")\n'
+    elif args.spu_pgo:
+        opts += f";-fprofile-instr-use={Path(args.spu_pgo).as_posix()}"
     cm.write_text(cm.read_text(encoding="utf-8") + "\n# GOW3: SIMD do host no código SPU traduzido\n"
                   'if(SPU_SOURCES AND (NOT MSVC OR CMAKE_C_COMPILER_ID MATCHES "Clang"))\n'
                   "    set_source_files_properties(${SPU_SOURCES} PROPERTIES\n"
                   '        INCLUDE_DIRECTORIES "${PS3RECOMP_DIR}/runtime/spu"\n'
                   f'        COMPILE_DEFINITIONS "{defs}"\n'
                   f'        COMPILE_OPTIONS "{opts}")\n'
-                  "endif()\n", encoding="utf-8")
+                  "endif()\n" + pgo_link, encoding="utf-8")
 
 
 def use_gow3_rsx(proj: Path, cm: Path):
@@ -590,6 +603,8 @@ def main() -> int:
                     help="opções de otimização das fontes SPU no lugar de -O2, separadas por ; (ex.: -O3;-march=znver3)")
     ap.add_argument("--spu-float", choices=["aprox", "exato"], default="aprox",
                     help="ponto flutuante do SPU: aprox = operações do host (como o RPCS3); exato = bit a bit")
+    ap.add_argument("--spu-pgo", default="",
+                    help="PGO do código SPU: 'gerar' instrumenta; um arquivo .profdata compila com o perfil")
     ap.add_argument("--spu-simd", choices=["avx2", "sse41"], default="avx2",
                     help="SIMD do host no código SPU traduzido: avx2 (padrão, com FMA3) ou sse41 (CPUs sem AVX2)")
     ap.add_argument("--spu-dir", help="SPU_DIR já montada (programas SPU e policy modules recompilados por fora)")

@@ -1782,7 +1782,7 @@ index 5fc50208..46aa659e 100644
       * tasksets use the SAME syscall address, so the API table alone is not
       * evidence that this is an HLE context. LLE tasks must enter Sony's policy
 diff --git a/runtime/spu/spu_context.h b/runtime/spu/spu_context.h
-index c5ccbec7..9b929fe1 100644
+index c5ccbec7..2a7445c3 100644
 --- a/runtime/spu/spu_context.h
 +++ b/runtime/spu/spu_context.h
 @@ -619,13 +619,13 @@ static SPU_NOINLINE_COLD void spu_ls_read_diag(const spu_context* ctx, uint32_t
@@ -1861,6 +1861,25 @@ index c5ccbec7..9b929fe1 100644
  /* ---------------------------------------------------------------------------
   * Preferred slot extraction
   *
+@@ -923,6 +949,18 @@ void spu_irqwait_diag(spu_context* ctx);
+ 
+ /* Drain a translated call up to its explicit architectural return PC. */
+ void spu_drain_call(spu_context* ctx, uint32_t return_pc);
++/* The common case inline: the callee came back by a host return to return_pc with no transfer pending,
++ * where spu_drain_call's loop runs no step and returns as it entered (no interrupt frame armed, the
++ * enclosing drain's return pc untouched). The lifted code calls it after every brsl/bisl -- God of War
++ * III's EDGE jobs ~1.3% of their SPU in the call alone. spu_drain.c itself keeps the real function. */
++#ifndef SPU_DRAIN_IMPL
++static inline void spu_drain_call_inline(spu_context* ctx, uint32_t return_pc)
++{
++    if (__builtin_expect(!g_spu_trampoline_fn && !((ctx->pc ^ return_pc) & SPU_LS_MASK), 1)) return;
++    spu_drain_call(ctx, return_pc);
++}
++#define spu_drain_call(ctx, return_pc) spu_drain_call_inline((ctx), (return_pc))
++#endif
+ /* SPU_PCHIST=1: bucket SPU execution by the GPU module's own symbols.
+  *
+  * SPU_VRAMPC showed 3.7M VRAM writes from Host2Local_Body and ZERO from
 diff --git a/runtime/spu/spu_dma.h b/runtime/spu/spu_dma.h
 index 8c4ccaa8..eda86478 100644
 --- a/runtime/spu/spu_dma.h
@@ -1965,6 +1984,18 @@ index 8c4ccaa8..eda86478 100644
      /* Execute the transfer.
       * List commands (GETL/PUTL...): per CBEA the LIST's local-store address is
       * carried in MFC_EAL (the PM writes EAL=list, LSA=dest) and each element
+diff --git a/runtime/spu/spu_drain.c b/runtime/spu/spu_drain.c
+index 49bc2b94..53fb66b4 100644
+--- a/runtime/spu/spu_drain.c
++++ b/runtime/spu/spu_drain.c
+@@ -5,6 +5,7 @@
+  * gain real bodies in their own milestones. Keeping them as real out-of-line
+  * functions (not macros) means the SPU_DRAIN/SPU_RET call sites are already in
+  * place -- later milestones only replace the bodies. */
++#define SPU_DRAIN_IMPL   /* the real spu_drain_call, not the inline wrapper */
+ #include "spu_context.h"
+ #include "spu_lockstep.h"
+ #include <setjmp.h>
 diff --git a/runtime/spu/spu_helpers.h b/runtime/spu/spu_helpers.h
 index f04fda63..8d886330 100644
 --- a/runtime/spu/spu_helpers.h
@@ -2242,6 +2273,18 @@ index 3ce8d0d6..e0ce995c 100644
      return 0;
  }
  
+diff --git a/runtime/spu/tests/spu_interp_diff_test.c b/runtime/spu/tests/spu_interp_diff_test.c
+index 47488b29..c075d892 100644
+--- a/runtime/spu/tests/spu_interp_diff_test.c
++++ b/runtime/spu/tests/spu_interp_diff_test.c
+@@ -359,6 +359,7 @@ static uint32_t g_lc_target; static int g_lc_called;
+ void spu_indirect_branch(spu_context* c) { g_lc_called = 1; g_lc_target = c->pc & 0x3FFFC; }
+ void spu_stop(spu_context* c) { (void)c; }
+ void spu_halt(spu_context* c) { (void)c; }
++#undef spu_drain_call   /* the stub is the real function: not the inline wrapper */
+ void spu_drain_call(spu_context* c, uint32_t r) { (void)c; (void)r; }
+ void spu_img_restore(spu_context* c, int32_t sv) { (void)c; (void)sv; }
+ #ifdef LIFTED_CASES_INC
 diff --git a/runtime/spu/tests/test_spu_shufb.c b/runtime/spu/tests/test_spu_shufb.c
 index 195c75e3..95b4c5b8 100644
 --- a/runtime/spu/tests/test_spu_shufb.c
@@ -2456,6 +2499,18 @@ index a657ba61..6c1bc03f 100644
              # PSL1GHT/GCC ELFs: the entry descriptor's second word is NOT a TOC
              # (it repeats the code address); the real r2 the crt establishes is
              # .got + 0x8000 (the ELFv1 TOC bias). Without the right TOC every
+diff --git a/tools/spu_lift_selftest.py b/tools/spu_lift_selftest.py
+index dd9e4b32..42ad7f49 100644
+--- a/tools/spu_lift_selftest.py
++++ b/tools/spu_lift_selftest.py
+@@ -108,6 +108,7 @@ void (*spu_take_interrupt(spu_context* c, void (*tf)(spu_context*)))(spu_context
+ void spu_img_restore(spu_context* c, int32_t s){ (void)c; (void)s; }
+ /* Calls return through the trampoline: run it until the callee's `bi $lr`
+  * lands back on the return address (the runtime's drain, minus interrupts). */
++#undef spu_drain_call   /* defined here: not spu_context.h's inline wrapper */
+ void spu_drain_call(spu_context* c, uint32_t ret){
+     while (g_spu_trampoline_fn) {
+         if (g_spu_trampoline_fn == spu_indirect_branch && (c->pc & 0x3FFFF) == (ret & 0x3FFFF))
 diff --git a/tools/spu_lifter.py b/tools/spu_lifter.py
 index 35d8d428..32182c8e 100644
 --- a/tools/spu_lifter.py

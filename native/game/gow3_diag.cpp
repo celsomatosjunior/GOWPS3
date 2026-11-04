@@ -372,6 +372,39 @@ static int start_profiler()
 
 static int s_prof_started = start_profiler();
 
+/* GOW3_PGO=<início s>,<fim s>: num build com --spu-pgo gerar, zera os contadores do perfil no início e grava o
+ * .profraw (LLVM_PROFILE_FILE) no fim, com o jogo rodando: o passo rodar encerra o processo à força, e o perfil só
+ * seria gravado numa saída normal. Fora do build instrumentado as duas funções caem nos stubs abaixo. */
+extern "C" int gow3_pgo_none(void) { return -1; }
+extern "C" void gow3_pgo_none_v(void) {}
+extern "C" int __llvm_profile_write_file(void);
+extern "C" void __llvm_profile_reset_counters(void);
+#pragma comment(linker, "/alternatename:__llvm_profile_write_file=gow3_pgo_none")
+#pragma comment(linker, "/alternatename:__llvm_profile_reset_counters=gow3_pgo_none_v")
+
+static DWORD WINAPI pgo_thread(LPVOID arg)
+{
+    int a = (int)((intptr_t)arg >> 16), b = (int)((intptr_t)arg & 0xFFFF);
+    Sleep((DWORD)a * 1000);
+    __llvm_profile_reset_counters();
+    fprintf(stderr, "[GOW3-PGO] contadores zerados (%d s)\n", a);
+    Sleep((DWORD)(b > a ? b - a : 1) * 1000);
+    fprintf(stderr, "[GOW3-PGO] perfil gravado (%d s): %d\n", b, __llvm_profile_write_file());
+    fflush(stderr);
+    return 0;
+}
+
+static int start_pgo()
+{
+    const char* e = getenv("GOW3_PGO");
+    int a = 0, b = 0;
+    if (!e || sscanf(e, "%d,%d", &a, &b) != 2) return 0;
+    CreateThread(NULL, 0, pgo_thread, (LPVOID)(((intptr_t)a << 16) | (b & 0xFFFF)), 0, NULL);
+    return 1;
+}
+
+static int s_pgo_started = start_pgo();
+
 /* GOW3_WATCH_EA=<ea hex>: armadilha de escrita na página do PS3 que contém <ea>. Cada escrita nela
  * gera uma linha com o RIP do código que escreveu (resolver com o .map) e o valor novo do u32 em <ea>,
  * lido depois da escrita. A página fica protegida contra escrita; o tratador libera, executa a
