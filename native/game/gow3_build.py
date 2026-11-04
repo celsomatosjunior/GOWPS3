@@ -363,7 +363,10 @@ def spu_simd(args, cm: Path):
     # "approximate xfloat" padrão do RPCS3); exato = a emulação bit a bit (truncamento, faixa estendida).
     # SPU_LS_NODIAG: sem o teste das sondas de LS (SPU_LS_WATCH, SPU_SMC_WATCH...) em cada lqd/stqd; --spu-ls-diag
     # volta a compilá-las.
-    defs = ("SPU_USE_DISPATCH_MT" + (";SPU_FLOAT_APPROX" if args.spu_float == "aprox" else "")
+    # SPU_AX_NOFLUSH: no aproximado, o resultado de fa/fm/fma sai como o host o deixou, sem zerar denormais e o -0
+    # a cada operação (três instruções dependentes no caminho crítico das cadeias de fma); os denormais ficam com o
+    # FTZ/DAZ das threads de SPU (SPU_FTZ=1 no passo rodar). ~52,9 -> ~50,4 us por job EDGE.
+    defs = ("SPU_USE_DISPATCH_MT" + (";SPU_FLOAT_APPROX;SPU_AX_NOFLUSH=1" if args.spu_float == "aprox" else "")
             + ("" if args.spu_ls_diag else ";SPU_LS_NODIAG"))
     # --spu-pgo: otimização guiada por perfil só no código SPU. "gerar" instrumenta (rodar com GOW3_PGO=<início>,<fim>
     # e LLVM_PROFILE_FILE, depois llvm-profdata merge); um caminho .profdata compila usando esse perfil.
@@ -540,6 +543,9 @@ def step_rodar(args, work: Path, state: dict, progress):
     # reenviado e mantém o módulo verificado e o cache de despacho (spu_overlay_note_get). Verificações completas
     # de ~58 KB: ~7 mil -> ~700 por segundo.
     env.setdefault("SPU_OVL_INCREMENTAL", "1")
+    # FTZ/DAZ nas threads de SPU (denormais como zero, como o SPU): o float aproximado sem zerar a cada operação
+    # (SPU_AX_NOFLUSH) conta com isso.
+    env.setdefault("SPU_FTZ", "1")
     if args.jogo:
         root = Path(args.jogo)
         if (root / "PS3_GAME").is_dir():

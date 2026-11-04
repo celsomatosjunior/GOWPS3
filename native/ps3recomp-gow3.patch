@@ -153,7 +153,7 @@ index 7e222c92..33b21296 100644
  }
  
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
-index 82ea66c6..2313613a 100644
+index 82ea66c6..3b81e327 100644
 --- a/libs/spurs/cellSpurs.c
 +++ b/libs/spurs/cellSpurs.c
 @@ -16,6 +16,7 @@
@@ -164,7 +164,17 @@ index 82ea66c6..2313613a 100644
  #include <stdio.h>
  #include <stdlib.h>   /* getenv -- an implicit decl returns int, truncating the pointer */
  #include <string.h>
-@@ -445,6 +446,7 @@ struct SpursPmSlot {
+@@ -35,6 +36,9 @@ uint32_t g_ydkj_real_spurs_ea   = 0;   /* real CellSpurs instance EA (for the ta
+  * pointer is enough here. */
+ #define GUEST_PTR(p, T) ((T)((p) ? (void*)(vm_base + (uint32_t)(uintptr_t)(p)) : (void*)0))
+ 
++#if defined(__SSE__) || defined(_M_X64)
++#include <xmmintrin.h>   /* _mm_setcsr: SPU_FTZ */
++#endif
+ #ifdef _WIN32
+ #include <windows.h>
+ #else
+@@ -445,6 +449,7 @@ struct SpursPmSlot {
      const uint8_t* pm;
      u64 data;
      HANDLE thread;
@@ -172,7 +182,7 @@ index 82ea66c6..2313613a 100644
  };
  static struct SpursInst {
      u32 ea, nspus;
-@@ -560,6 +562,8 @@ static s32 spurs_initialize_common(u32 spurs_ea, u32 nspus, const char* prefix)
+@@ -560,6 +565,8 @@ static s32 spurs_initialize_common(u32 spurs_ea, u32 nspus, const char* prefix)
      memset(vm_base + spurs_ea, 0, SPURS_INST_SIZE);
      *(vm_base + spurs_ea + SPURS_NSPUS) = (u8)si->nspus;
      vm_write64(spurs_ea + SPURS_WKL_FLAG, 0xFFFFFFFFFFFFFFFFull); /* no receiver */
@@ -181,7 +191,7 @@ index 82ea66c6..2313613a 100644
  
      s32 start_rc = spurs_scheduler_start(si);
      AcquireSRWLockExclusive(&si->lock);
-@@ -874,6 +878,40 @@ static int spurs_guest_range_valid(u32 ea, u32 bytes)
+@@ -874,6 +881,40 @@ static int spurs_guest_range_valid(u32 ea, u32 bytes)
   * Taskset
   * =====================================================================*/
  
@@ -222,7 +232,7 @@ index 82ea66c6..2313613a 100644
  static s32 spurs_create_taskset(CellSpurs* spurs, CellSpursTaskset* taskset,
                                  u64 args, const u8* priority, u32 maxContention,
                                  u32 taskset_size)
-@@ -910,6 +948,7 @@ static s32 spurs_create_taskset(CellSpurs* spurs, CellSpursTaskset* taskset,
+@@ -910,6 +951,7 @@ static s32 spurs_create_taskset(CellSpurs* spurs, CellSpursTaskset* taskset,
      spurs_taskset_init(taskset_ea, spurs_ea, args, /*wid*/0,
                         taskset_size, /*evf1*/0, /*evf2*/0);
      g_ydkj_real_taskset_ea = taskset_ea;
@@ -230,7 +240,7 @@ index 82ea66c6..2313613a 100644
  
      g_ydkj_real_spurs_ea = spurs_ea;   /* capture for the taskset-policy handoff (LS[0x1C0]) */
      printf("[cellSpurs] CreateTaskset() ea=0x%08X spurs=0x%08X (real BE layout)\n", taskset_ea, spurs_ea);
-@@ -937,6 +976,84 @@ s32 cellSpursCreateTasksetWithAttribute(CellSpurs* spurs,
+@@ -937,6 +979,84 @@ s32 cellSpursCreateTasksetWithAttribute(CellSpurs* spurs,
      return spurs_create_taskset(spurs, taskset, 0, NULL, 0, size);
  }
  
@@ -315,7 +325,7 @@ index 82ea66c6..2313613a 100644
  s32 cellSpursDestroyTaskset(CellSpursTaskset* taskset)
  {
      taskset = GUEST_PTR(taskset, CellSpursTaskset*);
-@@ -1000,6 +1117,81 @@ s32 cellSpursTasksetAttributeSetName(CellSpursTasksetAttribute* attr,
+@@ -1000,6 +1120,81 @@ s32 cellSpursTasksetAttributeSetName(CellSpursTasksetAttribute* attr,
   * from an EA computed out of r3 = that argument (spu_0003 task main @0x17e70:
   * `wrch $ch18, f(r3.word3)`), so a zero argument makes it GET from EA 0 and
   * stall. lsPattern/argument arrive as guest EAs (generic adapter forwards r3..r10). */
@@ -397,7 +407,7 @@ index 82ea66c6..2313613a 100644
  s32 cellSpursCreateTask(CellSpursTaskset* taskset, CellSpursTaskId* taskId,
                          void* elf, void* context, u32 sizeContext,
                          u32 lsPattern_ea, u32 argument_ea)
-@@ -1714,6 +1906,102 @@ static WklPm* spurs_resolve_pm(u32 wid)
+@@ -1714,6 +1909,102 @@ static WklPm* spurs_resolve_pm(u32 wid)
   * occupies only its own slot; a later runnable producer can use another slot.
   * Admission and lifecycle state are serialized per instance. Guest execution
   * never runs under that lock, and only a genuine return releases contention. */
@@ -500,7 +510,18 @@ index 82ea66c6..2313613a 100644
  static DWORD WINAPI spurs_pm_worker(LPVOID p)
  {
      struct SpursPmSlot* slot = (struct SpursPmSlot*)p;
-@@ -1729,10 +2017,64 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
+@@ -1723,16 +2014,75 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
+     { ULONG g = 256 * 1024; SetThreadStackGuarantee(&g); }
+ #endif
+     ps3_tprof_thread('S', (uint32_t)slot->spu_num);
++#if defined(__SSE__) || defined(_M_X64)
++    /* SPU_FTZ=1: denormal results and operands as zero in host float ops on this SPU thread, as the SPU
++     * reads and writes them (spu_helpers.h SPU_AX_NOFLUSH relies on it instead of masking every result). */
++    { const char* e = getenv("SPU_FTZ"); if (e && e[0] == '1') _mm_setcsr(_mm_getcsr() | 0x8040u); }
++#endif
+     AcquireSRWLockExclusive(&si->lock);
+     for (;;) {
+         while (!slot->busy && !si->stopping)
              SleepConditionVariableSRW(&si->wake, &si->lock, INFINITE, 0);
          if (si->stopping && !slot->busy) break;
          ReleaseSRWLockExclusive(&si->lock);
@@ -569,7 +590,7 @@ index 82ea66c6..2313613a 100644
          AcquireSRWLockExclusive(&si->lock);
          u32 wid = slot->wid;
          if (si->active[wid]) si->active[wid]--;
-@@ -1740,7 +2082,7 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
+@@ -1740,7 +2090,7 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
          vm_base[slot->ea + SPURS_WKL_CURCONT + wid] = si->active[wid];
          ef_line_end(slot->ea);
          if (polls) si->idle[wid] = 0;
@@ -578,7 +599,7 @@ index 82ea66c6..2313613a 100644
          slot->busy = 0;
          WakeAllConditionVariable(&si->wake);
      }
-@@ -1767,7 +2109,23 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1767,7 +2117,23 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
          if (__atomic_exchange_n(&si->kick, 0, __ATOMIC_ACQ_REL)) {
              kick_pass = ++kick_run < 16;
          } else {
@@ -603,7 +624,7 @@ index 82ea66c6..2313613a 100644
              /* This full pass reads the line after any commit that woke it. */
              (void)__atomic_exchange_n(&si->kick, 0, __ATOMIC_ACQ_REL);
          }
-@@ -1779,8 +2137,52 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1779,8 +2145,52 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
          if (!kick_pass) si->pass_no++;
          u32 enabled = vm_read32(ea + SPURS_WKL_ENABLED);
          for (u32 sn = 0; sn < si->nspus; sn++) {
@@ -656,7 +677,7 @@ index 82ea66c6..2313613a 100644
              for (u32 checked = 0; checked < 16; checked++) {
                  u32 wid = si->cursor;
                  si->cursor = (wid + 1) & 15;
-@@ -1796,7 +2198,11 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1796,7 +2206,11 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                  if (!pm) continue;
                  u32 signal = vm_read16(ea + SPURS_WKL_SIGNAL1);
                  u32 ready = vm_read8(ea + SPURS_WKL_READY1 + wid);
@@ -669,7 +690,7 @@ index 82ea66c6..2313613a 100644
                  if (kicked) si->idle[wid] = 0;
                  if (!kicked && (kick_pass || (si->pass_no & ((1u << si->idle[wid]) - 1))))
                      continue;
-@@ -1806,7 +2212,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1806,7 +2220,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                  if (ready) vm_base[ea + SPURS_WKL_READY1 + wid] = (u8)(ready - 1);
                  if (signal & (0x8000u >> wid))
                      ef_w16(ea + SPURS_WKL_SIGNAL1, (u16)(signal & ~(0x8000u >> wid)));
@@ -1997,7 +2018,7 @@ index 49bc2b94..53fb66b4 100644
  #include "spu_lockstep.h"
  #include <setjmp.h>
 diff --git a/runtime/spu/spu_helpers.h b/runtime/spu/spu_helpers.h
-index f04fda63..8d886330 100644
+index f04fda63..a36e334a 100644
 --- a/runtime/spu/spu_helpers.h
 +++ b/runtime/spu/spu_helpers.h
 @@ -467,18 +467,25 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) { return spu_selb_ref(a, b,
@@ -2036,7 +2057,7 @@ index f04fda63..8d886330 100644
      u128 out; memcpy(&out, &r, 16); return out;
  }
  #elif defined(__ARM_NEON)
-@@ -787,7 +794,73 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
+@@ -787,7 +794,83 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
  SPU__SF_V3(spu__fma_s,  spu__fma_any(x, y, z, 0, 0))
  SPU__SF_V3(spu__fms_s,  spu__fma_any(x, y, z, 0, 0x80000000u))
  SPU__SF_V3(spu__fnms_s, spu__fma_any(x, y, z, 0x80000000u, 0))
@@ -2075,10 +2096,20 @@ index f04fda63..8d886330 100644
 +SPU__AX_INLINE int spu__ax_bad(__m128i mag) {
 +    return _mm_movemask_ps(_mm_castsi128_ps(_mm_cmpgt_epi32(mag, _mm_set1_epi32(0x7F7FFFFF)))) != 0;
 +}
++#if defined(SPU_AX_NOFLUSH) && SPU_AX_NOFLUSH
++/* SPU_AX_NOFLUSH=1: the result as the host op left it. The flush to +0 above puts three dependent
++ * instructions after every op, on the critical path of the fma chains the job code is made of (it is
++ * latency bound); here the host's FTZ/DAZ (spu_ax_thread_init, on the SPU threads) flushes denormals
++ * instead, and only a zero result keeps its sign (-0 where the SPU writes +0). */
++SPU__AX_INLINE u128 spu__ax_fin(__m128 r, __m128i mag) {
++    (void)mag; u128 o; _mm_storeu_ps(o._f32, r); return o;
++}
++#else
 +SPU__AX_INLINE u128 spu__ax_fin(__m128 r, __m128i mag) {
 +    const __m128i keep = _mm_cmpgt_epi32(mag, _mm_set1_epi32(0x007FFFFF));
 +    u128 o; _mm_storeu_si128((__m128i*)o._u32, _mm_and_si128(_mm_castps_si128(r), keep)); return o;
 +}
++#endif
 +/* The saturating path stays inline, in a cold block: as an out-of-line call (u128 passed by pointer on
 + * Win64) every fa/fm/fma in a loop was a call site, and the vectors live across it could only stay in
 + * the callee-saved xmm6-15. SPU_AX_SAT_CALL=1 at build time brings the call back. */
@@ -2111,7 +2142,7 @@ index f04fda63..8d886330 100644
  /* Four lanes at a time, every lane exact, with no FPCR change. The host rounds to nearest (the
   * thread's default FPCR: RN, no flush-to-zero -- writing FPCR per op serializes, ~17 ns on an
   * M4); the SPU truncates. A result rounded to nearest is either the truncated one or one step
-@@ -1575,7 +1648,7 @@ SPU__XE_INLINE __m128i spu__xe_narrow(__m256i v) {
+@@ -1575,7 +1658,7 @@ SPU__XE_INLINE __m128i spu__xe_narrow(__m256i v) {
  /* (2^13 | base) * 2^19 - step * y is 2^32 + d with d = base * 2^19 - step * y (base < 2^13,
   * step * y < 2^29): the magnitude is >= 2^32 exactly when base * 2^19 >= step * y, and its low
   * 32 bits are d mod 2^32 either way, so 32-bit lanes suffice. */
@@ -2120,7 +2151,7 @@ index f04fda63..8d886330 100644
      const __m128i est = spu__xe_ld(b), y = _mm_and_si128(spu__xe_ld(a), _mm_set1_epi32(0x7FFFF));
      const __m128i exp = _mm_and_si128(_mm_srli_epi32(est, 23), _mm_set1_epi32(0xFF));
      const __m128i b19 = _mm_slli_epi32(_mm_and_si128(_mm_srli_epi32(est, 10), _mm_set1_epi32(0x1FFF)), 19);
-@@ -1603,7 +1676,7 @@ SPU__XE_INLINE __m128i spu__xe_lut(const uint32_t* tbl, int n, __m128i idx) {
+@@ -1603,7 +1686,7 @@ SPU__XE_INLINE __m128i spu__xe_lut(const uint32_t* tbl, int n, __m128i idx) {
      }
      return r;
  }
@@ -2129,7 +2160,7 @@ index f04fda63..8d886330 100644
      const __m128i x = spu__xe_ld(a);
      const __m128i exp = _mm_and_si128(_mm_srli_epi32(x, 23), _mm_set1_epi32(0xFF));
      const __m128i idx = _mm_and_si128(_mm_srli_epi32(x, 18), _mm_set1_epi32(0x1F));
-@@ -1614,7 +1687,7 @@ SPU__XE_INLINE u128 spu_frest(u128 a) {
+@@ -1614,7 +1697,7 @@ SPU__XE_INLINE u128 spu_frest(u128 a) {
      return spu__xe_st(_mm_or_si128(_mm_or_si128(_mm_and_si128(x, _mm_set1_epi32((int)0x80000000u)),
                                                  _mm_slli_epi32(rexp, 23)), frac));
  }
@@ -2138,7 +2169,7 @@ index f04fda63..8d886330 100644
      const __m128i x = spu__xe_ld(a);
      const __m128i exp = _mm_and_si128(_mm_srli_epi32(x, 23), _mm_set1_epi32(0xFF));
      const __m128i idx = _mm_and_si128(_mm_srli_epi32(x, 18), _mm_set1_epi32(0x3F));
-@@ -1673,6 +1746,27 @@ SPU__XE_INLINE u128 spu_cuflt(u128 a, int i8) {
+@@ -1673,6 +1756,38 @@ SPU__XE_INLINE u128 spu_cuflt(u128 a, int i8) {
      const __m128i nz = _mm_xor_si128(_mm_cmpeq_epi32(v, _mm_setzero_si128()), _mm_set1_epi32(-1));
      return spu__xe_st(spu__xe_cxflt(d, _mm_setzero_si128(), nz, i8));
  }
@@ -2151,6 +2182,16 @@ index f04fda63..8d886330 100644
 + * estimate of 0 is. About 5 instructions instead of ~35 (table lookup) plus ~20 (fi).
 + * SPU_EST_EXACT=1 at build time keeps the bit-exact table versions. */
 +SPU__XE_INLINE u128 spu_fi(u128 a, u128 b) { (void)a; return b; }
++#if defined(SPU_EST_HOSTEST) && SPU_EST_HOSTEST
++/* SPU_EST_HOSTEST=1: the host's own ~12-bit estimates (rcpps/rsqrtps), as good as the SPU's estimate
++ * before its Newton step and a few cycles instead of a divide (and a square root). */
++SPU__XE_INLINE u128 spu_frest(u128 a) {
++    u128 r; _mm_storeu_ps(r._f32, _mm_rcp_ps(spu__ax_ld(a))); return r;
++}
++SPU__XE_INLINE u128 spu_frsqest(u128 a) {
++    u128 r; _mm_storeu_ps(r._f32, _mm_rsqrt_ps(_mm_andnot_ps(_mm_set1_ps(-0.0f), spu__ax_ld(a)))); return r;
++}
++#else
 +SPU__XE_INLINE u128 spu_frest(u128 a) {
 +    u128 r; _mm_storeu_ps(r._f32, _mm_div_ps(_mm_set1_ps(1.0f), spu__ax_ld(a))); return r;
 +}
@@ -2158,6 +2199,7 @@ index f04fda63..8d886330 100644
 +    const __m128 x = _mm_andnot_ps(_mm_set1_ps(-0.0f), spu__ax_ld(a));
 +    u128 r; _mm_storeu_ps(r._f32, _mm_div_ps(_mm_set1_ps(1.0f), _mm_sqrt_ps(x))); return r;
 +}
++#endif
 +#else
 +SPU__XE_INLINE u128 spu_fi(u128 a, u128 b) { return spu_fi_xe(a, b); }
 +SPU__XE_INLINE u128 spu_frest(u128 a) { return spu_frest_xe(a); }

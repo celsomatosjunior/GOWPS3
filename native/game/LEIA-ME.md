@@ -453,6 +453,16 @@ fase estiver mais rápida.
 - `spu_drain_call` em linha no caso comum (o chamado voltou ao endereço de retorno sem salto pendente): neutro
   (51,5/54,0 µs por job), mantido por ser simples.
 
+- **O código dos jobs é limitado pela latência das cadeias de fma** (classificador de instruções amostradas,
+  `insn_cls.py` do scratchpad: ~20% derramamento na pilha, ~17% desvios, ~15% testes de saturação do float, só ~2%
+  as próprias operações de float). Por isso o float "sem desvio" piorou (64 µs por job: mais instruções
+  dependentes depois de cada operação), e tirar do caminho crítico o zeramento de denormais/-0 ajudou:
+  **`SPU_AX_NOFLUSH=1` (padrão do build no aproximado) com `SPU_FTZ=1` (padrão do `rodar`: FTZ/DAZ nas threads
+  de SPU)**: 50,1/50,6/52,8 µs por job (média 51,2, contra ~52,9), imagem conferida. Única diferença para o SPU:
+  um resultado zero pode sair -0.
+- Ruído: o µs por job varia ±1,5 entre execuções (o tipo de job também muda com a cena); para efeitos de poucos
+  por cento, três execuções por variante.
+
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o µs por job). Candidatos:
 (1) a entrada/saída das funções curtas dos jobs (cada uma carrega e grava dezenas de registradores do
 `ctx->gpr`); (3) as chamadas indiretas (`bisl`) dos jobs, que passam por `spu_indirect_branch` + `spu_drain_call`.
