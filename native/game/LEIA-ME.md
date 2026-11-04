@@ -483,6 +483,11 @@ fase estiver mais rápida.
   resolve as amostras do ntdll pela exportação); é a devolução ao kernel a cada 64 repetições. Isso não entra no µs
   por job; pelo `SPURS_PM_STATS` a cadeia EDGE ocupa ~97,5% do tempo de parede.
 
+- **Canais de parâmetro do MFC em linha** (`SPU_INLINE_WRCH=1`, padrão do build nas fontes SPU): LSA/EAH/EAL/Size/
+  TagID/WrTagMask gravados direto no contexto, sem o despachante `spu_wrch`. 49,6/49,4/50,5 µs por job (média 49,8,
+  contra 50,8). No dia: ~54,8 -> ~49,8 µs por job (-9%).
+- `GOW3_PROF` imprime todas as posições (ordenadas), não só as 4000 primeiras.
+
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o µs por job). Candidatos:
 (1) a entrada/saída das funções curtas dos jobs (cada uma carrega e grava dezenas de registradores do
 `ctx->gpr`); (3) as chamadas indiretas (`bisl`) dos jobs, que passam por `spu_indirect_branch` + `spu_drain_call`.

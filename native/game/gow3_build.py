@@ -384,7 +384,9 @@ def spu_simd(args, cm: Path):
     # SPU_AX_CLAMP: sem teste e desvio por operação; o resultado é limitado a +-FLT_MAX e um operando só onde
     # tools/spu_float_inputs.py o marcou (não veio de outra operação de float). Precisa das fontes marcadas, que só
     # as cópias de --spu-reg-locais recebem. Laço mais quente das EDGE: 57 -> ~36 ns por iteração.
-    defs = ("SPU_USE_DISPATCH_MT" + (";SPU_FLOAT_APPROX;SPU_AX_NOFLUSH=1" if args.spu_float == "aprox" else "")
+    # SPU_INLINE_WRCH: os canais de parâmetro do MFC (LSA, EAH, EAL, Size, TagID, WrTagMask) gravados em linha no
+    # código traduzido, sem chamar o despachante de canais (spu_helpers.h).
+    defs = ("SPU_USE_DISPATCH_MT;SPU_INLINE_WRCH=1" + (";SPU_FLOAT_APPROX;SPU_AX_NOFLUSH=1" if args.spu_float == "aprox" else "")
             + (";SPU_AX_CLAMP=1" if args.spu_float == "aprox" and args.spu_reg_locais else "")
             + ("" if args.spu_ls_diag else ";SPU_LS_NODIAG"))
     # --spu-pgo: otimização guiada por perfil só no código SPU. "gerar" instrumenta (rodar com GOW3_PGO=<início>,<fim>

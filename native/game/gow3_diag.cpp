@@ -225,7 +225,7 @@ static int start_watchdog()
 static int s_started = start_watchdog();
 
 /* GOW3_PROF=<início s>,<duração s>: perfil por amostragem. A cada ~2 ms suspende cada thread e conta o RIP
- * (deslocamento no executável, resolver com o GOW3Native.map); no fim imprime, por thread, até 4000 posições
+ * (deslocamento no executável, resolver com o GOW3Native.map); no fim imprime, por thread, todas as posições
  * mais vistas e o total de amostras. Só diagnóstico. */
 enum { PROF_SLOTS = 1 << 16, PROF_THREADS = 96 };
 enum { PROF_MODS = 24 };
@@ -351,16 +351,19 @@ static DWORD WINAPI profiler(LPVOID arg)
             const char* b = strrchr(nome, '\\');
             fprintf(stderr, "[GOW3-PROF]   modulo %s %u\n", b ? b + 1 : nome, t->modn[k]);
         }
-        for (int r = 0; r < 4000 && t->total - t->outside >= 50; r++) {   /* todas as posições (cauda longa SPU) */
-            uint32_t best = 0, bk = 0;
+        if (t->total - t->outside >= 50) {   /* todas as posições (cauda longa SPU), as mais vistas primeiro */
+            static uint64_t ord[PROF_SLOTS];
+            unsigned m = 0;
             for (unsigned k = 0; k < PROF_SLOTS; k++)
-                if (t->key[k] && t->n[k] > best) { best = t->n[k]; bk = k; }
-            if (!best) break;
-            const uint32_t o = t->key[bk] - 1;
-            if (o & 0x40000000u) fprintf(stderr, "[GOW3-PROF]   ntdll 0x%X %u\n", o & 0x3FFFFFFFu, best);
-            else if (o & 0x80000000u) fprintf(stderr, "[GOW3-PROF]   chamador 0x%X %u\n", o & 0x7FFFFFFFu, best);
-            else fprintf(stderr, "[GOW3-PROF]   0x%X %u\n", o, best);
-            t->n[bk] = 0;
+                if (t->key[k] && t->n[k]) ord[m++] = (uint64_t)t->n[k] << 32 | k;
+            qsort(ord, m, sizeof ord[0], [](const void* a, const void* b) {
+                const uint64_t x = *(const uint64_t*)a, y = *(const uint64_t*)b; return x < y ? 1 : x > y ? -1 : 0; });
+            for (unsigned r = 0; r < m; r++) {
+                const uint32_t best = (uint32_t)(ord[r] >> 32), o = t->key[(uint32_t)ord[r]] - 1;
+                if (o & 0x40000000u) fprintf(stderr, "[GOW3-PROF]   ntdll 0x%X %u\n", o & 0x3FFFFFFFu, best);
+                else if (o & 0x80000000u) fprintf(stderr, "[GOW3-PROF]   chamador 0x%X %u\n", o & 0x7FFFFFFFu, best);
+                else fprintf(stderr, "[GOW3-PROF]   0x%X %u\n", o, best);
+            }
         }
     }
     fflush(stderr);

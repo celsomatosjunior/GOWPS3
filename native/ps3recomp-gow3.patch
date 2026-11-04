@@ -2018,7 +2018,7 @@ index 49bc2b94..53fb66b4 100644
  #include "spu_lockstep.h"
  #include <setjmp.h>
 diff --git a/runtime/spu/spu_helpers.h b/runtime/spu/spu_helpers.h
-index f04fda63..49777416 100644
+index f04fda63..af5ea38f 100644
 --- a/runtime/spu/spu_helpers.h
 +++ b/runtime/spu/spu_helpers.h
 @@ -467,18 +467,25 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) { return spu_selb_ref(a, b,
@@ -2242,13 +2242,36 @@ index f04fda63..49777416 100644
  #else
  static inline u128 spu_fi(u128 a, u128 b)      { return spu_fi_ref(a, b); }
  static inline u128 spu_frest(u128 a)           { return spu_frest_ref(a); }
-@@ -2330,4 +2479,9 @@ static inline u128 spu_fsmh(u128 a) { return spu_fsmh_ref(a); }
+@@ -2330,4 +2479,32 @@ static inline u128 spu_fsmh(u128 a) { return spu_fsmh_ref(a); }
  static inline u128 spu_fsmb(u128 a) { return spu_fsmb_ref(a); }
  #endif
  
 +/* Operand marks of tools/spu_float_inputs.py: a clamp in SPU_AX_CLAMP, nothing otherwise. */
 +#if !(defined(SPU_FLOAT_APPROX) && defined(SPU_AX_CLAMP) && SPU_AX_CLAMP && defined(__FMA__) && !defined(SPU_SCALAR_HELPERS))
 +#define SPU_AXI(x) (x)
++#endif
++
++/* SPU_INLINE_WRCH=1 (a title build sets it for the translated SPU sources only): the MFC parameter
++ * channels -- what every DMA writes five times before its command -- stored inline, as spu_wrch ->
++ * mfc_channel_write does, instead of a call into the channel dispatcher each. Every other channel, the
++ * command itself included, still goes through spu_wrch. Defined here, after the lifted spu_recomp.h has
++ * declared spu_wrch, so the macro does not touch that declaration. */
++#if defined(SPU_INLINE_WRCH) && SPU_INLINE_WRCH
++void spu_wrch(spu_context* ctx, uint32_t channel, u128 value);
++static inline void spu_wrch_inline(spu_context* ctx, uint32_t channel, u128 value)
++{
++    const uint32_t v = value._u32[0];   /* the preferred slot */
++    switch (channel) {
++    case MFC_LSA:       ctx->mfc_lsa = v; return;
++    case MFC_EAH:       ctx->mfc_eah = v; return;
++    case MFC_EAL:       ctx->mfc_eal = v; return;
++    case MFC_Size:      ctx->mfc_size = v; return;
++    case MFC_TagID:     ctx->mfc_tag = v & 0x1F; return;
++    case MFC_WrTagMask: ctx->mfc_tag_mask = v; return;
++    default:            spu_wrch(ctx, channel, value); return;
++    }
++}
++#define spu_wrch(ctx, channel, value) spu_wrch_inline((ctx), (channel), (value))
 +#endif
 +
  #endif /* SPU_HELPERS_H */
