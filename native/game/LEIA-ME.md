@@ -535,7 +535,7 @@ fase estiver mais rápida.
 
 - Teto 1024 medido: us/job(60s) 45,8/47,3/47,0, medianas 14,9-16,1 q/s (o ganho de cache do teto maior se mantém).
 - **Versão `gow3-fase-v12` (04/11, 5h20; tag e `Projetos\versoes\gow3-fase-v12\rodar_fase.ps1`):** tudo da noite,
-  com `SPURS_PM_STICKY=1024`, `SPURS_PM_AFFINITY=1`, `SPU_OVL_INCREMENTAL=1` e `SPU_FTZ=1`. Teste de 15 min (X a cada
+  com `SPURS_PM_STICKY=1024`, `SPU_OVL_INCREMENTAL=1` e `SPU_FTZ=1` (a afinidade saiu às 7h, ver abaixo). Teste de 15 min (X a cada
   20 s): quadros até o fim, nenhuma SPU derrubada, a fase recarregou 3 vezes depois de mortes, memória plana (~1,1 GB
   em uso, privada 2,1-2,7 GB), **mediana 15,05 q/s** (a v10 dava 13,1 no mesmo teste); us/job 46,7.
 - No dia 03->04/11: ~54,8 -> ~46,7 µs por job EDGE (-15%); fase de ~12 para ~15 q/s.
@@ -546,6 +546,10 @@ fase estiver mais rápida.
   100000 que travou 1 em 12 também estava com afinidade. Fixar cada thread de SPU num processador lógico só deixava
   alguma sem CPU e as listas Wws paravam. Afinidade fora do padrão (continua opcional, não usar); teto 1024 mantido
   por precaução (mesmo desempenho). Roteiro da `gow3-fase-v12` corrigido (sem afinidade).
+
+- **Teste final da v12 sem afinidade (04/11, 7h20, 15 min, sem `SPURS_PM_STATS`):** quadros até o fim, nenhuma SPU
+  derrubada, a fase recarregou 4 vezes depois de mortes, **mediana 15,6 q/s** (média 16,0). A cópia da v12 recebeu
+  este exe.
 
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o
 `us/job(60s)`). Teste do controle pelo Celso na v12. Caminho seguinte no código: a entrada/saída das funções
