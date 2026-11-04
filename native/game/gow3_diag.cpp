@@ -12,6 +12,44 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+/* GOW3Native.env ao lado do exe: uma variável por linha (NOME=valor, # comenta), definida antes de o
+ * runtime ler qualquer uma, e só se ainda não estiver no ambiente. GOW3_PASTA=<pasta> vira a pasta atual
+ * (o save fica em gamedata\ dela). Assim o exe abre sozinho, sem o rodar_fase.ps1: o Steam, por
+ * exemplo, só traduz o controle (Steam Input) para o processo que ele mesmo abre. */
+static int load_env_file()
+{
+    char path[MAX_PATH];
+    DWORD n = GetModuleFileNameA(NULL, path, MAX_PATH);
+    if (!n || n >= MAX_PATH - 8) return 0;
+    char* dot = strrchr(path, '.');
+    if (!dot) return 0;
+    strcpy(dot, ".env");
+    FILE* f = fopen(path, "r");
+    if (!f) return 0;
+    char line[4096];
+    int count = 0;
+    while (fgets(line, sizeof line, f)) {
+        char* s = line;
+        if ((unsigned char)s[0] == 0xEF && (unsigned char)s[1] == 0xBB && (unsigned char)s[2] == 0xBF) s += 3;
+        while (*s == ' ' || *s == '\t') s++;
+        size_t len = strlen(s);
+        while (len && (s[len - 1] == '\n' || s[len - 1] == '\r' || s[len - 1] == ' ')) s[--len] = 0;
+        char* eq = strchr(s, '=');
+        if (!*s || *s == '#' || !eq || eq == s) continue;
+        *eq = 0;
+        if (getenv(s)) continue;
+        _putenv_s(s, eq + 1);
+        count++;
+    }
+    fclose(f);
+    const char* dir = getenv("GOW3_PASTA");
+    if (dir && *dir) SetCurrentDirectoryA(dir);
+    fprintf(stderr, "[GOW3] %s: %d variáveis\n", path, count);
+    return count;
+}
+static int s_env_loaded = load_env_file();
 
 extern "C" const char* g_hle_inflight[];   /* ppu_hle.cpp, 64 entradas */
 

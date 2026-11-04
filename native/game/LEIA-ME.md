@@ -587,6 +587,18 @@ fase estiver mais rápida.
 - No `spu_lifted_lookup`, ~47% das amostras são a carga da entrada do cache de despacho por thread (falta de cache:
   a cadeia EDGE muda de thread a cada 1024 repetições e o código dos jobs ocupa o L1/L2).
 
+- **O exe abre sozinho (`GOW3Native.env`, 04/11, 13h):** o `GOW3Native.exe` lê, antes de tudo, o arquivo
+  `GOW3Native.env` ao lado dele (uma variável `NOME=valor` por linha, `#` comenta; o que já estiver no ambiente vence)
+  e `GOW3_PASTA=<pasta>` vira a pasta atual (a do save). Testado aberto direto de `C:\`: leu as 13 variáveis e chegou à
+  fase. Serve para o Steam: o Steam Input só traduz o controle (o Switch 2 Pro do Celso, **só por USB**) para o
+  processo que ele mesmo abre. No Steam: *Jogos -> Adicionar um jogo não Steam*, escolher o `GOW3Native.exe` da
+  `Projetosersoes\gow3-fase-v14` e pôr nas opções de inicialização o caminho do `EBOOT.pular_videos.ELF` da mesma
+  pasta, entre aspas. Versão **`gow3-fase-v14`** (mesmo código SPU da v13).
+- Contagem de entradas por função (PGO, `--spu-pgo gerar`, 60 s da fase): ~6 milhões de entradas de função traduzida por
+  segundo na cadeia EDGE (~160 ns de trabalho por entrada). As folhas chamadas por `brsl` direto são só ~2% das
+  entradas. Salvar/restaurar xmm6-15 e push/pop (convenção do Win64) são ~4,5% das amostras do código dos jobs:
+  candidato a `sysv_abi` nas funções traduzidas (todos os ponteiros de função SPU teriam de mudar).
+
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o
 `us/job(60s)`). Teste do controle pelo Celso na v12. Caminho seguinte no código: a entrada/saída das funções
 traduzidas (cargas e gravações de `ctx->gpr`) e o despacho indireto por job. Candidatos:
