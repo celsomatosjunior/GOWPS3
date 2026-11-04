@@ -599,6 +599,18 @@ fase estiver mais rápida.
   entradas. Salvar/restaurar xmm6-15 e push/pop (convenção do Win64) são ~4,5% das amostras do código dos jobs:
   candidato a `sysv_abi` nas funções traduzidas (todos os ponteiros de função SPU teriam de mudar).
 
+- **Comparação com o RPCS3 (04/11, tarde).** Meta do projeto: 60 q/s, como o RPCS3 do Celso.
+  - Os patches que ele liga para o 1.00 (Disable MLAA, Disable Layered Fog, Disable Color Grading, além dos vídeos),
+    com `--patch-rpcs3` (agora com `--elf <trabalho>\EBOOT.ELF`, porque o `--jogo` sozinho pede o `unicorn` do
+    analisador; o build completo com a tradução do PPU leva ~4 min): us/job(60s) 40,9/41,7/41,8, medianas
+    19,45/16,8/18,0 q/s, os mesmos ~1300-1400 jobs EDGE por quadro. Quase neutros: não são eles que dão os 60 q/s do RPCS3.
+    O build voltou sem patches.
+  - RPCS3 1 (`rpcs3_medir.ps1` do scratchpad: aperta J, o Cross do teclado dele, nos tempos do `PAD_SCRIPT`, e mede o
+    título da janela e o tempo de CPU por thread): 38-45 q/s entre 260 e 300 s (cena não confirmada; a captura falhou),
+    seis threads a 82-85% de um núcleo (SPUs, com espera ativa) e uma a 99%. Se for a mesma luta, a cadeia EDGE dele
+    leva ~22-26 ms por quadro contra os nossos ~55: ~2x por job. Repetir com captura quando o PC estiver livre (o
+    script toma o foco da janela).
+
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o
 `us/job(60s)`). Teste do controle pelo Celso na v12. Caminho seguinte no código: a entrada/saída das funções
 traduzidas (cargas e gravações de `ctx->gpr`) e o despacho indireto por job. Candidatos:

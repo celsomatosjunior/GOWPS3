@@ -174,6 +174,8 @@ def step_elf(args, work: Path, state: dict, progress):
         elf = aplica_pular_videos(elf, work)
     if args.patch_rpcs3:
         elf = aplica_patches_rpcs3(args, elf, work, state, progress)
+    else:
+        state.pop("patches_rpcs3", None)    # um build anterior com patches não deixa a marca
     state["elf"] = str(elf)
     progress(f"EBOOT.ELF: {elf} ({elf.stat().st_size:,} bytes)".replace(",", "."))
 
