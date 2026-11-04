@@ -521,6 +521,18 @@ fase estiver mais rápida.
   comparação em vez de cópia + comparação). Descartado antes pela métrica ruidosa; com a de 60 s: 47,2/46,7/46,8
   (contra ~47,5).
 
+- **Travamento na abertura (04/11, madrugada):** 3 de ~18 execuções pararam de apresentar quadros aos 13-36 s (vídeos de
+  abertura; a decodificação para, as tarefas do taskset dormem em WAIT_SIGNAL e o vigia de DMA repetido derruba as
+  listas Wws, `halting the SPU` no pc 0x2554). Causa: **o retorno direto sem teto (`SPURS_PM_STICKY=100000`)**. Ele
+  seguia sempre que havia alguma SPU livre, mas a prioridade é por SPU (um workload que só roda naquela SPU ficava sem
+  vez) e o kernel também sonda de tempos em tempos as listas sem chute. Corrigido: a checagem do
+  `spurs_pm_sticky_take` exige que cada outro workload chutado que pode rodar aqui possa rodar numa SPU livre, e o
+  teto voltou a 1024 (~50 ms). Bissecção com inicializações de 55 s (`boot.sh` do scratchpad): 0 travadas em 10 com
+  a configuração atual, com `SPURS_PM_AFFINITY=0`, com `SPURS_PM_STICKY=64` e com `SPU_OVL_INCREMENTAL=0`. O
+  roteiro da `gow3-fase-v11` foi corrigido para 1024.
+- Também testados nesta madrugada (us/job(60s), três execuções): `SPU_EST_HOSTEST=1` 46,5/45,8 (neutro);
+  `list-burr` 47,7/46,8/47,0 (neutro); fusão 8/1200 47,2/47,3 (neutro).
+
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o
 `us/job(60s)`). Candidatos:
 (1) a entrada/saída das funções curtas dos jobs (cada uma carrega e grava dezenas de registradores do
