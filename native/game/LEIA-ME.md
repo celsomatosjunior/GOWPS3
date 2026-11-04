@@ -446,6 +446,13 @@ fase estiver mais rápida.
   processador lógico por núcleo (0x55555555) dá ~51,7, perto do ruído.
 - `GOW3_PROF` agora guarda os handles das threads e roda com prioridade alta: ~400 amostras/s por thread (eram ~15).
 
+- **PGO do código SPU** (`gow3_build.py --spu-pgo gerar`, rodar com `GOW3_PGO=230,290` e
+  `LLVM_PROFILE_FILE=<trabalho>\pgo\spu-%p.profraw`, `llvm-profdata merge -o <trabalho>\pgo\spu.profdata`, depois
+  `--spu-pgo <trabalho>\pgo\spu.profdata`): 52,1 e 50,3 µs por job contra ~52,9, no máximo ~3%. Fica opcional (o
+  perfil envelhece a cada mudança do tradutor, e o .profdata fica só na pasta de trabalho).
+- `spu_drain_call` em linha no caso comum (o chamado voltou ao endereço de retorno sem salto pendente): neutro
+  (51,5/54,0 µs por job), mantido por ser simples.
+
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o µs por job). Candidatos:
 (1) a entrada/saída das funções curtas dos jobs (cada uma carrega e grava dezenas de registradores do
 `ctx->gpr`); (3) as chamadas indiretas (`bisl`) dos jobs, que passam por `spu_indirect_branch` + `spu_drain_call`.
