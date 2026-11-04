@@ -312,13 +312,20 @@ def add_spu_jobs(args, proj: Path, cm: Path):
         # as fontes de --spu-jobs ficam como estão.
         sys.path.insert(0, str(Path(args.ps3recomp).resolve() / "tools"))
         from spu_reg_locals import localize_source
+        from spu_float_inputs import mark_float_inputs
+        from spu_inline_fallthrough import inline_fallthrough
         destino = proj / "spu_jobs_rl"
         novas = []
         for c in fontes[:-1]:
             d = destino / c.parent.name
             d.mkdir(parents=True, exist_ok=True)
             shutil.copy2(c.parent / "spu_recomp.h", d / "spu_recomp.h")
-            texto = localize_source(c.read_text(encoding="utf-8"))
+            texto = c.read_text(encoding="utf-8")
+            if not args.sem_fundir:   # o trecho seguinte (preâmbulo -> laço) na mesma função C
+                texto = inline_fallthrough(texto)[0]
+            texto = localize_source(texto)
+            if args.spu_float == "aprox":   # operandos de float a limitar (SPU_AX_CLAMP, ver spu_simd)
+                texto = mark_float_inputs(texto)[0]
             alvo = d / "spu_recomp.c"
             if not alvo.is_file() or alvo.read_text(encoding="utf-8") != texto:
                 alvo.write_text(texto, encoding="utf-8")
@@ -341,12 +348,20 @@ def spu_dir_projeto(args, proj: Path) -> Path:
         return origem
     sys.path.insert(0, str(Path(args.ps3recomp).resolve() / "tools"))
     from spu_reg_locals import localize_source
+    from spu_float_inputs import mark_float_inputs
+    from spu_inline_fallthrough import inline_fallthrough
     destino = proj / "spu_dir_rl"
     if destino.exists():
         shutil.rmtree(destino)
     shutil.copytree(origem, destino)
     for c in destino.glob("*/spu_recomp.c"):
-        c.write_text(localize_source(c.read_text(encoding="utf-8")), encoding="utf-8")
+        texto = c.read_text(encoding="utf-8")
+        if not args.sem_fundir:
+            texto = inline_fallthrough(texto)[0]
+        texto = localize_source(texto)
+        if args.spu_float == "aprox":
+            texto = mark_float_inputs(texto)[0]
+        c.write_text(texto, encoding="utf-8")
     return destino
 
 
@@ -366,7 +381,11 @@ def spu_simd(args, cm: Path):
     # SPU_AX_NOFLUSH: no aproximado, o resultado de fa/fm/fma sai como o host o deixou, sem zerar denormais e o -0
     # a cada operação (três instruções dependentes no caminho crítico das cadeias de fma); os denormais ficam com o
     # FTZ/DAZ das threads de SPU (SPU_FTZ=1 no passo rodar). ~52,9 -> ~50,4 us por job EDGE.
+    # SPU_AX_CLAMP: sem teste e desvio por operação; o resultado é limitado a +-FLT_MAX e um operando só onde
+    # tools/spu_float_inputs.py o marcou (não veio de outra operação de float). Precisa das fontes marcadas, que só
+    # as cópias de --spu-reg-locais recebem. Laço mais quente das EDGE: 57 -> ~36 ns por iteração.
     defs = ("SPU_USE_DISPATCH_MT" + (";SPU_FLOAT_APPROX;SPU_AX_NOFLUSH=1" if args.spu_float == "aprox" else "")
+            + (";SPU_AX_CLAMP=1" if args.spu_float == "aprox" and args.spu_reg_locais else "")
             + ("" if args.spu_ls_diag else ";SPU_LS_NODIAG"))
     # --spu-pgo: otimização guiada por perfil só no código SPU. "gerar" instrumenta (rodar com GOW3_PGO=<início>,<fim>
     # e LLVM_PROFILE_FILE, depois llvm-profdata merge); um caminho .profdata compila usando esse perfil.
@@ -609,6 +628,8 @@ def main() -> int:
                     help="opções de otimização das fontes SPU no lugar de -O2, separadas por ; (ex.: -O3;-march=znver3)")
     ap.add_argument("--spu-float", choices=["aprox", "exato"], default="aprox",
                     help="ponto flutuante do SPU: aprox = operações do host (como o RPCS3); exato = bit a bit")
+    ap.add_argument("--sem-fundir", action="store_true",
+                    help="não juntar a função SPU traduzida com o trecho seguinte (spu_inline_fallthrough.py)")
     ap.add_argument("--spu-pgo", default="",
                     help="PGO do código SPU: 'gerar' instrumenta; um arquivo .profdata compila com o perfil")
     ap.add_argument("--spu-simd", choices=["avx2", "sse41"], default="avx2",

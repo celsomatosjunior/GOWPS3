@@ -463,6 +463,26 @@ fase estiver mais rápida.
 - Ruído: o µs por job varia ±1,5 entre execuções (o tipo de job também muda com a cena); para efeitos de poucos
   por cento, três execuções por variante.
 
+- **Banco de testes do laço quente** (scratchpad `bench\`, só local: código traduzido do jogo): a 0x10E20 isolada
+  sobre dados sintéticos, mesmas opções do build, ±0,5% entre medições. 57 ns por iteração no esquema de teste e
+  desvio; **26,9 ns sem nenhum tratamento** de Inf/NaN; 29,6 ns só limitando a saída (maxps/minps); 44 ns na
+  versão "sem desvio" antiga. Com poucas iterações por chamada (o caso do jogo) a entrada e a saída da função
+  (~75 cargas e ~60 gravações de `ctx->gpr`, ~70 ns) dominam.
+- **O caminho saturado dispara ~700 mil vezes por segundo no jogo** (`-DSPU_AX_STATS=1`): a semântica dele importa.
+  Por isso o NaN -> 0 deixou os jobs mais lentos (mais trabalho por job).
+- **`SPU_AX_CLAMP=1`** (padrão do build com registradores locais): sem teste e desvio; a saída de fa/fs/fm/fma/fms/
+  fnms é limitada a ±FLT_MAX e um operando só é limitado onde `ps3recomp/tools/spu_float_inputs.py` o marcou com
+  `SPU_AXI()` (não veio de outra dessas operações no mesmo trecho reto). Mesma semântica do caminho saturado,
+  menos um NaN positivo como operando (vira -FLT_MAX). Laço do banco: 57 -> 36 ns por iteração; no jogo 51,8 µs
+  por job (neutro sozinho: o custo por chamada domina).
+- **Fusão do trecho seguinte** (`ps3recomp/tools/spu_inline_fallthrough.py`, padrão; `--sem-fundir` desliga): uma
+  função que termina num `SPU_DIRECT` para o trecho logo depois dela (preâmbulo -> laço) recebe o corpo dele, até 4
+  trechos e 500 linhas; 2099 fusões no módulo quente, 910 funções com registradores locais (eram 860). Exe de 70
+  para 93 MB. 51,2/50,3/51,0 µs por job (média 50,8).
+- A SPU das EDGE fica ~7% bloqueada em `ZwWaitForAlertByThreadId` entre execuções (o `ntdll_cat.py` do scratchpad
+  resolve as amostras do ntdll pela exportação); é a devolução ao kernel a cada 64 repetições. Isso não entra no µs
+  por job; pelo `SPURS_PM_STATS` a cadeia EDGE ocupa ~97,5% do tempo de parede.
+
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o µs por job). Candidatos:
 (1) a entrada/saída das funções curtas dos jobs (cada uma carrega e grava dezenas de registradores do
 `ctx->gpr`); (3) as chamadas indiretas (`bisl`) dos jobs, que passam por `spu_indirect_branch` + `spu_drain_call`.

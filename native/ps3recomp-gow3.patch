@@ -2018,7 +2018,7 @@ index 49bc2b94..53fb66b4 100644
  #include "spu_lockstep.h"
  #include <setjmp.h>
 diff --git a/runtime/spu/spu_helpers.h b/runtime/spu/spu_helpers.h
-index f04fda63..a36e334a 100644
+index f04fda63..49777416 100644
 --- a/runtime/spu/spu_helpers.h
 +++ b/runtime/spu/spu_helpers.h
 @@ -467,18 +467,25 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) { return spu_selb_ref(a, b,
@@ -2057,7 +2057,7 @@ index f04fda63..a36e334a 100644
      u128 out; memcpy(&out, &r, 16); return out;
  }
  #elif defined(__ARM_NEON)
-@@ -787,7 +794,83 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
+@@ -787,7 +794,117 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
  SPU__SF_V3(spu__fma_s,  spu__fma_any(x, y, z, 0, 0))
  SPU__SF_V3(spu__fms_s,  spu__fma_any(x, y, z, 0, 0x80000000u))
  SPU__SF_V3(spu__fnms_s, spu__fma_any(x, y, z, 0x80000000u, 0))
@@ -2118,18 +2118,52 @@ index f04fda63..a36e334a 100644
 +#else
 +#define SPU__AX_SATFN SPU__AX_INLINE
 +#endif
++/* SPU_AX_STATS=1 at build time: count the saturating path (operations whose host result had an Inf/NaN
++ * lane), printed every 2^20; only the cold path pays. */
++#if defined(SPU_AX_STATS) && SPU_AX_STATS
++#include <stdio.h>
++#ifdef _WIN32
++__declspec(selectany) volatile long long spu_ax_sat_count = 0;   /* one copy across TUs (COFF) */
++#else
++__attribute__((weak)) volatile long long spu_ax_sat_count;
++#endif
++#define SPU__AX_COUNT() do { long long n_ = __atomic_add_fetch(&spu_ax_sat_count, 1, __ATOMIC_RELAXED); \
++        if (!(n_ & ((1ll << 20) - 1))) fprintf(stderr, "[spu-ax] caminho saturado: %lld\n", n_); } while (0)
++#else
++#define SPU__AX_COUNT() do { } while (0)
++#endif
++#if defined(SPU_AX_CLAMP) && SPU_AX_CLAMP
++/* SPU_AX_CLAMP=1: no test and branch per op. The result is clamped to +-FLT_MAX (maxps/minps: a host
++ * Inf saturates as the SPU's overflow does, a NaN becomes -FLT_MAX), so no Inf/NaN ever leaves an op,
++ * and an operand is clamped only where tools/spu_float_inputs.py wrapped it in SPU_AXI(): one that is
++ * not the result of another of these ops (an LS load, a register from a call). With FTZ/DAZ on the SPU
++ * thread (SPU_FTZ) that is the saturating path above for every operation, except a positive NaN operand
++ * (0x7F800001..0x7FFFFFFF), which reads as -FLT_MAX instead of +FLT_MAX. The branch per op was more than
++ * half of the hottest EDGE loop (57 -> ~30 ns an iteration, tests/bench-like harness). Needs sources
++ * marked by spu_float_inputs.py: unmarked, operands are not clamped at all. */
++SPU__AX_INLINE __m128 spu__ax_cl(__m128 r) {
++    return _mm_min_ps(_mm_max_ps(r, _mm_set1_ps(-0x1.fffffep127f)), _mm_set1_ps(0x1.fffffep127f));
++}
++SPU__AX_INLINE u128 spu__ax_clo(__m128 r) { u128 o; _mm_storeu_ps(o._f32, spu__ax_cl(r)); return o; }
++SPU__AX_INLINE u128 SPU_AXI(u128 x) { return spu__ax_clo(spu__ax_raw(x)); }
 +#define SPU__AX_OP2(name, op) \
-+    SPU__AX_SATFN u128 name##_sat(u128 a, u128 b) { \
++    SPU__AX_INLINE u128 name(u128 a, u128 b) { return spu__ax_clo(op(spu__ax_raw(a), spu__ax_raw(b))); }
++#define SPU__AX_OP3(name, op) \
++    SPU__AX_INLINE u128 name(u128 a, u128 b, u128 c) { return spu__ax_clo(op(spu__ax_raw(a), spu__ax_raw(b), spu__ax_raw(c))); }
++#else
++#define SPU__AX_OP2(name, op) \
++    SPU__AX_SATFN u128 name##_sat(u128 a, u128 b) { SPU__AX_COUNT(); \
 +        return spu__ax_st(op(spu__ax_ld(a), spu__ax_ld(b))); } \
 +    SPU__AX_INLINE u128 name(u128 a, u128 b) { \
 +        const __m128 r = op(spu__ax_raw(a), spu__ax_raw(b)); const __m128i mag = spu__ax_mag(r); \
 +        return __builtin_expect(spu__ax_bad(mag), 0) ? name##_sat(a, b) : spu__ax_fin(r, mag); }
 +#define SPU__AX_OP3(name, op) \
-+    SPU__AX_SATFN u128 name##_sat(u128 a, u128 b, u128 c) { \
++    SPU__AX_SATFN u128 name##_sat(u128 a, u128 b, u128 c) { SPU__AX_COUNT(); \
 +        return spu__ax_st(op(spu__ax_ld(a), spu__ax_ld(b), spu__ax_ld(c))); } \
 +    SPU__AX_INLINE u128 name(u128 a, u128 b, u128 c) { \
 +        const __m128 r = op(spu__ax_raw(a), spu__ax_raw(b), spu__ax_raw(c)); const __m128i mag = spu__ax_mag(r); \
 +        return __builtin_expect(spu__ax_bad(mag), 0) ? name##_sat(a, b, c) : spu__ax_fin(r, mag); }
++#endif
 +SPU__AX_OP2(spu_fa, _mm_add_ps)
 +SPU__AX_OP2(spu_fs, _mm_sub_ps)
 +SPU__AX_OP2(spu_fm, _mm_mul_ps)
@@ -2142,7 +2176,7 @@ index f04fda63..a36e334a 100644
  /* Four lanes at a time, every lane exact, with no FPCR change. The host rounds to nearest (the
   * thread's default FPCR: RN, no flush-to-zero -- writing FPCR per op serializes, ~17 ns on an
   * M4); the SPU truncates. A result rounded to nearest is either the truncated one or one step
-@@ -1575,7 +1658,7 @@ SPU__XE_INLINE __m128i spu__xe_narrow(__m256i v) {
+@@ -1575,7 +1692,7 @@ SPU__XE_INLINE __m128i spu__xe_narrow(__m256i v) {
  /* (2^13 | base) * 2^19 - step * y is 2^32 + d with d = base * 2^19 - step * y (base < 2^13,
   * step * y < 2^29): the magnitude is >= 2^32 exactly when base * 2^19 >= step * y, and its low
   * 32 bits are d mod 2^32 either way, so 32-bit lanes suffice. */
@@ -2151,7 +2185,7 @@ index f04fda63..a36e334a 100644
      const __m128i est = spu__xe_ld(b), y = _mm_and_si128(spu__xe_ld(a), _mm_set1_epi32(0x7FFFF));
      const __m128i exp = _mm_and_si128(_mm_srli_epi32(est, 23), _mm_set1_epi32(0xFF));
      const __m128i b19 = _mm_slli_epi32(_mm_and_si128(_mm_srli_epi32(est, 10), _mm_set1_epi32(0x1FFF)), 19);
-@@ -1603,7 +1686,7 @@ SPU__XE_INLINE __m128i spu__xe_lut(const uint32_t* tbl, int n, __m128i idx) {
+@@ -1603,7 +1720,7 @@ SPU__XE_INLINE __m128i spu__xe_lut(const uint32_t* tbl, int n, __m128i idx) {
      }
      return r;
  }
@@ -2160,7 +2194,7 @@ index f04fda63..a36e334a 100644
      const __m128i x = spu__xe_ld(a);
      const __m128i exp = _mm_and_si128(_mm_srli_epi32(x, 23), _mm_set1_epi32(0xFF));
      const __m128i idx = _mm_and_si128(_mm_srli_epi32(x, 18), _mm_set1_epi32(0x1F));
-@@ -1614,7 +1697,7 @@ SPU__XE_INLINE u128 spu_frest(u128 a) {
+@@ -1614,7 +1731,7 @@ SPU__XE_INLINE u128 spu_frest(u128 a) {
      return spu__xe_st(_mm_or_si128(_mm_or_si128(_mm_and_si128(x, _mm_set1_epi32((int)0x80000000u)),
                                                  _mm_slli_epi32(rexp, 23)), frac));
  }
@@ -2169,7 +2203,7 @@ index f04fda63..a36e334a 100644
      const __m128i x = spu__xe_ld(a);
      const __m128i exp = _mm_and_si128(_mm_srli_epi32(x, 23), _mm_set1_epi32(0xFF));
      const __m128i idx = _mm_and_si128(_mm_srli_epi32(x, 18), _mm_set1_epi32(0x3F));
-@@ -1673,6 +1756,38 @@ SPU__XE_INLINE u128 spu_cuflt(u128 a, int i8) {
+@@ -1673,6 +1790,38 @@ SPU__XE_INLINE u128 spu_cuflt(u128 a, int i8) {
      const __m128i nz = _mm_xor_si128(_mm_cmpeq_epi32(v, _mm_setzero_si128()), _mm_set1_epi32(-1));
      return spu__xe_st(spu__xe_cxflt(d, _mm_setzero_si128(), nz, i8));
  }
@@ -2208,6 +2242,16 @@ index f04fda63..a36e334a 100644
  #else
  static inline u128 spu_fi(u128 a, u128 b)      { return spu_fi_ref(a, b); }
  static inline u128 spu_frest(u128 a)           { return spu_frest_ref(a); }
+@@ -2330,4 +2479,9 @@ static inline u128 spu_fsmh(u128 a) { return spu_fsmh_ref(a); }
+ static inline u128 spu_fsmb(u128 a) { return spu_fsmb_ref(a); }
+ #endif
+ 
++/* Operand marks of tools/spu_float_inputs.py: a clamp in SPU_AX_CLAMP, nothing otherwise. */
++#if !(defined(SPU_FLOAT_APPROX) && defined(SPU_AX_CLAMP) && SPU_AX_CLAMP && defined(__FMA__) && !defined(SPU_SCALAR_HELPERS))
++#define SPU_AXI(x) (x)
++#endif
++
+ #endif /* SPU_HELPERS_H */
 diff --git a/runtime/spu/spu_workload.c b/runtime/spu/spu_workload.c
 index 3ce8d0d6..e0ce995c 100644
 --- a/runtime/spu/spu_workload.c
@@ -2541,6 +2585,202 @@ index a657ba61..6c1bc03f 100644
              # PSL1GHT/GCC ELFs: the entry descriptor's second word is NOT a TOC
              # (it repeats the code address); the real r2 the crt establishes is
              # .got + 0x8000 (the ELFv1 TOC bias). Without the right TOC every
+diff --git a/tools/spu_float_inputs.py b/tools/spu_float_inputs.py
+new file mode 100644
+index 00000000..e28e7884
+--- /dev/null
++++ b/tools/spu_float_inputs.py
+@@ -0,0 +1,91 @@
++#!/usr/bin/env python3
++"""Mark the float-op operands that need the extended-range clamp (spu_helpers.h SPU_AX_CLAMP).
++
++In SPU_AX_CLAMP the approximate fa/fs/fm/fma/fms/fnms clamp their result to +-FLT_MAX (a host Inf or
++NaN never leaves them) and clamp an operand only where the lifted source wraps it in SPU_AXI(): an
++operand that is the result of another of those ops is already in range, and clamping it again is
++two instructions on the critical path of every fma chain. This pass wraps every other operand.
++
++It works on lifted C (spu_lifter.py output, with or without spu_reg_locals.py) one function at a time,
++line by line, and knows a register is "in range" only from an earlier line of the same straight run:
++a label, a call, a branch out or any line it does not recognise forgets everything, so a value that
++arrives by another path is always clamped. Outside SPU_AX_CLAMP, SPU_AXI(x) is x.
++"""
++from __future__ import annotations
++
++import re
++import sys
++
++_REG = r"(?:r_\d+|ctx->gpr\[\d+\])"
++_FOPS = ("spu_fa", "spu_fs", "spu_fm", "spu_fma", "spu_fms", "spu_fnms")
++_FLOAT_ASSIGN = re.compile(rf"^(\s*)({_REG}) = ({'|'.join(_FOPS)})\(({_REG}(?:, {_REG})*)\);\s*$")
++# Producers whose result is a finite float the clamp would leave alone (integer -> float conversions).
++_SANE_ASSIGN = re.compile(rf"^\s*({_REG}) = (?:spu_cuflt|spu_csflt)\(")
++_ASSIGN = re.compile(rf"^\s*({_REG}) = [^;]*;\s*$")
++_CALLISH = re.compile(r"\b(?:SPU_DIRECT|SPU_RET|SPU_RET_REG|spu_indirect_branch|spu_drain_call|spu_stop|spu_halt|"
++                      r"spu_wrch|spu_rdch|spu_rchcnt|return|goto)\b|g_spu_trampoline_fn")
++_LABEL = re.compile(r"^\s*\w+:\s*$")
++_IFGOTO = re.compile(r"^if \([^{};]*\) goto \w+;$")   # a plain conditional branch, nothing else on the line
++_FUNC = re.compile(r"^\w[\w\s\*]*\(spu_context\* ctx\)\s*\{\s*$")
++
++
++def mark_body(lines: list[str]) -> tuple[list[str], int]:
++    sane: set[str] = set()
++    out, wrapped = [], 0
++    for raw in lines:
++        s = raw.strip()
++        m = _FLOAT_ASSIGN.match(raw)
++        if m:
++            ind, dst, op, args = m.groups()
++            new = []
++            for a in args.split(", "):
++                if a in sane:
++                    new.append(a)
++                else:
++                    new.append(f"SPU_AXI({a})"); wrapped += 1
++            out.append(f"{ind}{dst} = {op}({', '.join(new)});")
++            sane.add(dst)
++            continue
++        out.append(raw)
++        if not s or s.startswith("/*") and s.endswith("*/;") or s.startswith("SPU_LSW("):
++            continue                                   # comment / store: no register changes
++        if _IFGOTO.match(s):
++            continue                                   # a branch out of the run changes nothing here
++        if _LABEL.match(raw) or _CALLISH.search(s) or "{" in s or "}" in s:
++            sane.clear()
++            continue
++        m2 = _SANE_ASSIGN.match(raw)
++        if m2:
++            sane.add(m2.group(1)); continue
++        m3 = _ASSIGN.match(raw)
++        if m3:
++            sane.discard(m3.group(1)); continue
++        sane.clear()                                   # anything else: forget
++    return out, wrapped
++
++
++def mark_float_inputs(src: str) -> tuple[str, int]:
++    """Whole translation unit: returns the rewritten source and how many operands were wrapped."""
++    lines = src.split("\n")
++    out, total, i = [], 0, 0
++    while i < len(lines):
++        out.append(lines[i])
++        if _FUNC.match(lines[i]):
++            j = i + 1
++            while j < len(lines) and lines[j] != "}":
++                j += 1
++            body, n = mark_body(lines[i + 1:j])
++            out.extend(body); total += n
++            i = j
++            continue
++        i += 1
++    return "\n".join(out), total
++
++
++if __name__ == "__main__":
++    for p in sys.argv[1:]:
++        with open(p, encoding="utf-8") as f:
++            text, n = mark_float_inputs(f.read())
++        with open(p, "w", encoding="utf-8", newline="\n") as f:
++            f.write(text)
++        print(f"{p}: {n} operands wrapped")
+diff --git a/tools/spu_inline_fallthrough.py b/tools/spu_inline_fallthrough.py
+new file mode 100644
+index 00000000..26add997
+--- /dev/null
++++ b/tools/spu_inline_fallthrough.py
+@@ -0,0 +1,93 @@
++#!/usr/bin/env python3
++"""Inline a lifted function's fall-through into the next chunk (run before spu_reg_locals.py).
++
++spu_lifter.py cuts a function at every branch target, so a loop's preamble and the loop itself (whose
++header is the target of its own back edge) are two C functions joined by SPU_DIRECT. With register
++locals every such hop stores the registers the first one wrote and the second loads them all again: in
++God of War III's hottest EDGE loop ~60 stores and ~75 loads per entry, more than the loop body when it
++runs a few iterations.
++
++This pass looks at functions whose last statement is an unconditional SPU_DIRECT to the chunk that
++starts right after them in address order (a fall-through) defined in the same file, and appends that
++chunk's body in place of the hop -- repeatedly, up to max_depth chunks and max_lines lines in all, so
++the result stays within spu_reg_locals.py's limits. The inlined chunk keeps its own function for its
++other entries. Labels are per SPU address and stay unique; a branch back into an inlined chunk is a
++plain goto to its label. What the pass gives up is the per-hop checks SPU_DIRECT makes (a pending
++interrupt, the stack-reset hint) on that one hop: a chain stays bounded by max_depth.
++"""
++from __future__ import annotations
++
++import re
++import sys
++
++_SIG = re.compile(r"^void (\w+_spu_func_([0-9A-Fa-f]{8}))\(spu_context\* ctx\) \{$")
++_TAIL = re.compile(r"^\s*\{ SPU_DIRECT\(ctx, 0x([0-9A-Fa-f]+), (\w+)\); \}\s*$")
++
++
++def inline_fallthrough(text: str, max_lines: int = 500, max_depth: int = 4) -> tuple[str, int]:
++    lines = text.split("\n")
++    funcs = {}            # name -> (start, end) line indices of the body
++    order = []            # (address, name)
++    i = 0
++    while i < len(lines):
++        m = _SIG.match(lines[i])
++        if m:
++            j = i + 1
++            while j < len(lines) and lines[j] != "}":
++                j += 1
++            funcs[m.group(1)] = (i + 1, j)
++            order.append((int(m.group(2), 16), m.group(1)))
++            i = j
++        i += 1
++    order.sort()
++    nxt = {order[k][1]: order[k + 1][1] for k in range(len(order) - 1)}
++    body = {n: lines[a:b] for n, (a, b) in funcs.items()}
++
++    def tail_target(b):
++        k = len(b) - 1
++        while k >= 0 and not b[k].strip():
++            k -= 1
++        m = _TAIL.match(b[k]) if k >= 0 else None
++        return (k, m.group(2)) if m else (None, None)
++
++    merged = 0
++    new_body = {}
++    for name, b in body.items():
++        cur, seen, depth = list(b), {name}, 0
++        while depth < max_depth:
++            k, tgt = tail_target(cur)
++            if tgt is None or tgt not in body or tgt in seen or nxt.get(_last_chunk(seen, name, nxt)) != tgt:
++                break
++            add = body[tgt]
++            if len(cur) - 1 + len(add) > max_lines:
++                break
++            cur = cur[:k] + add
++            seen.add(tgt); depth += 1; merged += 1
++        new_body[name] = cur
++    out, i = [], 0
++    while i < len(lines):
++        m = _SIG.match(lines[i])
++        if m:
++            a, b = funcs[m.group(1)]
++            out.append(lines[i]); out.extend(new_body[m.group(1)])
++            i = b
++            continue
++        out.append(lines[i]); i += 1
++    return "\n".join(out), merged
++
++
++def _last_chunk(seen, first, nxt):
++    """The chunk the current chain ends with: follow fall-throughs from the first while they are in it."""
++    c = first
++    while nxt.get(c) in seen:
++        c = nxt[c]
++    return c
++
++
++if __name__ == "__main__":
++    for p in sys.argv[1:]:
++        with open(p, encoding="utf-8") as f:
++            t, n = inline_fallthrough(f.read())
++        with open(p, "w", encoding="utf-8", newline="\n") as f:
++            f.write(t)
++        print(f"{p}: {n} fall-throughs inlined")
 diff --git a/tools/spu_lift_selftest.py b/tools/spu_lift_selftest.py
 index dd9e4b32..42ad7f49 100644
 --- a/tools/spu_lift_selftest.py
@@ -2835,6 +3075,114 @@ index 00000000..efad94ca
 +
 +if __name__ == "__main__":
 +    main()
+diff --git a/tools/test_spu_float_inputs.py b/tools/test_spu_float_inputs.py
+new file mode 100644
+index 00000000..e39bf162
+--- /dev/null
++++ b/tools/test_spu_float_inputs.py
+@@ -0,0 +1,49 @@
++#!/usr/bin/env python3
++"""spu_float_inputs.py: which float-op operands get SPU_AXI()."""
++import unittest
++
++from spu_float_inputs import mark_body, mark_float_inputs
++
++
++class MarkBody(unittest.TestCase):
++    def test_result_of_float_op_is_not_clamped_again(self):
++        out, n = mark_body(["        r_3 = spu_fm(r_1, r_2);",
++                            "        r_4 = spu_fma(r_3, r_1, r_3);"])
++        self.assertEqual(out[0].strip(), "r_3 = spu_fm(SPU_AXI(r_1), SPU_AXI(r_2));")
++        self.assertEqual(out[1].strip(), "r_4 = spu_fma(r_3, SPU_AXI(r_1), r_3);")
++        self.assertEqual(n, 3)
++
++    def test_other_assignment_forgets_the_register(self):
++        out, _ = mark_body(["        r_3 = spu_fa(r_1, r_2);",
++                            "        r_3 = spu_ori(r_9, 0);",
++                            "        r_4 = spu_fs(r_3, r_3);"])
++        self.assertEqual(out[2].strip(), "r_4 = spu_fs(SPU_AXI(r_3), SPU_AXI(r_3));")
++
++    def test_label_and_call_forget_everything(self):
++        for barrier in ("loc_00001234:", "        { SPU_DIRECT(ctx, 0x100, f); }", "        SPU_RET(ctx);"):
++            out, _ = mark_body(["        r_3 = spu_fm(r_1, r_2);", barrier, "        r_4 = spu_fm(r_3, r_3);"])
++            self.assertEqual(out[2].strip(), "r_4 = spu_fm(SPU_AXI(r_3), SPU_AXI(r_3));", barrier)
++
++    def test_stores_branches_and_conversions_keep_knowledge(self):
++        out, _ = mark_body(["        r_3 = spu_fm(r_1, r_2);",
++                            "        SPU_LSW(ctx, _ls, r_5._u32[0] + 0x10, r_3);",
++                            "        if (r_6._u32[0] != 0) goto loc_00000100;",
++                            "        r_7 = spu_cuflt(r_8, 155);",
++                            "        r_4 = spu_fma(r_3, r_7, r_3);"])
++        self.assertEqual(out[4].strip(), "r_4 = spu_fma(r_3, r_7, r_3);")
++
++    def test_gpr_form(self):
++        out, _ = mark_body(["    ctx->gpr[3] = spu_fm(ctx->gpr[1], ctx->gpr[2]);",
++                            "    ctx->gpr[4] = spu_fa(ctx->gpr[3], ctx->gpr[1]);"])
++        self.assertEqual(out[1].strip(), "ctx->gpr[4] = spu_fa(ctx->gpr[3], SPU_AXI(ctx->gpr[1]));")
++
++    def test_whole_unit_resets_per_function(self):
++        src = ("void f_1(spu_context* ctx) {\n        r_3 = spu_fm(r_1, r_2);\n}\n"
++               "void f_2(spu_context* ctx) {\n        r_4 = spu_fm(r_3, r_3);\n}\n")
++        out, n = mark_float_inputs(src)
++        self.assertIn("r_4 = spu_fm(SPU_AXI(r_3), SPU_AXI(r_3));", out)
++        self.assertEqual(n, 4)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tools/test_spu_inline_fallthrough.py b/tools/test_spu_inline_fallthrough.py
+new file mode 100644
+index 00000000..f5c70b03
+--- /dev/null
++++ b/tools/test_spu_inline_fallthrough.py
+@@ -0,0 +1,47 @@
++#!/usr/bin/env python3
++"""spu_inline_fallthrough.py: which SPU_DIRECT hops get the next chunk's body."""
++import unittest
++
++from spu_inline_fallthrough import inline_fallthrough
++
++
++def fn(addr, body):
++    return f"void m_spu_func_{addr:08X}(spu_context* ctx) {{\n" + "\n".join(body) + "\n}\n"
++
++
++def hop(addr):
++    return f"        {{ SPU_DIRECT(ctx, 0x{addr:X}, m_spu_func_{addr:08X}); }}"
++
++
++class InlineFallthrough(unittest.TestCase):
++    def test_preamble_gets_the_loop(self):
++        src = (fn(0x100, ["        ctx->gpr[3] = spu_il(1);", hop(0x110)]) +
++               fn(0x110, ["loc_00000110:", "        ctx->gpr[3] = spu_ai(ctx->gpr[3], -1);",
++                          "        if (ctx->gpr[3]._u32[0] != 0) goto loc_00000110;", hop(0x200)]) +
++               fn(0x200, ["        SPU_RET(ctx);"]))
++        out, n = inline_fallthrough(src)
++        first = out.split("void m_spu_func_00000110")[0]
++        self.assertIn("loc_00000110:", first)                  # the loop is in the preamble's function
++        self.assertIn("goto loc_00000110;", first)
++        self.assertIn("SPU_RET(ctx);", first)                 # and the next fall-through after it
++        self.assertIn("void m_spu_func_00000110", out)         # the loop keeps its own entry
++        self.assertEqual(n, 3)                                # 100<-110, 100<-200, 110<-200
++
++    def test_jump_elsewhere_is_left_alone(self):
++        src = fn(0x100, [hop(0x300)]) + fn(0x110, ["        SPU_RET(ctx);"]) + fn(0x300, ["        SPU_RET(ctx);"])
++        out, n = inline_fallthrough(src)
++        self.assertEqual(n, 0)
++        self.assertEqual(out, src)
++
++    def test_limits(self):
++        big = ["        ctx->gpr[3] = spu_il(1);"] * 50
++        src = fn(0x100, big + [hop(0x110)]) + fn(0x110, big + [hop(0x120)]) + fn(0x120, ["        SPU_RET(ctx);"])
++        out, n = inline_fallthrough(src, max_lines=60)
++        self.assertNotIn("loc_", out.split("void m_spu_func_00000110")[0])
++        self.assertEqual(out.split("void m_spu_func_00000110")[0].count("SPU_DIRECT"), 1)
++        out, n = inline_fallthrough(src, max_depth=1)
++        self.assertEqual(out.split("void m_spu_func_00000110")[0].count("SPU_DIRECT(ctx, 0x120"), 1)
++
++
++if __name__ == "__main__":
++    unittest.main()
 diff --git a/tools/test_spu_reg_locals.py b/tools/test_spu_reg_locals.py
 new file mode 100644
 index 00000000..217ea2ae

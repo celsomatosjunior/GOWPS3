@@ -251,6 +251,10 @@ static DWORD WINAPI profiler(LPVOID arg)
     uint64_t lo = (uint64_t)self;
     IMAGE_NT_HEADERS* nt = (IMAGE_NT_HEADERS*)((uint8_t*)self + ((IMAGE_DOS_HEADER*)self)->e_lfanew);
     uint64_t hi = lo + nt->OptionalHeader.SizeOfImage;
+    /* ntdll: as amostras lá dentro também por posição (bit 30), para dizer em que função a thread espera. */
+    HMODULE ntm = GetModuleHandleA("ntdll.dll");
+    const uint64_t ntlo = (uint64_t)ntm;
+    const uint64_t nthi = ntm ? ntlo + ((IMAGE_NT_HEADERS*)((uint8_t*)ntm + ((IMAGE_DOS_HEADER*)ntm)->e_lfanew))->OptionalHeader.SizeOfImage : 0;
     s_prof = (prof_thread*)calloc(PROF_THREADS, sizeof(prof_thread));
     if (!s_prof) return 0;
     Sleep((DWORD)start * 1000);
@@ -293,6 +297,7 @@ static DWORD WINAPI profiler(LPVOID arg)
                 if (c.Rip >= lo && c.Rip < hi) prof_count(&s_prof[i], (uint32_t)(c.Rip - lo));
                 else {
                     s_prof[i].total++; s_prof[i].outside++; fora = c.Rip;
+                    if (c.Rip >= ntlo && c.Rip < nthi) prof_count(&s_prof[i], (uint32_t)(c.Rip - ntlo) | 0x40000000u, 0);
                     /* Quem no exe levou a thread para fora: desenrola a pilha (thread suspensa) até o
                      * primeiro quadro no exe e conta esse endereço de retorno com o bit 31 (chamador). */
                     for (int f = 0; f < 24 && s_prof_stack; f++) {
@@ -352,7 +357,8 @@ static DWORD WINAPI profiler(LPVOID arg)
                 if (t->key[k] && t->n[k] > best) { best = t->n[k]; bk = k; }
             if (!best) break;
             const uint32_t o = t->key[bk] - 1;
-            if (o & 0x80000000u) fprintf(stderr, "[GOW3-PROF]   chamador 0x%X %u\n", o & 0x7FFFFFFFu, best);
+            if (o & 0x40000000u) fprintf(stderr, "[GOW3-PROF]   ntdll 0x%X %u\n", o & 0x3FFFFFFFu, best);
+            else if (o & 0x80000000u) fprintf(stderr, "[GOW3-PROF]   chamador 0x%X %u\n", o & 0x7FFFFFFFu, best);
             else fprintf(stderr, "[GOW3-PROF]   0x%X %u\n", o, best);
             t->n[bk] = 0;
         }
