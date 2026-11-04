@@ -498,6 +498,13 @@ fase estiver mais rápida.
   gravações de `ctx->gpr`, ~40% das amostras do código dos jobs entre derramamentos e movimentações), o despacho
   indireto (~6%) e o resto do runtime por job (~15%).
 
+- **Estabilidade (04/11, 0h55, build da v10):** 15 min com X a cada 20 s depois de 240 s: nenhuma falha, memória
+  plana (~1,1 GB em uso, privada ~2,5 GB, 55-59 threads), fase a 10,6-16 q/s em ciclos de 20 s (a luta), média 13,7;
+  o Kratos durou até o fim. Versão **`gow3-fase-v10`** (tag e `Projetos\versoes\gow3-fase-v10\rodar_fase.ps1`).
+- Candidato menor: o micro-interpretador dos trechos de salvar/restaurar registradores que o tratador de
+  interrupção do Wws gera na LS (`spu_smc_microstep`, ~3% da SPU das EDGE dentro do `spu_indirect_branch`):
+  guardar o trecho já decodificado enquanto os bytes não mudam.
+
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o µs por job). Candidatos:
 (1) a entrada/saída das funções curtas dos jobs (cada uma carrega e grava dezenas de registradores do
 `ctx->gpr`); (3) as chamadas indiretas (`bisl`) dos jobs, que passam por `spu_indirect_branch` + `spu_drain_call`.
