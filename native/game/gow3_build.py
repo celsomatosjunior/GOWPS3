@@ -322,8 +322,8 @@ def add_spu_jobs(args, proj: Path, cm: Path):
             shutil.copy2(c.parent / "spu_recomp.h", d / "spu_recomp.h")
             texto = c.read_text(encoding="utf-8")
             if not args.sem_fundir:   # o trecho seguinte (preâmbulo -> laço) na mesma função C
-                texto = inline_fallthrough(texto)[0]
-            texto = localize_source(texto)
+                texto = inline_fallthrough(texto, max_lines=args.fundir_linhas, max_depth=args.fundir_trechos)[0]
+            texto = localize_source(texto, max_lines=args.fundir_linhas + 100)
             if args.spu_float == "aprox":   # operandos de float a limitar (SPU_AX_CLAMP, ver spu_simd)
                 texto = mark_float_inputs(texto)[0]
             alvo = d / "spu_recomp.c"
@@ -357,8 +357,8 @@ def spu_dir_projeto(args, proj: Path) -> Path:
     for c in destino.glob("*/spu_recomp.c"):
         texto = c.read_text(encoding="utf-8")
         if not args.sem_fundir:
-            texto = inline_fallthrough(texto)[0]
-        texto = localize_source(texto)
+            texto = inline_fallthrough(texto, max_lines=args.fundir_linhas, max_depth=args.fundir_trechos)[0]
+        texto = localize_source(texto, max_lines=args.fundir_linhas + 100)
         if args.spu_float == "aprox":
             texto = mark_float_inputs(texto)[0]
         c.write_text(texto, encoding="utf-8")
@@ -632,6 +632,8 @@ def main() -> int:
                     help="ponto flutuante do SPU: aprox = operações do host (como o RPCS3); exato = bit a bit")
     ap.add_argument("--sem-fundir", action="store_true",
                     help="não juntar a função SPU traduzida com o trecho seguinte (spu_inline_fallthrough.py)")
+    ap.add_argument("--fundir-linhas", type=int, default=500, help="tamanho máximo de uma função fundida")
+    ap.add_argument("--fundir-trechos", type=int, default=4, help="quantos trechos seguintes fundir no máximo")
     ap.add_argument("--spu-pgo", default="",
                     help="PGO do código SPU: 'gerar' instrumenta; um arquivo .profdata compila com o perfil")
     ap.add_argument("--spu-simd", choices=["avx2", "sse41"], default="avx2",

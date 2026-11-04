@@ -2018,10 +2018,10 @@ index 49bc2b94..53fb66b4 100644
  #include "spu_lockstep.h"
  #include <setjmp.h>
 diff --git a/runtime/spu/spu_helpers.h b/runtime/spu/spu_helpers.h
-index f04fda63..af5ea38f 100644
+index f04fda63..7fe4c487 100644
 --- a/runtime/spu/spu_helpers.h
 +++ b/runtime/spu/spu_helpers.h
-@@ -467,18 +467,25 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) { return spu_selb_ref(a, b,
+@@ -467,18 +467,24 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) { return spu_selb_ref(a, b,
   * as the byte loop). SPU byte P lives at host byte SPU_W(P), i.e. the bytes
   * of each 32-bit word reversed, so swap into SPU order, select, swap back. */
  static inline u128 spu_shufb(u128 a, u128 b, u128 c) {
@@ -2045,19 +2045,18 @@ index f04fda63..af5ea38f 100644
 -    const __m128i mE0 = _mm_cmpeq_epi8(_mm_and_si128(C, _mm_set1_epi8((char)0xE0)), _mm_set1_epi8((char)0xE0));
 -    const __m128i special = _mm_blendv_epi8(mC0, _mm_set1_epi8((char)0x80), mE0);
 -    r = _mm_shuffle_epi8(_mm_blendv_epi8(r, special, m80), sw);
-+    /* Special selectors: 10x -> 0x00, 110 -> 0xFF, 111 -> 0x80. Most controls have none (no byte
-+     * with bit 7 set), and one pmovmskb skips the eight instructions that handle them. */
-+    if (__builtin_expect(_mm_movemask_epi8(C) != 0, 0)) {
-+        const __m128i m80 = _mm_cmpeq_epi8(_mm_and_si128(C, _mm_set1_epi8((char)0x80)), _mm_set1_epi8((char)0x80));
-+        const __m128i mC0 = _mm_cmpeq_epi8(_mm_and_si128(C, _mm_set1_epi8((char)0xC0)), _mm_set1_epi8((char)0xC0));
-+        const __m128i mE0 = _mm_cmpeq_epi8(_mm_and_si128(C, _mm_set1_epi8((char)0xE0)), _mm_set1_epi8((char)0xE0));
-+        const __m128i special = _mm_blendv_epi8(mC0, _mm_set1_epi8((char)0x80), mE0);
-+        r = _mm_blendv_epi8(r, special, m80);
-+    }
++    /* Special selectors: 10x -> 0x00, 110 -> 0xFF, 111 -> 0x80. Both pshufb already gave 0 for every
++     * byte with bit 7 set, so 10x needs nothing and the other two are an OR, with no branch: the
++     * branch on "any special byte" was taken often (controls with 0x80 bytes insert zeros all over SPU
++     * code), and for a loop-invariant control these five instructions hoist out of the loop. */
++    const __m128i top = _mm_and_si128(C, _mm_set1_epi8((char)0xE0));
++    const __m128i ff = _mm_cmpeq_epi8(top, _mm_set1_epi8((char)0xC0));
++    const __m128i h80 = _mm_and_si128(_mm_cmpeq_epi8(top, _mm_set1_epi8((char)0xE0)), _mm_set1_epi8((char)0x80));
++    r = _mm_or_si128(r, _mm_or_si128(ff, h80));
      u128 out; memcpy(&out, &r, 16); return out;
  }
  #elif defined(__ARM_NEON)
-@@ -787,7 +794,117 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
+@@ -787,7 +793,117 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
  SPU__SF_V3(spu__fma_s,  spu__fma_any(x, y, z, 0, 0))
  SPU__SF_V3(spu__fms_s,  spu__fma_any(x, y, z, 0, 0x80000000u))
  SPU__SF_V3(spu__fnms_s, spu__fma_any(x, y, z, 0x80000000u, 0))
@@ -2176,7 +2175,7 @@ index f04fda63..af5ea38f 100644
  /* Four lanes at a time, every lane exact, with no FPCR change. The host rounds to nearest (the
   * thread's default FPCR: RN, no flush-to-zero -- writing FPCR per op serializes, ~17 ns on an
   * M4); the SPU truncates. A result rounded to nearest is either the truncated one or one step
-@@ -1575,7 +1692,7 @@ SPU__XE_INLINE __m128i spu__xe_narrow(__m256i v) {
+@@ -1575,7 +1691,7 @@ SPU__XE_INLINE __m128i spu__xe_narrow(__m256i v) {
  /* (2^13 | base) * 2^19 - step * y is 2^32 + d with d = base * 2^19 - step * y (base < 2^13,
   * step * y < 2^29): the magnitude is >= 2^32 exactly when base * 2^19 >= step * y, and its low
   * 32 bits are d mod 2^32 either way, so 32-bit lanes suffice. */
@@ -2185,7 +2184,7 @@ index f04fda63..af5ea38f 100644
      const __m128i est = spu__xe_ld(b), y = _mm_and_si128(spu__xe_ld(a), _mm_set1_epi32(0x7FFFF));
      const __m128i exp = _mm_and_si128(_mm_srli_epi32(est, 23), _mm_set1_epi32(0xFF));
      const __m128i b19 = _mm_slli_epi32(_mm_and_si128(_mm_srli_epi32(est, 10), _mm_set1_epi32(0x1FFF)), 19);
-@@ -1603,7 +1720,7 @@ SPU__XE_INLINE __m128i spu__xe_lut(const uint32_t* tbl, int n, __m128i idx) {
+@@ -1603,7 +1719,7 @@ SPU__XE_INLINE __m128i spu__xe_lut(const uint32_t* tbl, int n, __m128i idx) {
      }
      return r;
  }
@@ -2194,7 +2193,7 @@ index f04fda63..af5ea38f 100644
      const __m128i x = spu__xe_ld(a);
      const __m128i exp = _mm_and_si128(_mm_srli_epi32(x, 23), _mm_set1_epi32(0xFF));
      const __m128i idx = _mm_and_si128(_mm_srli_epi32(x, 18), _mm_set1_epi32(0x1F));
-@@ -1614,7 +1731,7 @@ SPU__XE_INLINE u128 spu_frest(u128 a) {
+@@ -1614,7 +1730,7 @@ SPU__XE_INLINE u128 spu_frest(u128 a) {
      return spu__xe_st(_mm_or_si128(_mm_or_si128(_mm_and_si128(x, _mm_set1_epi32((int)0x80000000u)),
                                                  _mm_slli_epi32(rexp, 23)), frac));
  }
@@ -2203,7 +2202,7 @@ index f04fda63..af5ea38f 100644
      const __m128i x = spu__xe_ld(a);
      const __m128i exp = _mm_and_si128(_mm_srli_epi32(x, 23), _mm_set1_epi32(0xFF));
      const __m128i idx = _mm_and_si128(_mm_srli_epi32(x, 18), _mm_set1_epi32(0x3F));
-@@ -1673,6 +1790,38 @@ SPU__XE_INLINE u128 spu_cuflt(u128 a, int i8) {
+@@ -1673,6 +1789,38 @@ SPU__XE_INLINE u128 spu_cuflt(u128 a, int i8) {
      const __m128i nz = _mm_xor_si128(_mm_cmpeq_epi32(v, _mm_setzero_si128()), _mm_set1_epi32(-1));
      return spu__xe_st(spu__xe_cxflt(d, _mm_setzero_si128(), nz, i8));
  }
@@ -2242,7 +2241,7 @@ index f04fda63..af5ea38f 100644
  #else
  static inline u128 spu_fi(u128 a, u128 b)      { return spu_fi_ref(a, b); }
  static inline u128 spu_frest(u128 a)           { return spu_frest_ref(a); }
-@@ -2330,4 +2479,32 @@ static inline u128 spu_fsmh(u128 a) { return spu_fsmh_ref(a); }
+@@ -2330,4 +2478,32 @@ static inline u128 spu_fsmh(u128 a) { return spu_fsmh_ref(a); }
  static inline u128 spu_fsmb(u128 a) { return spu_fsmb_ref(a); }
  #endif
  
@@ -2898,7 +2897,7 @@ index 36cbc240..d18fb1db 100644
                                   if max(s, a) < min(e, b)})
 diff --git a/tools/spu_reg_locals.py b/tools/spu_reg_locals.py
 new file mode 100644
-index 00000000..efad94ca
+index 00000000..13644f60
 --- /dev/null
 +++ b/tools/spu_reg_locals.py
 @@ -0,0 +1,196 @@
@@ -3060,7 +3059,7 @@ index 00000000..efad94ca
 +    return out
 +
 +
-+def localize_source(text: str) -> str:
++def localize_source(text: str, max_lines: int = MAX_LINES, max_escapes: int = MAX_ESCAPES) -> str:
 +    """Apply localize_body to every lifted function of a generated spu_recomp.c."""
 +    lines = text.split("\n")
 +    out = []
@@ -3078,7 +3077,7 @@ index 00000000..efad94ca
 +                    ind = b[:len(b) - len(b.lstrip())]
 +                    break
 +            out.append(line)
-+            out.extend(localize_body(body, ind))
++            out.extend(localize_body(body, ind, max_lines=max_lines, max_escapes=max_escapes))
 +            out.append("}")
 +            i = j + 1
 +            continue

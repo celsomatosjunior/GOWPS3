@@ -488,6 +488,10 @@ fase estiver mais rápida.
   contra 50,8). No dia: ~54,8 -> ~49,8 µs por job (-9%).
 - `GOW3_PROF` imprime todas as posições (ordenadas), não só as 4000 primeiras.
 
+- `shufb` sem desvio para os seletores especiais (os dois pshufb já zeram os bytes com o bit 7; 110/111 viram um
+  OR): o perfil mostrava 8% da função mais quente no caminho especial. Banco: 6-12% mais rápido com controles que
+  têm bytes especiais; jogo 50,9/50,4/49,9 µs por job (no ruído). `test_spu_shufb.c` ok.
+
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o µs por job). Candidatos:
 (1) a entrada/saída das funções curtas dos jobs (cada uma carrega e grava dezenas de registradores do
 `ctx->gpr`); (3) as chamadas indiretas (`bisl`) dos jobs, que passam por `spu_indirect_branch` + `spu_drain_call`.
