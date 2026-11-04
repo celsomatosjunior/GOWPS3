@@ -611,6 +611,21 @@ fase estiver mais rápida.
     leva ~22-26 ms por quadro contra os nossos ~55: ~2x por job. Repetir com captura quando o PC estiver livre (o
     script toma o foco da janela).
 
+- **Comparação com o port do Ascension (04/11, noite).** O port `otavix010/gow-ascension-pc` (MIT; clone de
+  referência fora dos repositórios) tem 14 laços do job EDGE do Ascension em código nativo. O job EDGE do GOW3
+  (`jobmod_14561`, EBOOT 0x444600) é o mesmo job (Ascension 0x6FB300), de outra versão: um alinhamento instrução a
+  instrução dos dois módulos casa 61% e leva os laços deles aos nossos endereços (skinning E550/EC08 -> 0x10760/
+  0x10E20, a nossa função mais quente; transformação F538 -> 0x11740; projeção D250 -> 0xF428; descarte de triângulos
+  D640 -> 0xF898; normais A880 -> 0xC0C0; BBC8 -> 0xDD50, idêntica). Os registradores mudam de uma versão para a
+  outra, então os núcleos têm de ser reescritos para o nosso código. No Ascension as três listas EDGE rodam em
+  paralelo em 4 SPUs; no GOW3 a lista do quadro seguinte depende do flip do anterior (serial de verdade).
+- **Ganchos nativos** (`gow3_build.py --spu-ganchos <pasta>`): `<pasta>/ganchos.json` lista
+  `{modulo, funcao, cabecalho, chamada}`; o build inclui o cabeçalho na fonte do módulo e põe a chamada como primeira
+  linha da função traduzida (antes dos rótulos, uma vez por entrada), antes da fusão e dos registradores locais.
+  Os cabeçalhos são reescritas de código do jogo e ficam só na pasta de trabalho (`<trabalho>\edge_nativo`), com um
+  modo sombra que roda também o corpo do laço traduzido (extraído do código gerado por `gera_ref.py` da mesma pasta)
+  e compara LS e registradores.
+
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o
 `us/job(60s)`). Teste do controle pelo Celso na v12. Caminho seguinte no código: a entrada/saída das funções
 traduzidas (cargas e gravações de `ctx->gpr`) e o despacho indireto por job. Candidatos:

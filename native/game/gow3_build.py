@@ -297,6 +297,31 @@ def ffmpeg_cmake_args(args) -> list:
     return ["-DPS3RECOMP_FFMPEG_RUNTIME=ON", f"-DPS3RECOMP_FFMPEG_INCLUDE_DIR={inc}"]
 
 
+def aplica_ganchos(args, modulo: str, texto: str) -> str:
+    """--spu-ganchos <pasta>: ganchos nativos no código SPU traduzido, descritos em <pasta>/ganchos.json como
+    [{"modulo": <pasta do módulo>, "funcao": <função traduzida>, "cabecalho": <arquivo da pasta>, "chamada": <C>}].
+    O #include entra depois dos includes da fonte e a chamada como primeira linha do corpo da função (antes dos
+    rótulos: roda uma vez a cada entrada, e um laço que volta ao rótulo não a repete). Os cabeçalhos ficam só na
+    pasta local (são reescritas de código do jogo); o repositório só tem este mecanismo."""
+    if not args.spu_ganchos:
+        return texto
+    pasta = Path(args.spu_ganchos).resolve()
+    import json
+    for g in json.loads((pasta / "ganchos.json").read_text(encoding="utf-8")):
+        if g["modulo"] != modulo:
+            continue
+        assin = f"void {g['funcao']}(spu_context* ctx) {{\n"
+        if assin not in texto:
+            raise StepError(f"--spu-ganchos: {g['funcao']} não está em {modulo}")
+        texto = texto.replace(assin, assin + f"        {g['chamada']}\n", 1)
+        inc = f'#include "{(pasta / g["cabecalho"]).as_posix()}"\n'
+        if inc not in texto:
+            ultimo = texto.rfind("#include ", 0, texto.find("\nvoid "))
+            fim = texto.index("\n", ultimo) + 1
+            texto = texto[:fim] + inc + texto[fim:]
+    return texto
+
+
 def add_spu_jobs(args, proj: Path, cm: Path):
     """Os módulos de job Wws traduzidos por tools/lift_jobmods.py --engine-elf (um spu_recomp.c por módulo e o
     jobmods_register.c, que os registra num construtor como regiões verificadas pelo EA de origem)."""
@@ -322,7 +347,7 @@ def add_spu_jobs(args, proj: Path, cm: Path):
             d = destino / c.parent.name
             d.mkdir(parents=True, exist_ok=True)
             shutil.copy2(c.parent / "spu_recomp.h", d / "spu_recomp.h")
-            texto = c.read_text(encoding="utf-8")
+            texto = aplica_ganchos(args, c.parent.name, c.read_text(encoding="utf-8"))
             if not args.sem_fundir:   # o trecho seguinte (preâmbulo -> laço) na mesma função C
                 texto = inline_fallthrough(texto, max_lines=args.fundir_linhas, max_depth=args.fundir_trechos)[0]
             texto = localize_source(texto, max_lines=args.fundir_linhas + 100)
@@ -357,7 +382,7 @@ def spu_dir_projeto(args, proj: Path) -> Path:
         shutil.rmtree(destino)
     shutil.copytree(origem, destino)
     for c in destino.glob("*/spu_recomp.c"):
-        texto = c.read_text(encoding="utf-8")
+        texto = aplica_ganchos(args, c.parent.name, c.read_text(encoding="utf-8"))
         if not args.sem_fundir:
             texto = inline_fallthrough(texto, max_lines=args.fundir_linhas, max_depth=args.fundir_trechos)[0]
         texto = localize_source(texto, max_lines=args.fundir_linhas + 100)
@@ -641,6 +666,8 @@ def main() -> int:
     ap.add_argument("--sem-fundir", action="store_true",
                     help="não juntar a função SPU traduzida com o trecho seguinte (spu_inline_fallthrough.py)")
     ap.add_argument("--fundir-linhas", type=int, default=500, help="tamanho máximo de uma função fundida")
+    ap.add_argument("--spu-ganchos", default="",
+                    help="pasta com ganchos.json: chamadas nativas inseridas em funções SPU traduzidas (só local)")
     ap.add_argument("--sem-cadeias", action="store_true",
                     help="limitar a ±FLT_MAX também os resultados de float que só alimentam outra operação de float")
     ap.add_argument("--fundir-trechos", type=int, default=4, help="quantos trechos seguintes fundir no máximo")
