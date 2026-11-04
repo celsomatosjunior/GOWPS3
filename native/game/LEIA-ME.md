@@ -573,6 +573,18 @@ fase estiver mais rápida.
 - Perfil depois das duas mudanças: o código dos jobs tem ~22% derramamento na pilha (laços com ~80 vetores vivos
   para 16 registradores), ~14% movimentações; o runtime ~19% (`spu_indirect_branch`, `spu_lifted_lookup`,
   `spu_coh_notify_write`).
+- Medidos de novo sobre a v13 e descartados: `-DSPU_EST_HOSTEST=1` (rcpps/rsqrtps no lugar da divisão; a 0x9040
+  tem ~16% das amostras em vdivps/vsqrtps) 42,2/42,5/41,8, neutro; nenhum resultado de float limitado (só os
+  operandos `SPU_AXI`) 44,6/44,8/44,7, **pior** (como o "sem desvio": Inf/NaN espalhados custam mais trabalho).
+  Uma análise de definições pelo grafo inteiro não tiraria nenhum `SPU_AXI` além dos do trecho reto (0 de 3905).
+- Testar `ctx->irq_saved` antes de chamar `spu_irq_regs_maybe_restore` no despacho indireto: 42,2/42,4/43,3, neutro
+  (revertido).
+- **Teste de 15 min da v13 (04/11, 11h40; X a cada 20 s depois de 240 s):** quadros até o fim (899 s), nenhuma SPU
+  derrubada, a fase abriu 6 vezes (recargas depois de mortes), memória plana (~1,1 GB em uso, privada 2,0-2,7 GB,
+  55-66 threads), mediana 15,85 q/s (a v12 deu 15,6 no mesmo teste; o teste mistura telas de morte e recargas, o
+  us/job é a métrica do código).
+- No `spu_lifted_lookup`, ~47% das amostras são a carga da entrada do cache de despacho por thread (falta de cache:
+  a cadeia EDGE muda de thread a cada 1024 repetições e o código dos jobs ocupa o L1/L2).
 
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o
 `us/job(60s)`). Teste do controle pelo Celso na v12. Caminho seguinte no código: a entrada/saída das funções
