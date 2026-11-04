@@ -492,6 +492,12 @@ fase estiver mais rápida.
   OR): o perfil mostrava 8% da função mais quente no caminho especial. Banco: 6-12% mais rápido com controles que
   têm bytes especiais; jogo 50,9/50,4/49,9 µs por job (no ruído). `test_spu_shufb.c` ok.
 
+- Fusão mais funda (`--fundir-trechos 8 --fundir-linhas 1200`): 50,6/50,2/48,5 µs por job, igual à padrão (4/500), com
+  exe de 103 MB. Fica a padrão.
+- **Patamar:** ~50 µs por job EDGE. O que resta é estrutural: a entrada/saída de cada função traduzida (cargas e
+  gravações de `ctx->gpr`, ~40% das amostras do código dos jobs entre derramamentos e movimentações), o despacho
+  indireto (~6%) e o resto do runtime por job (~15%).
+
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o µs por job). Candidatos:
 (1) a entrada/saída das funções curtas dos jobs (cada uma carrega e grava dezenas de registradores do
 `ctx->gpr`); (3) as chamadas indiretas (`bisl`) dos jobs, que passam por `spu_indirect_branch` + `spu_drain_call`.
