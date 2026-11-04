@@ -505,7 +505,16 @@ fase estiver mais rápida.
   interrupção do Wws gera na LS (`spu_smc_microstep`, ~3% da SPU das EDGE dentro do `spu_indirect_branch`):
   guardar o trecho já decodificado enquanto os bytes não mudam.
 
-**Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o µs por job). Candidatos:
+- **Métrica melhor:** `edge_ms.py` agora imprime também `us/job(60s)`, a média dos blocos de ~10-70 s depois de a fase
+  abrir; entre execuções da mesma versão ela varia ~±0,5 (o µs por job de toda a fase, ~±1,5).
+- **Retorno direto sem limite** (`SPURS_PM_STICKY=100000`, padrão do `rodar`; era 64): a cada devolução ao kernel a
+  cadeia EDGE podia ir para outra thread/núcleo, com a LS e o código frios no cache. us/job(60s) 48,2/47,9/48,0 contra
+  ~49,2-50,2. Versão **`gow3-fase-v11`** (mesmo exe da v10, roteiro com o novo valor).
+- Testado e revertido: guardar decodificados os trechos de salvar/restaurar do tratador de interrupção
+  (`spu_smc_microstep`): us/job(60s) 48,5-49,7, sem ganho.
+
+**Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o
+`us/job(60s)`). Candidatos:
 (1) a entrada/saída das funções curtas dos jobs (cada uma carrega e grava dezenas de registradores do
 `ctx->gpr`); (3) as chamadas indiretas (`bisl`) dos jobs, que passam por `spu_indirect_branch` + `spu_drain_call`.
 

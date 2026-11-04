@@ -559,7 +559,9 @@ def step_rodar(args, work: Path, state: dict, progress):
     env.setdefault("SPU_MFC_LOOKUP_CACHE", "1")
     # Um policy module que fez trabalho roda de novo na mesma SPU sem devolver a vez à thread do kernel
     # do SPURS (cellSpurs.c, spurs_pm_sticky_take): cada devolução custava ~20 us por job EDGE.
-    env.setdefault("SPURS_PM_STICKY", "64")
+    # Sem limite prático (era 64): cada devolução ao kernel podia levar a cadeia EDGE a outra thread/núcleo, com a LS
+    # e o código frios no cache. 64 -> 100000: ~50 -> ~48,3 us por job.
+    env.setdefault("SPURS_PM_STICKY", "100000")
     # O policy module Wws reenvia o código do job a cada job (~100 mil GETs por segundo): compara só o trecho
     # reenviado e mantém o módulo verificado e o cache de despacho (spu_overlay_note_get). Verificações completas
     # de ~58 KB: ~7 mil -> ~700 por segundo.
