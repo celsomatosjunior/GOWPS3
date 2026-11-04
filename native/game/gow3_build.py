@@ -562,6 +562,8 @@ def step_rodar(args, work: Path, state: dict, progress):
     # Sem limite prático (era 64): cada devolução ao kernel podia levar a cadeia EDGE a outra thread/núcleo, com a LS
     # e o código frios no cache. 64 -> 100000: ~50 -> ~48,3 us por job.
     env.setdefault("SPURS_PM_STICKY", "100000")
+    # Cada thread de SPU num núcleo físico próprio (cellSpurs.c): caches quentes; us/job(60s) ~48,0 -> ~47,5.
+    env.setdefault("SPURS_PM_AFFINITY", "1")
     # O policy module Wws reenvia o código do job a cada job (~100 mil GETs por segundo): compara só o trecho
     # reenviado e mantém o módulo verificado e o cache de despacho (spu_overlay_note_get). Verificações completas
     # de ~58 KB: ~7 mil -> ~700 por segundo.

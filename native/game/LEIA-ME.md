@@ -513,6 +513,9 @@ fase estiver mais rápida.
 - Testado e revertido: guardar decodificados os trechos de salvar/restaurar do tratador de interrupção
   (`spu_smc_microstep`): us/job(60s) 48,5-49,7, sem ganho.
 
+- **Threads de SPU fixas em núcleos** (`SPURS_PM_AFFINITY=1`, padrão do `rodar`; um processador lógico por núcleo
+  físico, do segundo núcleo em diante): us/job(60s) 47,6/47,1/47,8 (contra ~48,0), medianas 14,7-15,5 q/s.
+
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o
 `us/job(60s)`). Candidatos:
 (1) a entrada/saída das funções curtas dos jobs (cada uma carrega e grava dezenas de registradores do
