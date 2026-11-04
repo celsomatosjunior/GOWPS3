@@ -551,6 +551,18 @@ fase estiver mais rápida.
   derrubada, a fase recarregou 4 vezes depois de mortes, **mediana 15,6 q/s** (média 16,0). A cópia da v12 recebeu
   este exe.
 
+- **Laços que voltam ao começo da própria função (04/11, manhã):** o tradutor começa uma função nova no cabeçalho de
+  um laço que também é entrada de função, e o salto de volta virava `SPU_DIRECT` para ela mesma: o clang o
+  transformava num laço, mas cada volta gravava e recarregava todos os registradores pelo `ctx->gpr` (na 0x6C10,
+  ~200 acessos ao contexto e ~300 à pilha por volta, sem nenhum desvio no corpo). O perfil mostrava 18% de
+  derramamento e 18% de movimentações no código dos jobs. Agora o `spu_reg_locals.py` põe o rótulo da entrada e
+  troca esse salto (e os saltos para a entrada de um trecho fundido, que o `spu_inline_fallthrough.py` agora rotula)
+  por `if (SPU_DIRECT_LOCAL_OK(ctx, PC)) goto loc_PC;` antes da gravação: as mesmas verificações do `SPU_DIRECT`
+  (interrupção pendente, dica de reinício da pilha), senão grava e segue como antes. 170 saltos no módulo quente,
+  27 funções que voltam a si mesmas. **us/job(60s) 44,0/42,6/43,8 (contra ~46,7), medianas 16,7/15,9/18,05 q/s.**
+  Imagem conferida por `LD_FRAME_DUMP`; testes do `test_spu_reg_locals.py` (com o clang no PATH, os de interrupção
+  também rodam).
+
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o
 `us/job(60s)`). Teste do controle pelo Celso na v12. Caminho seguinte no código: a entrada/saída das funções
 traduzidas (cargas e gravações de `ctx->gpr`) e o despacho indireto por job. Candidatos:

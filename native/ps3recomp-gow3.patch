@@ -1843,7 +1843,7 @@ index 5fc50208..da470bae 100644
       * tasksets use the SAME syscall address, so the API table alone is not
       * evidence that this is an HLE context. LLE tasks must enter Sony's policy
 diff --git a/runtime/spu/spu_context.h b/runtime/spu/spu_context.h
-index c5ccbec7..2a7445c3 100644
+index c5ccbec7..bf529ea6 100644
 --- a/runtime/spu/spu_context.h
 +++ b/runtime/spu/spu_context.h
 @@ -619,13 +619,13 @@ static SPU_NOINLINE_COLD void spu_ls_read_diag(const spu_context* ctx, uint32_t
@@ -1941,6 +1941,28 @@ index c5ccbec7..2a7445c3 100644
  /* SPU_PCHIST=1: bucket SPU execution by the GPU module's own symbols.
   *
   * SPU_VRAMPC showed 3.7M VRAM writes from Host2Local_Body and ZERO from
+@@ -1044,6 +1082,21 @@ void spu_direct_init(void);
+     } while (0)
+ #endif
+ 
++/* True when SPU_DIRECT(ctx, PC, ...) would tail-call its target: the same
++ * checks. tools/spu_reg_locals.py turns a SPU_DIRECT whose target has a label
++ * in the same lifted function (a loop back to the function's own entry) into
++ * `if (SPU_DIRECT_LOCAL_OK(ctx, PC)) goto loc_PC;` ahead of the store-back,
++ * so the loop keeps its registers in locals. Without tail calls it is 0 and
++ * every hop goes through the trampoline, as SPU_DIRECT does. */
++#ifdef SPU_DIRECT_TAILCALLS
++#define SPU_DIRECT_LOCAL_OK(ctx, PC)                                          \
++    (__builtin_expect(g_spu_direct > 0, 1) && ((uint32_t)(PC) & SPU_LS_MASK) && \
++     (ctx)->steps && !g_spu_stack_reset_hint[((uint32_t)(PC) >> 2) & 1023u] &&  \
++     !((ctx)->int_enable && ((ctx)->event_status & (ctx)->event_mask)))
++#else
++#define SPU_DIRECT_LOCAL_OK(ctx, PC) 0
++#endif
++
+ /* Depth-aware SPU link return (`bi $r0`): host `return` while a matched
+  * brsl/bisl frame is live (host_depth>0); at 0 the frame was destroyed (task
+  * resume / restack unwind) so dispatch to the link register instead -- faithful
 diff --git a/runtime/spu/spu_dma.h b/runtime/spu/spu_dma.h
 index 8c4ccaa8..e27347f6 100644
 --- a/runtime/spu/spu_dma.h
@@ -2782,10 +2804,10 @@ index 00000000..e28e7884
 +        print(f"{p}: {n} operands wrapped")
 diff --git a/tools/spu_inline_fallthrough.py b/tools/spu_inline_fallthrough.py
 new file mode 100644
-index 00000000..26add997
+index 00000000..2b0a0cce
 --- /dev/null
 +++ b/tools/spu_inline_fallthrough.py
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,97 @@
 +#!/usr/bin/env python3
 +"""Inline a lifted function's fall-through into the next chunk (run before spu_reg_locals.py).
 +
@@ -2800,7 +2822,8 @@ index 00000000..26add997
 +chunk's body in place of the hop -- repeatedly, up to max_depth chunks and max_lines lines in all, so
 +the result stays within spu_reg_locals.py's limits. The inlined chunk keeps its own function for its
 +other entries. Labels are per SPU address and stay unique; a branch back into an inlined chunk is a
-+plain goto to its label. What the pass gives up is the per-hop checks SPU_DIRECT makes (a pending
++plain goto to its label (each inlined chunk gets its entry label, so a later SPU_DIRECT to it can be
++turned into one by spu_reg_locals.py). What the pass gives up is the per-hop checks SPU_DIRECT makes (a pending
 +interrupt, the stack-reset hint) on that one hop: a chain stays bounded by max_depth.
 +"""
 +from __future__ import annotations
@@ -2847,6 +2870,9 @@ index 00000000..26add997
 +            if tgt is None or tgt not in body or tgt in seen or nxt.get(_last_chunk(seen, name, nxt)) != tgt:
 +                break
 +            add = body[tgt]
++            lab = f"loc_{int(_SIG.match(lines[funcs[tgt][0] - 1]).group(2), 16):08X}:"
++            if not any(x.strip() == lab for x in add):
++                add = [lab] + add     # spu_reg_locals.py turns a branch back to it into a goto
 +            if len(cur) - 1 + len(add) > max_lines:
 +                break
 +            cur = cur[:k] + add
@@ -2892,7 +2918,7 @@ index dd9e4b32..42ad7f49 100644
      while (g_spu_trampoline_fn) {
          if (g_spu_trampoline_fn == spu_indirect_branch && (c->pc & 0x3FFFF) == (ret & 0x3FFFF))
 diff --git a/tools/spu_lifter.py b/tools/spu_lifter.py
-index 35d8d428..32182c8e 100644
+index 35d8d428..027a2240 100644
 --- a/tools/spu_lifter.py
 +++ b/tools/spu_lifter.py
 @@ -1080,9 +1080,12 @@ class SPULifter:
@@ -2905,7 +2931,7 @@ index 35d8d428..32182c8e 100644
          for f in self.functions:
              lines.append(f"void {weak}{f.name}(spu_context* ctx) {{")
 -            for b in f.body_lines:
-+            for b in (localize_body(f.body_lines) if reg_locals else f.body_lines):
++            for b in (localize_body(f.body_lines, entry=f.start_addr) if reg_locals else f.body_lines):
                  lines.append(b if b.endswith(":") else f"    {b}")
              lines.append("}")
              lines.append("")
@@ -2973,10 +2999,10 @@ index 36cbc240..d18fb1db 100644
                                   if max(s, a) < min(e, b)})
 diff --git a/tools/spu_reg_locals.py b/tools/spu_reg_locals.py
 new file mode 100644
-index 00000000..13644f60
+index 00000000..2920aede
 --- /dev/null
 +++ b/tools/spu_reg_locals.py
-@@ -0,0 +1,196 @@
+@@ -0,0 +1,245 @@
 +#!/usr/bin/env python3
 +"""
 +Keep SPU registers in C locals inside each lifted function (spu_lifter.py
@@ -3000,6 +3026,15 @@ index 00000000..13644f60
 +    tail branch or return) stores back inside the block only, so the not-taken
 +    path of a loop costs nothing.
 +
++A known-target branch (SPU_DIRECT) to an address whose label is in this body
++-- the function's own entry (the lifter starts a new function at a loop header
++that is also a function entry, so the back edge is a tail call to itself) or
++the entry of a chunk spu_inline_fallthrough.py fused in -- becomes a goto while
++SPU_DIRECT_LOCAL_OK holds (the same per-hop checks SPU_DIRECT makes before its
++tail call); otherwise it stores back and takes SPU_DIRECT as before. Each pass
++of such a loop then keeps its registers in the locals instead of storing and
++reloading all of them.
++
 +Labels stay where they are; gotos only jump inside the function, where the
 +locals are the registers. LS debug probes that log ctx->gpr[0] can see a stale
 +value while a function runs; nothing else reads ctx->gpr behind the code.
@@ -3009,7 +3044,7 @@ index 00000000..13644f60
 +import sys
 +
 +_GPR = re.compile(r"ctx->gpr\[(\d+)\]")
-+_SIG = re.compile(r"^void .*\(spu_context\* ctx\) \{$")
++_SIG = re.compile(r"^void \w*?(?:_spu_func_([0-9A-Fa-f]{8}))?\(spu_context\* ctx\) \{$")
 +_ASSIGN = re.compile(r"ctx->gpr\[(\d+)\] = ")
 +# Accesses that only read/write LS bytes, never ctx->gpr or control flow.
 +_SAFE_CTX = re.compile(r"ctx->gpr\[\d+\]|spu_ls_read128\(ctx,|spu_ls_write128\(ctx,")
@@ -3033,6 +3068,18 @@ index 00000000..13644f60
 +    # ctx->ls, so through ctx it is reloaded after every stqd.
 +    return (stmt.replace("spu_ls_read128(ctx, ", "SPU_LSR(ctx, _ls, ")
 +                .replace("spu_ls_write128(ctx, ", "SPU_LSW(ctx, _ls, "))
++
++
++_DIRECT = re.compile(r"^\{?\s*SPU_DIRECT\(ctx, 0x([0-9A-Fa-f]+), \w+\);\s*\}?$")
++_LABEL = re.compile(r"^loc_([0-9A-Fa-f]{8}):$")
++
++
++def _local_direct(stmt: str, labels: set[int]):
++    """The target of `{ SPU_DIRECT(ctx, PC, FN); }` when PC has a label in this body."""
++    m = _DIRECT.match(stmt.strip())
++    if m and int(m.group(1), 16) in labels:
++        return int(m.group(1), 16)
++    return None
 +
 +
 +def _always_leaves(block: str) -> bool:
@@ -3081,13 +3128,20 @@ index 00000000..13644f60
 +
 +
 +def localize_body(body: list[str], indent: str = "    ",
-+                  max_lines: int = MAX_LINES, max_escapes: int = MAX_ESCAPES) -> list[str]:
++                  max_lines: int = MAX_LINES, max_escapes: int = MAX_ESCAPES,
++                  entry: int | None = None) -> list[str]:
 +    """Rewrite one function body (lines without the signature / closing brace).
 +
++    entry is the function's SPU address: a branch back to it becomes a loop.
 +    Returned unchanged when it is longer than max_lines or has more than
 +    max_escapes fall-through escapes (0 = no limit)."""
 +    if max_lines and len(body) > max_lines:
 +        return body
++    labels = {int(m.group(1), 16) for m in (_LABEL.match(b.strip()) for b in body) if m}
++    entry_label = None
++    if entry is not None and entry not in labels:
++        labels.add(entry)
++        entry_label = f"loc_{entry:08X}:"
 +    used: set[int] = set()
 +    written: set[int] = set()
 +    plan = []        # (kind, text)
@@ -3101,6 +3155,10 @@ index 00000000..13644f60
 +            written.update(int(n) for n in _ASSIGN.findall(s))
 +            plan.append(("pure", s))
 +            continue
++        tgt = _local_direct(s, labels)
++        if tgt is not None:
++            plan.append(("direct", (tgt, s)))
++            continue
 +        sp = _split_if(s)
 +        if sp and _always_leaves(sp[1]) and not _calls(sp[0]):
 +            used.update(int(n) for n in _GPR.findall(sp[0]))
@@ -3111,6 +3169,10 @@ index 00000000..13644f60
 +        return body
 +    if max_escapes and sum(k == "escape" for k, _ in plan) > max_escapes:
 +        return body
++    if entry_label and not any(k == "direct" and t[0] == entry or
++                               k == "ifleave" and _local_direct(t[1].strip()[1:-1], labels) == entry
++                               for k, t in plan):
++        entry_label = None
 +    regs = sorted(used)
 +    wr = sorted(written)
 +    flush = " ".join(f"ctx->gpr[{n}] = r_{n};" for n in wr)
@@ -3118,15 +3180,26 @@ index 00000000..13644f60
 +    reload = " ".join(f"r_{n} = ctx->gpr[{n}];" for n in regs) + (" _ls = ctx->ls;" if uses_ls else "")
 +    out = [indent + " ".join(f"u128 r_{n} = ctx->gpr[{n}];" for n in regs)
 +           + (" uint8_t* _ls = ctx->ls;" if uses_ls else "")]
++    if entry_label:
++        out.append(entry_label)
 +    for kind, t in plan:
 +        if kind == "label":
 +            out.append(t)
 +        elif kind == "pure":
 +            out.append(indent + _local(t))
++        elif kind == "direct":
++            tgt, stmt = t
++            out.append(f"{indent}if (SPU_DIRECT_LOCAL_OK(ctx, 0x{tgt:X})) goto loc_{tgt:08X};")
++            if flush:
++                out.append(indent + flush)
++            out.append(indent + stmt)
++            out.append(indent + reload)
 +        elif kind == "ifleave":
 +            cond, block = t
 +            inner = block.strip()[1:-1].strip()
-+            out.append(f"{indent}if ({_local(cond)}) {{ {flush} {inner} }}")
++            tgt = _local_direct(inner, labels)
++            hop = f"if (SPU_DIRECT_LOCAL_OK(ctx, 0x{tgt:X})) goto loc_{tgt:08X}; " if tgt is not None else ""
++            out.append(f"{indent}if ({_local(cond)}) {{ {hop}{flush} {inner} }}")
 +        else:
 +            if flush:
 +                out.append(indent + flush)
@@ -3142,7 +3215,8 @@ index 00000000..13644f60
 +    i = 0
 +    while i < len(lines):
 +        line = lines[i]
-+        if _SIG.match(line):
++        sig = _SIG.match(line)
++        if sig:
 +            j = i + 1
 +            while j < len(lines) and lines[j] != "}":
 +                j += 1
@@ -3153,7 +3227,8 @@ index 00000000..13644f60
 +                    ind = b[:len(b) - len(b.lstrip())]
 +                    break
 +            out.append(line)
-+            out.extend(localize_body(body, ind, max_lines=max_lines, max_escapes=max_escapes))
++            out.extend(localize_body(body, ind, max_lines=max_lines, max_escapes=max_escapes,
++                                     entry=int(sig.group(1), 16) if sig.group(1) else None))
 +            out.append("}")
 +            i = j + 1
 +            continue
@@ -3230,10 +3305,10 @@ index 00000000..e39bf162
 +    unittest.main()
 diff --git a/tools/test_spu_inline_fallthrough.py b/tools/test_spu_inline_fallthrough.py
 new file mode 100644
-index 00000000..f5c70b03
+index 00000000..01ba966c
 --- /dev/null
 +++ b/tools/test_spu_inline_fallthrough.py
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,49 @@
 +#!/usr/bin/env python3
 +"""spu_inline_fallthrough.py: which SPU_DIRECT hops get the next chunk's body."""
 +import unittest
@@ -3262,6 +3337,8 @@ index 00000000..f5c70b03
 +        self.assertIn("SPU_RET(ctx);", first)                 # and the next fall-through after it
 +        self.assertIn("void m_spu_func_00000110", out)         # the loop keeps its own entry
 +        self.assertEqual(n, 3)                                # 100<-110, 100<-200, 110<-200
++        self.assertIn("loc_00000200:", first)                  # inlined chunks keep their entry label
++        self.assertEqual(first.count("loc_00000110:"), 1)      # not doubled when the chunk has it
 +
 +    def test_jump_elsewhere_is_left_alone(self):
 +        src = fn(0x100, [hop(0x300)]) + fn(0x110, ["        SPU_RET(ctx);"]) + fn(0x300, ["        SPU_RET(ctx);"])
@@ -3283,10 +3360,10 @@ index 00000000..f5c70b03
 +    unittest.main()
 diff --git a/tools/test_spu_reg_locals.py b/tools/test_spu_reg_locals.py
 new file mode 100644
-index 00000000..217ea2ae
+index 00000000..cc8cd54d
 --- /dev/null
 +++ b/tools/test_spu_reg_locals.py
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,121 @@
 +#!/usr/bin/env python3
 +"""--reg-locals (spu_reg_locals.py) must keep the lifted program's behaviour.
 +
@@ -3347,6 +3424,38 @@ index 00000000..217ea2ae
 +                "    spu_wrch(ctx, 28, ctx->gpr[3]);"] * 9
 +        self.assertEqual(localize_body(body), body)
 +        self.assertNotEqual(localize_body(body, max_escapes=0), body)
++
++    def test_branch_to_own_entry_is_a_local_loop(self):
++        src = ("void m_spu_func_00000100(spu_context* ctx) {\n"
++               "    ctx->gpr[3] = spu_ai(ctx->gpr[3], -1);\n"
++               "    if (ctx->gpr[3]._u32[0] != 0) { SPU_DIRECT(ctx, 0x100, m_spu_func_00000100); }\n"
++               "    SPU_RET(ctx);\n}\n")
++        out = localize_source(src).split("\n")
++        self.assertEqual(out[2], "loc_00000100:")          # after the entry loads
++        self.assertEqual(out[4].strip(),
++                         "if (r_3._u32[0] != 0) { if (SPU_DIRECT_LOCAL_OK(ctx, 0x100)) goto loc_00000100; "
++                         "ctx->gpr[3] = r_3; SPU_DIRECT(ctx, 0x100, m_spu_func_00000100); }")
++
++    def test_branch_elsewhere_gets_no_entry_label(self):
++        src = ("void m_spu_func_00000100(spu_context* ctx) {\n"
++               "    ctx->gpr[3] = spu_ai(ctx->gpr[3], -1);\n"
++               "    if (ctx->gpr[3]._u32[0] != 0) { SPU_DIRECT(ctx, 0x200, m_spu_func_00000200); }\n"
++               "    SPU_RET(ctx);\n}\n")
++        out = localize_source(src)
++        self.assertNotIn("loc_00000100:", out)
++        self.assertNotIn("SPU_DIRECT_LOCAL_OK", out)
++
++    def test_unconditional_branch_to_a_label_in_the_body(self):
++        out = localize_body(["    ctx->gpr[3] = spu_il(4);",
++                             "loc_00000110:",
++                             "    ctx->gpr[3] = spu_ai(ctx->gpr[3], -1);",
++                             "    { SPU_DIRECT(ctx, 0x110, m_spu_func_00000110); }"], entry=0x100)
++        self.assertNotIn("loc_00000100:", out)
++        self.assertEqual([l.strip() for l in out[4:8]],
++                         ["if (SPU_DIRECT_LOCAL_OK(ctx, 0x110)) goto loc_00000110;",
++                          "ctx->gpr[3] = r_3;",
++                          "{ SPU_DIRECT(ctx, 0x110, m_spu_func_00000110); }",
++                          "r_3 = ctx->gpr[3];"])
 +
 +    def test_function_without_registers_is_unchanged(self):
 +        src = "void f(spu_context* ctx) {\n    ctx->pc = 0x10u; return;\n}\n"
