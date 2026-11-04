@@ -516,6 +516,11 @@ fase estiver mais rápida.
 - **Threads de SPU fixas em núcleos** (`SPURS_PM_AFFINITY=1`, padrão do `rodar`; um processador lógico por núcleo
   físico, do segundo núcleo em diante): us/job(60s) 47,6/47,1/47,8 (contra ~48,0), medianas 14,7-15,5 q/s.
 
+- **Reenvio idêntico do código sem cópia** (`spu_overlay_get_unchanged`, com `SPU_OVL_INCREMENTAL=1`): um GET que
+  traz para um módulo verificado os mesmos bytes que já estão na LS não copia nem refaz a verificação (uma
+  comparação em vez de cópia + comparação). Descartado antes pela métrica ruidosa; com a de 60 s: 47,2/46,7/46,8
+  (contra ~47,5).
+
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o
 `us/job(60s)`). Candidatos:
 (1) a entrada/saída das funções curtas dos jobs (cada uma carrega e grava dezenas de registradores do

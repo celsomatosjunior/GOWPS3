@@ -1486,7 +1486,7 @@ index 32e8a959..e3ac93e8 100644
      s_state.hdc = GetDC(s_state.hwnd);
      s_state.last_fps_time = GetTickCount64();
 diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
-index 5fc50208..46aa659e 100644
+index 5fc50208..da470bae 100644
 --- a/runtime/spu/spu_channels.c
 +++ b/runtime/spu/spu_channels.c
 @@ -576,7 +576,46 @@ volatile unsigned g_spu_putllc_sync_hit = 0;
@@ -1669,7 +1669,31 @@ index 5fc50208..46aa659e 100644
      }
      return *state == SPU_OVERLAY_VERIFIED;
  }
-@@ -2133,17 +2243,45 @@ void spu_overlay_note_get(spu_context* ctx, uint32_t ea, const uint8_t* ls, uint
+@@ -2129,21 +2239,69 @@ void spu_lockguard_check(spu_context* ctx, uint32_t ea, const uint8_t* src, uint
+                 ea, size, os, on, ns, nn); }
+ }
+ 
++/* SPU_OVL_INCREMENTAL=1, before the copy: a GET that re-sends bytes already in local store, inside a verified
++ * resident code slot loaded from that same source, changes nothing -- not the code, not the job's data, not
++ * the slot -- so it can skip both the copy and spu_overlay_note_get. One compare instead of a copy plus the
++ * compare note_get makes after it (God of War III's Wws PM re-sends each job's code with every job). */
++int spu_overlay_get_unchanged(spu_context* ctx, uint32_t ea, const uint8_t* ls, const uint8_t* src, uint32_t size)
++{
++    static int s_inc = -1;
++    if (s_inc < 0) { const char* e = getenv("SPU_OVL_INCREMENTAL"); s_inc = e && e[0] == '1'; }
++    if (!s_inc || size < 128) return 0;
++    const uint32_t lsa = (uint32_t)(ls - ctx->ls);
++    for (unsigned slot = 0; slot < 4; ++slot) {
++        const uint32_t base = ctx->resident_code[slot].lsa, n = ctx->resident_code[slot].size;
++        if (!ctx->resident_code[slot].image_id || lsa < base || lsa + size > base + n) continue;
++        if (ctx->resident_code[slot].verify_state != SPU_OVERLAY_VERIFIED ||
++            ea != ctx->resident_code[slot].source_ea + (lsa - base)) return 0;
++        return memcmp(ls, src, size) == 0;
++    }
++    return 0;
++}
++
+ void spu_overlay_note_get(spu_context* ctx, uint32_t ea, const uint8_t* ls, uint32_t size)
  {
      uint32_t lsa = (uint32_t)(ls - ctx->ls);
      spu_ovl_dump(ctx, ea, lsa, ls, size);
@@ -1717,7 +1741,7 @@ index 5fc50208..46aa659e 100644
              }
          }
      }
-@@ -2161,6 +2299,12 @@ void spu_overlay_note_get(spu_context* ctx, uint32_t ea, const uint8_t* ls, uint
+@@ -2161,6 +2319,12 @@ void spu_overlay_note_get(spu_context* ctx, uint32_t ea, const uint8_t* ls, uint
                  for (unsigned slot = 0; slot < 4; ++slot) {
                      if (ctx->resident_code[slot].image_id && ctx->resident_code[slot].lsa != lsa)
                          continue;
@@ -1730,7 +1754,7 @@ index 5fc50208..46aa659e 100644
                      ctx->resident_code[slot].lsa = lsa;
                      ctx->resident_code[slot].size = o->span;
                      ctx->resident_code[slot].source_ea = ea;
-@@ -2575,6 +2719,45 @@ static int spu_smc_microstep(spu_context* ctx)
+@@ -2575,6 +2739,45 @@ static int spu_smc_microstep(spu_context* ctx)
                fprintf(stderr, "[spu-smc] microstep img=%d pc=0x%05X word 0x%08X not in the"
                        " microstep set -- handing to the interpreter (steps=%d)\n",
                        ctx->image_id, pc, w, steps); }
@@ -1776,7 +1800,7 @@ index 5fc50208..46aa659e 100644
          ctx->pc = pc;
          /* Stop at the drain's return point too: it sits mid-function, so it is
           * no lifted entry, and a job's return would otherwise run on through
-@@ -2658,6 +2841,38 @@ void spu_indirect_branch(spu_context* ctx)
+@@ -2658,6 +2861,38 @@ void spu_indirect_branch(spu_context* ctx)
              return;
          }
      }
@@ -1915,10 +1939,33 @@ index c5ccbec7..2a7445c3 100644
   *
   * SPU_VRAMPC showed 3.7M VRAM writes from Host2Local_Body and ZERO from
 diff --git a/runtime/spu/spu_dma.h b/runtime/spu/spu_dma.h
-index 8c4ccaa8..eda86478 100644
+index 8c4ccaa8..e27347f6 100644
 --- a/runtime/spu/spu_dma.h
 +++ b/runtime/spu/spu_dma.h
-@@ -956,6 +956,52 @@ static inline int mfc_enqueue(mfc_engine* mfc, spu_context* spu)
+@@ -595,8 +595,11 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
+                               lsa, (uint32_t)ea, size, (uint32_t)spu->pc, spu->image_id, "\n");
+               }
+           } }
+-        /* GET: main memory -> local store */
+-        memcpy(ls_ptr, ea_ptr, size);
++        /* GET: main memory -> local store. A re-sent verified code span that is already there exactly
++         * is left alone (spu_overlay_get_unchanged; also skips the overlay bookkeeping below). */
++        extern int spu_overlay_get_unchanged(spu_context*, uint32_t, const uint8_t*, const uint8_t*, uint32_t);
++        const int get_same = spu_overlay_get_unchanged(spu, (uint32_t)ea, (const uint8_t*)ls_ptr, (const uint8_t*)ea_ptr, size);
++        if (!get_same) memcpy(ls_ptr, ea_ptr, size);
+         /* SPU_STACKEA_WATCH (b): scan the just-loaded payload for a 0xD00Cxxxx
+          * dword = the completion-word EA arriving in a job buffer. */
+         { static int s_se = -1; if (s_se < 0) s_se = getenv("SPU_STACKEA_WATCH") ? 1 : 0;
+@@ -626,7 +629,7 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
+         /* Swappable-overlay tracking: a GET from a registered overlay source
+          * (by EA or by content signature) marks that overlay's lifted
+          * functions resident for this context. */
+-        { extern void spu_overlay_note_get(spu_context*, uint32_t, const uint8_t*, uint32_t);
++        if (!get_same) { extern void spu_overlay_note_get(spu_context*, uint32_t, const uint8_t*, uint32_t);
+           spu_overlay_note_get(spu, (uint32_t)ea, (const uint8_t*)ls_ptr, size); }
+         /* SPU_LS_WATCH: a DMA GET landing on a watched LS line is how the PPU
+          * delivers commands into the SPU's queue (bypasses spu_ls_write128). */
+@@ -956,6 +959,52 @@ static inline int mfc_enqueue(mfc_engine* mfc, spu_context* spu)
      return 0;
  }
  
@@ -1971,7 +2018,7 @@ index 8c4ccaa8..eda86478 100644
  /*
   * Submit and immediately execute an MFC command.
   * This is the main entry point called when the SPU writes to MFC_Cmd.
-@@ -1024,6 +1070,8 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
+@@ -1024,6 +1073,8 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
      uint32_t size = spu->mfc_size;
      uint32_t tag  = spu->mfc_tag & 0x1F;
      int rc = 0;
@@ -1980,7 +2027,7 @@ index 8c4ccaa8..eda86478 100644
  
      /* SPU_WATCHEA=<hex guest addr>: report every DMA whose destination range
       * covers one word, with the SPU id, its pc and the value the word holds
-@@ -1347,6 +1395,12 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
+@@ -1347,6 +1398,12 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
         * only when such episodes are. Unset: no cost beyond the existing test. */
        static int64_t s_log = -1;
        if (s_log < 0) { const char* e = getenv("SPU_DMA_REPEAT_LOG"); s_log = e ? atoll(e) : 0; }
@@ -1993,7 +2040,7 @@ index 8c4ccaa8..eda86478 100644
        if ((uint32_t)ea == s_last_ea && lsa == s_last_lsa) {
            if (++s_rep >= s_limit) {
                unsigned long long now = ps3_ms_now();
-@@ -1573,6 +1627,24 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
+@@ -1573,6 +1630,24 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
          }
      }
  
@@ -2406,6 +2453,19 @@ index 47488b29..c075d892 100644
  void spu_drain_call(spu_context* c, uint32_t r) { (void)c; (void)r; }
  void spu_img_restore(spu_context* c, int32_t sv) { (void)c; (void)sv; }
  #ifdef LIFTED_CASES_INC
+diff --git a/runtime/spu/tests/test_mfc_resume_elements.c b/runtime/spu/tests/test_mfc_resume_elements.c
+index 2a930b50..6831d65f 100644
+--- a/runtime/spu/tests/test_mfc_resume_elements.c
++++ b/runtime/spu/tests/test_mfc_resume_elements.c
+@@ -24,6 +24,8 @@ unsigned spu_sn_defer_ticks(void) { return 0; }
+ unsigned* spu_ls_watch_list(int* n) { *n=0;return NULL; }
+ void spu_overlay_note_get(spu_context* c,uint32_t ea,const uint8_t* p,uint32_t n)
+ { (void)c;(void)ea;(void)p;(void)n; }
++int spu_overlay_get_unchanged(spu_context* c,uint32_t ea,const uint8_t* p,const uint8_t* s,uint32_t n)
++{ (void)c;(void)ea;(void)p;(void)s;(void)n;return 0; }
+ int spu_coh_is_reserved(uint32_t ea) { (void)ea;return 0; }
+ void spu_coh_notify_write(uint32_t ea) { (void)ea; }
+ void spu_coh_notify_write_except(uint32_t ea,const void* c) { (void)ea;(void)c; }
 diff --git a/runtime/spu/tests/test_spu_shufb.c b/runtime/spu/tests/test_spu_shufb.c
 index 195c75e3..95b4c5b8 100644
 --- a/runtime/spu/tests/test_spu_shufb.c
