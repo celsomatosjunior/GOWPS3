@@ -638,6 +638,16 @@ fase estiver mais rápida.
   limite da 3a conta da linha r37 do vértice B, 3 diferenças em lixo perto de -FLT_MAX). Ganho medido pequeno:
   us/job(60s) 41,4/41,2/41,5 ligado contra 43,2/40,4/42,3 desligado (~1,4%).
 
+- **Mais dois núcleos nativos (05/11):** a 0xDD50 (normaliza vetores no lugar; função folha inteira, gancho na
+  entrada que volta com `SPU_RET`; 0 diferenças em mais de 2,09 milhões no modo sombra) e a iluminação 0x9040 (8
+  vértices por vez contra as luzes da lista, atenuação suave, em SoA com 8 vértices por registrador AVX2; limites
+  depois de toda conta; 0 diferenças em mais de 262 mil execuções). A referência do modo sombra para uma função
+  inteira sai do `gera_ref_fn.py` da pasta local. **Os três juntos: us/job(60s) 39,4/40,4/39,5 contra 42,4/41,8/42,0
+  desligados (-5,5%), medianas 18,3/17,55/18,6 contra 16,4/15,7/16,1 q/s (+13%).** 10 inicializações sem travar com os
+  ganchos. Uma execução no modo sombra (cópias de 768 KB a cada chamada) travou na abertura do mesmo jeito que a
+  afinidade travava: a corrida antiga aparece quando o tempo das threads muda. Versão **`gow3-fase-v15`**
+  (`Projetosersoes\gow3-fase-v15`, com cópia dos núcleos em `edge_nativo`).
+
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o
 `us/job(60s)`). Teste do controle pelo Celso na v12. Caminho seguinte no código: a entrada/saída das funções
 traduzidas (cargas e gravações de `ctx->gpr`) e o despacho indireto por job. Candidatos:
