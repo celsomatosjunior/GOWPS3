@@ -662,7 +662,7 @@ fase estiver mais rápida.
   o traduzido não limita y*y em 6 das 8 cadeias (y = FLT_MAX, y*y = Inf, L*y*y = NaN -> -FLT_MAX), e o núcleo
   limitava tudo. Copiado o padrão (limite só nos vetores 5 e 6, sem limite nos dois intermediários fm_u/fa_u):
   0 diferenças em mais de 524 mil. **Os quatro: us/job(60s) 40,6/40,2/39,5 contra 42,9/43,1/42,5 desligados
-  (-6,4%).** Lição: copiar o padrão de limites do código gerado vale mesmo onde parece só lixo.
+  (-6,4%).** 10 inicializações sem travar. Versão **`gow3-fase-v16`** (`Projetos\versoes\gow3-fase-v16`). Lição: copiar o padrão de limites do código gerado vale mesmo onde parece só lixo.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
