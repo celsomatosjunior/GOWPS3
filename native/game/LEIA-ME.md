@@ -684,6 +684,14 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
   ficou de fora.
 - A 0x9A68 é o começo do laço 9A68 -> A110 -> 9A68 (saída em 0xA270 -> 0xD620): um núcleo exato precisa
   substituir o laço inteiro e reproduzir os registradores na saída. Fica para depois.
+- PPU no caminho crítico (perfil prof22: a SPU do EDGE 20,8% parada à espera da próxima lista; a thread principal
+  56,7% em `sys_timer_usleep(30)`). Três opções de build do PPU, medidas intercaladas (3 rodadas, base/pgo/avx2/
+  pgoavx2 alternados, `ab_inter.sh` local): `--ppu-avx2` (VMX_FAST_FP em `ppu_vmx.h`: vaddfp/vsubfp/vmaddfp/
+  vnmsubfp com SSE/FMA, mesmos bits em 4 milhões de casos), `--ppu-pgo <profdata>` e as duas juntas. **Nenhuma
+  ganhou fora do ruído**: nas execuções com a luta inteira medida (<=3 janelas "fora") a mediana fica em 17-20 q/s
+  para todas, us/job(60s) 38,5-39,7. A mediana sobe junto com o número de janelas "fora" (o jogo nem sempre chega
+  à luta no mesmo ponto), então só comparar execuções com fora baixo. As opções ficam no build, desligadas.
+- `--ppu-restrict` (`__restrict` no ctx do PPU): o jogo fica preso antes da fase. Não usar.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos

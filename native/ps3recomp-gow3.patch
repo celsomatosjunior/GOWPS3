@@ -1488,6 +1488,109 @@ index 32e8a959..e3ac93e8 100644
  
      s_state.hdc = GetDC(s_state.hwnd);
      s_state.last_fps_time = GetTickCount64();
+diff --git a/runtime/ppu/ppu_vmx.h b/runtime/ppu/ppu_vmx.h
+index 35052c67..b059c9ef 100644
+--- a/runtime/ppu/ppu_vmx.h
++++ b/runtime/ppu/ppu_vmx.h
+@@ -254,6 +254,44 @@ VMX_INL void vmx_vsro(VMX_D, VMX_A, VMX_B) { VMX_ARGS_PREP; int n = (b[15] >> 3)
+  * floating point
+  * ==================================================================== */
+ 
++/* VMX_FAST_FP (on when the lifted PPU code is built with FMA3 and SSSE3, as -mavx2 -mfma do): vaddfp, vsubfp,
++ * vmaddfp and vnmsubfp as four-lane SSE/FMA, the same bits as the per-lane forms (which stay as *_ref; vaddfp and
++ * vsubfp fall back to them when an operand is a NaN, for the A-then-B propagation). The per-lane vmaddfp made a
++ * libm fmaf call per lane: in God of War III the main PPU thread spent ~5 % of its samples in these four. Assumes
++ * the host's default MXCSR on the PPU threads (round to nearest, no FTZ/DAZ), as the per-lane forms do.
++ * -DVMX_FAST_FP=0 turns it off. */
++#if !defined(VMX_FAST_FP) && defined(__FMA__) && defined(__SSSE3__)
++#  define VMX_FAST_FP 1
++#endif
++#if defined(VMX_FAST_FP) && VMX_FAST_FP
++#include <immintrin.h>
++static inline __m128 vmx__ld(const void* p) {
++    const __m128i sw = _mm_setr_epi8(3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12);
++    return _mm_castsi128_ps(_mm_shuffle_epi8(_mm_loadu_si128((const __m128i*)p), sw));
++}
++static inline void vmx__st(void* p, __m128 v) {
++    const __m128i sw = _mm_setr_epi8(3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12);
++    _mm_storeu_si128((__m128i*)p, _mm_shuffle_epi8(_mm_castps_si128(v), sw));
++}
++/* vmx_flush on four lanes: with NJ, a lane whose exponent is 0 keeps only its sign */
++static inline __m128 vmx__flush4(__m128 v, uint32_t vscr) {
++    if (!(vscr & VMX_NJ)) return v;
++    const __m128i x = _mm_castps_si128(v);
++    const __m128i den = _mm_cmpeq_epi32(_mm_and_si128(x, _mm_set1_epi32(0x7F800000)), _mm_setzero_si128());
++    return _mm_castsi128_ps(_mm_andnot_si128(_mm_andnot_si128(_mm_set1_epi32((int)0x80000000u), den), x));
++}
++/* vmx_fix on four lanes: a NaN result is the default QNaN 0x7FC00000 */
++static inline __m128 vmx__fix4(__m128 r) {
++    const __m128 nan = _mm_cmpunord_ps(r, r);
++    return _mm_or_ps(_mm_andnot_ps(nan, r), _mm_and_ps(nan, _mm_castsi128_ps(_mm_set1_epi32(0x7FC00000))));
++}
++static inline int vmx__anynan(__m128 a, __m128 b) {
++    return _mm_movemask_ps(_mm_or_ps(_mm_cmpunord_ps(a, a), _mm_cmpunord_ps(b, b))) != 0;
++}
++#define VMX__FBIN_NAME(n) n##_ref
++#else
++#define VMX__FBIN_NAME(n) n
++#endif
+ #define VMX_FBIN(name, op, flush_in) \
+ VMX_INL void name(VMX_D, VMX_A, VMX_B, uint32_t vscr) { VMX_ARGS_PREP; \
+     for (int i = 0; i < 4; i++) { uint32_t x = vmx_w(a, i), y = vmx_w(b, i); \
+@@ -270,11 +308,40 @@ VMX_INL float vmx_minf(float x, float y) {
+     if (x == 0 && y == 0) return signbit(x) ? x : y;      /* min(-0,+0) = -0 */
+     return x < y ? x : y;
+ }
+-VMX_FBIN(vmx_vaddfp, vmx_f(x) + vmx_f(y), 1)
+-VMX_FBIN(vmx_vsubfp, vmx_f(x) - vmx_f(y), 1)
++VMX_FBIN(VMX__FBIN_NAME(vmx_vaddfp), vmx_f(x) + vmx_f(y), 1)
++VMX_FBIN(VMX__FBIN_NAME(vmx_vsubfp), vmx_f(x) - vmx_f(y), 1)
++#if defined(VMX_FAST_FP) && VMX_FAST_FP
++VMX_INL void vmx_vaddfp(VMX_D, VMX_A, VMX_B, uint32_t vscr) {
++    const __m128 x = vmx__flush4(vmx__ld(a_), vscr), y = vmx__flush4(vmx__ld(b_), vscr);
++    if (__builtin_expect(vmx__anynan(x, y), 0)) { vmx_vaddfp_ref(d_, a_, b_, vscr); return; }
++    vmx__st(d_, vmx__flush4(vmx__fix4(_mm_add_ps(x, y)), vscr));
++}
++VMX_INL void vmx_vsubfp(VMX_D, VMX_A, VMX_B, uint32_t vscr) {
++    const __m128 x = vmx__flush4(vmx__ld(a_), vscr), y = vmx__flush4(vmx__ld(b_), vscr);
++    if (__builtin_expect(vmx__anynan(x, y), 0)) { vmx_vsubfp_ref(d_, a_, b_, vscr); return; }
++    vmx__st(d_, vmx__flush4(vmx__fix4(_mm_sub_ps(x, y)), vscr));
++}
++#endif
+ VMX_FBIN(vmx_vmaxfp, vmx_maxf(vmx_f(x), vmx_f(y)), 0)
+ VMX_FBIN(vmx_vminfp, vmx_minf(vmx_f(x), vmx_f(y)), 0)
+ 
++#if defined(VMX_FAST_FP) && VMX_FAST_FP
++/* d = a*c + b with one rounding (vfmadd); vnmsubfp d = -(a*c - b): the sign flipped after the fused subtract, so
++ * an exact zero comes out -0 as -fmaf(x, z, -y) gives (b - a*c would give +0) */
++VMX_INL void vmx_vmaddfp(VMX_D, VMX_A, VMX_B, VMX_C, uint32_t vscr) {
++    const __m128 x = vmx__flush4(vmx__ld(a_), vscr), y = vmx__flush4(vmx__ld(b_), vscr);
++    const __m128 z = vmx__flush4(vmx__ld(c_), vscr);
++    vmx__st(d_, vmx__flush4(vmx__fix4(_mm_fmadd_ps(x, z, y)), vscr));
++}
++VMX_INL void vmx_vnmsubfp(VMX_D, VMX_A, VMX_B, VMX_C, uint32_t vscr) {
++    const __m128 x = vmx__flush4(vmx__ld(a_), vscr), y = vmx__flush4(vmx__ld(b_), vscr);
++    const __m128 z = vmx__flush4(vmx__ld(c_), vscr);
++    const __m128 r = _mm_xor_ps(_mm_fmsub_ps(x, z, y), _mm_castsi128_ps(_mm_set1_epi32((int)0x80000000u)));
++    vmx__st(d_, vmx__flush4(vmx__fix4(r), vscr));
++}
++#define vmx_vmaddfp vmx_vmaddfp_ref
++#define vmx_vnmsubfp vmx_vnmsubfp_ref
++#endif
+ VMX_INL void vmx_vmaddfp(VMX_D, VMX_A, VMX_B, VMX_C, uint32_t vscr) { VMX_ARGS_PREP; const uint8_t* c = (const uint8_t*)c_;
+     for (int i = 0; i < 4; i++) {
+         float x = vmx_f(vmx_flush(vmx_w(a, i), vscr)), y = vmx_f(vmx_flush(vmx_w(b, i), vscr)),
+@@ -285,6 +352,10 @@ VMX_INL void vmx_vnmsubfp(VMX_D, VMX_A, VMX_B, VMX_C, uint32_t vscr) { VMX_ARGS_
+         float x = vmx_f(vmx_flush(vmx_w(a, i), vscr)), y = vmx_f(vmx_flush(vmx_w(b, i), vscr)),
+               z = vmx_f(vmx_flush(vmx_w(c, i), vscr));
+         vmx_sw(r, i, vmx_flush(vmx_fix(vmx_u(-fmaf(x, z, -y))), vscr)); } VMX_OUT; }
++#if defined(VMX_FAST_FP) && VMX_FAST_FP
++#undef vmx_vmaddfp
++#undef vmx_vnmsubfp
++#endif
+ 
+ #define VMX_FUN(name, expr, flush_in, nanmode) \
+ VMX_INL void name(VMX_D, VMX_B, uint32_t vscr) { const uint8_t* b = (const uint8_t*)b_; uint8_t r[16]; \
 diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
 index 5fc50208..da470bae 100644
 --- a/runtime/spu/spu_channels.c

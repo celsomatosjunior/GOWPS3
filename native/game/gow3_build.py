@@ -396,6 +396,35 @@ def spu_dir_projeto(args, proj: Path) -> Path:
     return destino
 
 
+def ppu_restrict_dir(args, state) -> str:
+    """--ppu-restrict: uma cópia do código PPU traduzido com o contexto de cada função como `ppu_context* __restrict
+    ctx`. Sem isso o compilador relê ctx->gpr[n] depois de toda escrita na memória do jogo (um ponteiro de byte que
+    ele não sabe separar do contexto); com o restrict os registradores do PPU ficam em registradores do host entre
+    as chamadas, perto do que a tradução com variáveis locais do Ascension dá. Vale porque nada no runtime altera um
+    contexto por outro ponteiro enquanto a função roda (nenhum ponteiro de contexto em variável de thread)."""
+    src = Path(state["recomp_dir"])
+    if not getattr(args, "ppu_restrict", False):
+        return str(src)
+    dst = src.parent / (src.name + "_restrict")
+    dst.mkdir(exist_ok=True)
+    n = 0
+    for f in src.iterdir():
+        if not f.is_file():
+            continue
+        g = dst / f.name
+        if g.is_file() and g.stat().st_mtime >= f.stat().st_mtime:
+            continue
+        if f.suffix in (".cpp", ".c"):
+            t = f.read_text(encoding="utf-8", errors="surrogateescape")
+            g.write_text(t.replace("(ppu_context* ctx) {", "(ppu_context* __restrict ctx) {"),
+                         encoding="utf-8", errors="surrogateescape")
+        else:
+            shutil.copy2(f, g)
+        n += 1
+    print(f"  --ppu-restrict: {dst} ({n} arquivos reescritos)")
+    return str(dst)
+
+
 def spu_simd(args, cm: Path):
     """O modelo dá -O2 e SPU_USE_DISPATCH_MT só às imagens da SPU_DIR, e nenhuma fonte SPU recebe SIMD além do
     SSE2: o spu_shufb do código traduzido fica no laço de 16 bytes e fa/fm/fma do SPU, uma faixa por vez (os
@@ -440,6 +469,31 @@ def spu_simd(args, cm: Path):
                   f'        COMPILE_DEFINITIONS "{defs}"\n'
                   f'        COMPILE_OPTIONS "{opts}")\n'
                   "endif()\n" + pgo_link, encoding="utf-8")
+    # --ppu-pgo: o mesmo para o código PPU traduzido (RECOMP_SOURCES). No Ascension, PGO no PPU tirou ~10% do quadro;
+    # aqui a SPU do EDGE dorme ~21% esperando o PPU entregar a próxima lista. "gerar" instrumenta, um .profdata
+    # compila com o perfil (rodar com GOW3_PGO=<início>,<fim> e LLVM_PROFILE_FILE, como no --spu-pgo).
+    if args.ppu_avx2:
+        # AVX2 + FMA3 no código PPU traduzido: o ppu_vmx.h liga o VMX_FAST_FP (vaddfp/vsubfp/vmaddfp/vnmsubfp em
+        # quatro faixas, os mesmos bits do por faixa: 4 milhões de casos conferidos). O exe já pede AVX2 pelas SPUs.
+        cm.write_text(cm.read_text(encoding="utf-8") + "\n# GOW3: AVX2/FMA no código PPU traduzido\n"
+                      'set_property(SOURCE ${RECOMP_SOURCES} APPEND PROPERTY COMPILE_OPTIONS "-mavx2" "-mfma")\n',
+                      encoding="utf-8")
+    if args.ppu_pgo:
+        ppu = ("-fprofile-instr-generate" if args.ppu_pgo == "gerar"
+               else f"-fprofile-instr-use={Path(args.ppu_pgo).as_posix()}")
+        extra = ""
+        if args.ppu_pgo == "gerar" and not pgo_link:
+            cl = shutil.which("clang-cl", path=(vs_environment() or {}).get("PATH")) or shutil.which("clang-cl")
+            rt = Path(cl or ".").resolve().parent.parent / "lib" / "clang"
+            libs = sorted(rt.glob("*/lib/windows/clang_rt.profile-x86_64.lib")) if rt.is_dir() else []
+            if not libs:
+                raise StepError("clang_rt.profile-x86_64.lib não encontrada ao lado do clang-cl (--ppu-pgo gerar)")
+            extra = f'target_link_libraries(${{PROJECT_NAME}} PRIVATE "{libs[-1].as_posix()}")\n'
+        # sem aviso para funções que o perfil não cobre (a fase não roda tudo)
+        cm.write_text(cm.read_text(encoding="utf-8") + "\n# GOW3: PGO do código PPU traduzido\n"
+                      "set_property(SOURCE ${RECOMP_SOURCES} APPEND PROPERTY COMPILE_OPTIONS "
+                      f'"{ppu}" "-Wno-profile-instr-unprofiled" "-Wno-profile-instr-out-of-date")\n'
+                      + extra, encoding="utf-8")
 
 
 def use_gow3_rsx(proj: Path, cm: Path):
@@ -500,7 +554,7 @@ def step_projeto(args, work: Path, state: dict, progress):
     if missing:
         raise StepError("faltam ferramentas: " + ", ".join(missing) + " (winget install Kitware.CMake Ninja-build.Ninja)")
     cmd = ["cmake", "-S", proj, "-B", build, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
-           f"-DPS3RECOMP_DIR={Path(args.ps3recomp).resolve()}", f"-DRECOMP_DIR={state['recomp_dir']}"] + cc
+           f"-DPS3RECOMP_DIR={Path(args.ps3recomp).resolve()}", f"-DRECOMP_DIR={ppu_restrict_dir(args, state)}"] + cc
     if args.spu_dir:
         cmd.append(f"-DSPU_DIR={spu_dir_projeto(args, proj)}")
     elif not args.sem_spu:
@@ -682,6 +736,12 @@ def main() -> int:
     ap.add_argument("--fundir-trechos", type=int, default=4, help="quantos trechos seguintes fundir no máximo")
     ap.add_argument("--spu-pgo", default="",
                     help="PGO do código SPU: 'gerar' instrumenta; um arquivo .profdata compila com o perfil")
+    ap.add_argument("--ppu-restrict", action="store_true",
+                    help="código PPU traduzido com o contexto __restrict. QUEBRA o jogo (05/11: fica preso antes da fase, a 72 flips/s): algum código depende do contexto visto por outro caminho. Só para investigar.")
+    ap.add_argument("--ppu-avx2", action="store_true",
+                    help="código PPU traduzido com -mavx2 -mfma (liga o caminho rápido de float do VMX)")
+    ap.add_argument("--ppu-pgo", default="",
+                    help="PGO do código PPU traduzido: 'gerar' instrumenta; um arquivo .profdata compila com o perfil")
     ap.add_argument("--spu-simd", choices=["avx2", "sse41"], default="avx2",
                     help="SIMD do host no código SPU traduzido: avx2 (padrão, com FMA3) ou sse41 (CPUs sem AVX2)")
     ap.add_argument("--spu-dir", help="SPU_DIR já montada (programas SPU e policy modules recompilados por fora)")
