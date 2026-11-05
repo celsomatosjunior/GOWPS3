@@ -2838,7 +2838,7 @@ index 195c75e3..95b4c5b8 100644
          u128 x = spu_shufb(a, b, c), y = spu_shufb_ref(a, b, c);
          if (memcmp(&x, &y, 16)) {
 diff --git a/templates/project/main.cpp b/templates/project/main.cpp
-index f1f3243b..a020f6c9 100644
+index f1f3243b..f83fe023 100644
 --- a/templates/project/main.cpp
 +++ b/templates/project/main.cpp
 @@ -110,6 +110,7 @@ void     cellGcmTickVBlank(void);
@@ -2871,11 +2871,19 @@ index f1f3243b..a020f6c9 100644
          ULONGLONG now = GetTickCount64();
  
          int fired = 0;
-@@ -238,7 +251,13 @@ static DWORD WINAPI frame_clock(LPVOID)
+@@ -237,8 +250,20 @@ static DWORD WINAPI frame_clock(LPVOID)
+                 last_flip = cellGcm_flip_request_count();
              }
              cellGcm_rsx_process_fifo();
- 
+-
 -            if (rsx_backend_pump() != 0) {
++            /* GCM_FLIP_NOW=1: complete a flip the drain just executed now
++             * instead of on the next 16 ms tick (no vsync wait for the guest).
++             * For measuring whether the tick is on a title's critical path. */
++            { static int flip_now = -1;
++              if (flip_now < 0) { const char* e = getenv("GCM_FLIP_NOW"); flip_now = (e && *e == '1') ? 1 : 0; }
++              if (flip_now) cellGcmTickFlip(); }
++
 +            /* The window's messages at most every 2 ms: with GCM_DRAIN_MS=0 this loop spins, and a
 +             * PeekMessage per turn kept the thread in win32u most of the time, between drains. */
 +            static ULONGLONG last_pump = 0;

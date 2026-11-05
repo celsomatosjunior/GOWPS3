@@ -702,6 +702,9 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
   - a thread do RSX fica ~44% parada (antes ~33%); o fps da fase não muda (o RSX não está no caminho crítico).
   - 10 inicializações: 1 travada aos 12 s com a assinatura antiga (`identical transfers` img 278921217 pc 0x2554 em
     4 SPUs, como st1e5_11 e stats_aff1_10 em 04/11); mais 10: 0. É um impasse raro do policy module, a investigar.
+- `GCM_FLIP_NOW=1` (main.cpp do modelo: conclui o flip logo após a drenagem, sem esperar o tick de 16 ms): A/B
+  intercalado 3x3, base 19,6/20,2/17,5 contra 17,5/17,6/18,6. Sem ganho: o tick não está no caminho crítico.
+  O fps segue jobs EDGE por quadro x us/job (1270-1480 jobs conforme a cena); desligado.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
