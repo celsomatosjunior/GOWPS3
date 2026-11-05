@@ -648,11 +648,16 @@ fase estiver mais rápida.
   afinidade travava: a corrida antiga aparece quando o tempo das threads muda. Versão **`gow3-fase-v15`**
   (`Projetosersoes\gow3-fase-v15`, com cópia dos núcleos em `edge_nativo`).
 
-**Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o
-`us/job(60s)`). Teste do controle pelo Celso na v12. Caminho seguinte no código: a entrada/saída das funções
-traduzidas (cargas e gravações de `ctx->gpr`) e o despacho indireto por job. Candidatos:
-(1) a entrada/saída das funções curtas dos jobs (cada uma carrega e grava dezenas de registradores do
-`ctx->gpr`); (3) as chamadas indiretas (`bisl`) dos jobs, que passam por `spu_indirect_branch` + `spu_drain_call`.
+**Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
+`us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
+do job EDGE (`<trabalho>\edge_nativo`, ganchos.json, sempre com o modo sombra `GOW3_EDGE_SOMBRA=1` até 0 diferenças,
+depois A/B `GOW3_EDGE_NATIVO=0`). Perfil da v15 (`logsodar_05nov_prof21.log` com `logs\prof21.map`): 0x9A68 6,9%
+(dois laços de luz, 0x9C48/0x9F90, ~130 contas por volta), 0x6C10 4,9% (empacotamento dos vértices: muitas máscaras,
+difícil), 0xFA78 3,7% (descarte de triângulos, D640 no port), 0xF428 3,3% (projeção com códigos de recorte, pipeline
+de 2 voltas; D250 no port, outra versão), o próprio núcleo do skinning 3,5% (atalho de permutação das máscaras em
+teste), módulo 912f ~14% (testes de caixas, cheio de desvios). Os laços do port do Ascension se acham pelo
+`alinha_edge.py` (cópias dos scripts de medição em `<trabalho>\scripts_locais`: ab.sh, boot.sh, prof_*.py, rpcs3_medir.ps1...). O teste do controle (Switch 2 Pro pelo Steam,
+v14+) fica para o Celso.
 
 ## LLE seletivo da libsre (LFQueue)
 
