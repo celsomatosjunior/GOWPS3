@@ -648,10 +648,19 @@ fase estiver mais rápida.
   afinidade travava: a corrida antiga aparece quando o tempo das threads muda. Versão **`gow3-fase-v15`**
   (`Projetosersoes\gow3-fase-v15`, com cópia dos núcleos em `edge_nativo`).
 
+- Atalho no núcleo do skinning (as máscaras de shufb que só permutam palavras viram vpermilps; o último par segue o
+  caminho genérico): 0 diferenças no modo sombra, us/job(60s) 40,1/39,7/40,2 (neutro, fica). **Teste de 15 min da v15
+  (05/11, 11h):** quadros até o fim (899 s), nenhuma SPU derrubada, a fase abriu 3 vezes, memória plana (~1,1 GB em
+  uso, privada 2,0-2,6 GB), **mediana 17,8 q/s** (a v13 deu 15,85 no mesmo teste). A cópia da v15 recebeu este exe.
+- Olhados e deixados para depois: a 0x9F90 (segundo laço da 0x9A68) já é SoA (4 luzes por vetor, luz hemisférica com
+  12 acumuladores); a 0x6C10 empacota os vértices com dezenas de máscaras e rotações calculadas; o módulo 912f são
+  testes de caixas cheios de desvios.
+
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
 do job EDGE (`<trabalho>\edge_nativo`, ganchos.json, sempre com o modo sombra `GOW3_EDGE_SOMBRA=1` até 0 diferenças,
-depois A/B `GOW3_EDGE_NATIVO=0`). Perfil da v15 (`logsodar_05nov_prof21.log` com `logs\prof21.map`): 0x9A68 6,9%
+depois A/B `GOW3_EDGE_NATIVO=0`). Perfil da v15 (`logs
+odar_05nov_prof21.log` com `logs\prof21.map`): 0x9A68 6,9%
 (dois laços de luz, 0x9C48/0x9F90, ~130 contas por volta), 0x6C10 4,9% (empacotamento dos vértices: muitas máscaras,
 difícil), 0xFA78 3,7% (descarte de triângulos, D640 no port), 0xF428 3,3% (projeção com códigos de recorte, pipeline
 de 2 voltas; D250 no port, outra versão), o próprio núcleo do skinning 3,5% (atalho de permutação das máscaras em
