@@ -664,11 +664,31 @@ fase estiver mais rápida.
   0 diferenças em mais de 524 mil. **Os quatro: us/job(60s) 40,6/40,2/39,5 contra 42,9/43,1/42,5 desligados
   (-6,4%).** 10 inicializações sem travar. Versão **`gow3-fase-v16`** (`Projetos\versoes\gow3-fase-v16`). Lição: copiar o padrão de limites do código gerado vale mesmo onde parece só lixo.
 
+**05/11 à tarde: ideias do Arnaldo (repositório público arnaldolima1/gow-ascension-pc, MIT, e o plano dele no
+ps3kit) e do port otavix010, cada uma em A/B no GOW3** (notas em `F:\Quadrado do Claude\referencias\
+ascension_publico_notas.md`; nada de código do ps3kit copiado):
+- `spu_float_inputs.mark_body_flow` (ps3recomp, nosso): um operando de float fica sem `SPU_AXI` também depois de
+  rótulos e cópias (`ori/shlqbyi/rotqbyi` por 0) quando todo caminho o traz de outra operação de float (fluxo
+  para a frente, interseção). -4,4% de SPU_AXI no job EDGE; us/job(60s) 38,6 contra 39,4. Padrão no build
+  (`--sem-fluxo-float` desliga).
+- `SPU_LS_VEC` (spu_context.h, ideia do PR #637 do upstream): quadword de LS num load/store de 16 bytes + pshufb.
+  Neutro (38,4); fica.
+- `GOW3_PPU_PRIO` (gow3_diag.cpp, padrão 1): a thread principal do PPU acima do normal. Mediana 18,0 -> 18,9 q/s,
+  EDGE 54,4 -> 51,7 ms/quadro. Padrão.
+- `GOW3_TIMER_RES=1` (NtSetTimerResolution máximo, sem power throttling): neutro; desligado (no Ascension piorou).
+- `SPURS_IDLE_BACKOFF=0` (padrão do Ascension): **o GOW3 trava no carregamento** (3 de 3). Não usar.
+- Não se aplicam: um worker de SPU a menos (este PC tem 32 CPUs lógicas); interrupções do gerenciador Wws dentro
+  dos jobs (no Ascension custam tanto quanto o código dos jobs; aqui pm_wwsjob 2,5% + irq 0,4% da SPU).
+- `preserve_none` entre funções traduzidas (2b.10 do otavix010): o clang 19 aceita no Windows, mas os
+  `musttail` para o runtime (`spu_indirect_branch_mt`) e para ponteiros do registro exigem a mesma convenção;
+  ficou de fora.
+- A 0x9A68 é o começo do laço 9A68 -> A110 -> 9A68 (saída em 0xA270 -> 0xD620): um núcleo exato precisa
+  substituir o laço inteiro e reproduzir os registradores na saída. Fica para depois.
+
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
 do job EDGE (`<trabalho>\edge_nativo`, ganchos.json, sempre com o modo sombra `GOW3_EDGE_SOMBRA=1` até 0 diferenças,
-depois A/B `GOW3_EDGE_NATIVO=0`). Perfil da v15 (`logs
-odar_05nov_prof21.log` com `logs\prof21.map`): 0x9A68 6,9%
+depois A/B `GOW3_EDGE_NATIVO=0`). Perfil da v15 (`logs\rodar_05nov_prof21.log` com `logs\prof21.map`): 0x9A68 6,9%
 (dois laços de luz, 0x9C48/0x9F90, ~130 contas por volta), 0x6C10 4,9% (empacotamento dos vértices: muitas máscaras,
 difícil), 0xFA78 3,7% (descarte de triângulos, D640 no port), 0xF428 3,3% (projeção com códigos de recorte, pipeline
 de 2 voltas; D250 no port, outra versão), o próprio núcleo do skinning 3,5% (atalho de permutação das máscaras em

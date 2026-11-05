@@ -1843,14 +1843,27 @@ index 5fc50208..da470bae 100644
       * tasksets use the SAME syscall address, so the API table alone is not
       * evidence that this is an HLE context. LLE tasks must enter Sony's policy
 diff --git a/runtime/spu/spu_context.h b/runtime/spu/spu_context.h
-index c5ccbec7..bf529ea6 100644
+index c5ccbec7..b1615e48 100644
 --- a/runtime/spu/spu_context.h
 +++ b/runtime/spu/spu_context.h
-@@ -619,13 +619,13 @@ static SPU_NOINLINE_COLD void spu_ls_read_diag(const spu_context* ctx, uint32_t
+@@ -619,15 +619,30 @@ static SPU_NOINLINE_COLD void spu_ls_read_diag(const spu_context* ctx, uint32_t
      g_spu_ls_rdiag = g_spu_ls_probe || spu_ls_wws_probe_on() || g_spu_ls_watch_n != 0;
  }
  
 -static inline u128 spu_ls_read128(const spu_context* ctx, uint32_t lsa)
++/* SPU_LS_VEC (default on with SSSE3): an LS quadword is one 16-byte load or store and one pshufb that reverses the
++ * bytes of each word. The four 32-bit accesses before it cost four loads and four bswaps, and a 16-byte load that
++ * follows four 32-bit stores to the same quadword cannot be store-forwarded (a stall of ~10 cycles on the store ->
++ * load paths of the lifted job loops). -DSPU_LS_VEC=0 brings the 32-bit form back. */
++#if defined(__SSSE3__) && !defined(__ARM_NEON)
++#  ifndef SPU_LS_VEC
++#    define SPU_LS_VEC 1
++#  endif
++#  if SPU_LS_VEC
++#    include <tmmintrin.h>
++#    define SPU__LS_BSWAP32X4() _mm_setr_epi8(3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12)
++#  endif
++#endif
 +/* The LS access proper, on the LS pointer: lifted code that keeps ctx->ls in a local (spu_reg_locals.py,
 + * through SPU_LSR/SPU_LSW below) does not reload it after every store -- a byte store may alias it. */
 +static inline u128 spu_ls_read128_p(const uint8_t* ls, uint32_t lsa)
@@ -1863,8 +1876,12 @@ index c5ccbec7..bf529ea6 100644
 +    const uint8_t* p = &ls[lsa];
  #if defined(__ARM_NEON)
      vst1q_u8(v._u8, vrev32q_u8(vld1q_u8(p)));     /* ldr q; rev32 */
++#elif defined(SPU__LS_BSWAP32X4)
++    _mm_storeu_si128((__m128i*)v._u8, _mm_shuffle_epi8(_mm_loadu_si128((const __m128i*)p), SPU__LS_BSWAP32X4()));
  #elif SPU_LS_FAST
-@@ -645,6 +645,15 @@ static inline u128 spu_ls_read128(const spu_context* ctx, uint32_t lsa)
+     uint32_t w0, w1, w2, w3;
+     memcpy(&w0, p,      4); memcpy(&w1, p + 4,  4);
+@@ -645,6 +660,15 @@ static inline u128 spu_ls_read128(const spu_context* ctx, uint32_t lsa)
      return v;
  }
  
@@ -1880,7 +1897,7 @@ index c5ccbec7..bf529ea6 100644
  static SPU_NOINLINE_COLD void spu_ls_write_probe_pre(spu_context* ctx, uint32_t lsa, u128 val)
  {
      if (lsa == 0x1320 && ctx->image_id == 2 && ctx->policy_mode) {
-@@ -719,10 +728,10 @@ static SPU_NOINLINE_COLD void spu_ls_write_diag(spu_context* ctx, uint32_t lsa,
+@@ -719,12 +743,14 @@ static SPU_NOINLINE_COLD void spu_ls_write_diag(spu_context* ctx, uint32_t lsa,
      g_spu_ls_wdiag = spu_ls_wws_probe_on() || g_spu_smc_watch || g_spu_ls_watch_n != 0;
  }
  
@@ -1892,8 +1909,12 @@ index c5ccbec7..bf529ea6 100644
 +    uint8_t* p = &ls[lsa];
  #if defined(__ARM_NEON)
      vst1q_u8(p, vrev32q_u8(vld1q_u8(val._u8)));   /* rev32; str q */
++#elif defined(SPU__LS_BSWAP32X4)
++    _mm_storeu_si128((__m128i*)p, _mm_shuffle_epi8(_mm_loadu_si128((const __m128i*)val._u8), SPU__LS_BSWAP32X4()));
  #elif SPU_LS_FAST
-@@ -739,10 +748,27 @@ static inline void spu_ls_write128(spu_context* ctx, uint32_t lsa, u128 val)
+     uint32_t w0 = SPU_BSWAP32(val._u32[0]), w1 = SPU_BSWAP32(val._u32[1]);
+     uint32_t w2 = SPU_BSWAP32(val._u32[2]), w3 = SPU_BSWAP32(val._u32[3]);
+@@ -739,10 +765,27 @@ static inline void spu_ls_write128(spu_context* ctx, uint32_t lsa, u128 val)
          p[i*4 + 3] = (uint8_t)w;
      }
  #endif
@@ -1922,7 +1943,7 @@ index c5ccbec7..bf529ea6 100644
  /* ---------------------------------------------------------------------------
   * Preferred slot extraction
   *
-@@ -923,6 +949,18 @@ void spu_irqwait_diag(spu_context* ctx);
+@@ -923,6 +966,18 @@ void spu_irqwait_diag(spu_context* ctx);
  
  /* Drain a translated call up to its explicit architectural return PC. */
  void spu_drain_call(spu_context* ctx, uint32_t return_pc);
@@ -1941,7 +1962,7 @@ index c5ccbec7..bf529ea6 100644
  /* SPU_PCHIST=1: bucket SPU execution by the GPU module's own symbols.
   *
   * SPU_VRAMPC showed 3.7M VRAM writes from Host2Local_Body and ZERO from
-@@ -1044,6 +1082,21 @@ void spu_direct_init(void);
+@@ -1044,6 +1099,21 @@ void spu_direct_init(void);
      } while (0)
  #endif
  
@@ -2718,10 +2739,10 @@ index a657ba61..6c1bc03f 100644
              # .got + 0x8000 (the ELFv1 TOC bias). Without the right TOC every
 diff --git a/tools/spu_float_inputs.py b/tools/spu_float_inputs.py
 new file mode 100644
-index 00000000..8f857968
+index 00000000..14787c87
 --- /dev/null
 +++ b/tools/spu_float_inputs.py
-@@ -0,0 +1,172 @@
+@@ -0,0 +1,251 @@
 +#!/usr/bin/env python3
 +"""Mark the float-op operands that need the extended-range clamp (spu_helpers.h SPU_AX_CLAMP).
 +
@@ -2866,7 +2887,82 @@ index 00000000..8f857968
 +    return out, n
 +
 +
-+def mark_float_inputs(src: str, chains: bool = False) -> tuple[str, int]:
++_COPY = re.compile(r"^\s*r_(\d+) = spu_(?:ori|shlqbyi|rotqbyi|shlqbii|rotqbii)\(r_(\d+), 0\);\s*$")
++_ASSIGNED = re.compile(r"\br_(\d+) = ")
++_GOTO_ANY = re.compile(r"\bgoto (\w+);")
++_NOFALL = re.compile(r"^(?:goto \w+;|SPU_RET(?:_REG)?\(.*\);|\{ SPU_DIRECT\(.*\); \}|SPU_DIRECT\(.*\);|return;)$")
++
++
++def mark_body_flow(lines: list[str]) -> tuple[list[str], int]:
++    """mark_body for a function on register locals (spu_reg_locals.py), across labels and copies: a register
++    is in range at a line when it is on every path from the entry (forward dataflow, meet = intersection).
++    A local only changes where the C source assigns it, so a call, store-back or block line only forgets the
++    locals it assigns (a reload after a call); a copy (ori/shlqbyi/rotqbyi by 0) keeps its source's state.
++    The loop-carried values of the software-pipelined EDGE loops (copied with shlqbyi at the bottom, read
++    after the loop label) were all clamped again by mark_body."""
++    n = len(lines)
++    labels = {l.strip()[:-1]: k for k, l in enumerate(lines) if _LABEL.match(l)}
++    if "&r_" in "\n".join(lines):
++        return mark_body(lines)
++    info = []
++    for raw in lines:
++        s = raw.strip()
++        m = _FLOAT_ASSIGN.match(raw)
++        if m and m.group(2).startswith("r_"):
++            info.append(("f", int(m.group(2)[2:]), None)); continue
++        m = _COPY.match(raw)
++        if m:
++            info.append(("c", int(m.group(1)), int(m.group(2)))); continue
++        m = _SANE_ASSIGN.match(raw)
++        if m and m.group(1).startswith("r_"):
++            info.append(("f", int(m.group(1)[2:]), None)); continue
++        info.append(("k", tuple(int(x) for x in _ASSIGNED.findall(s)), None))
++    succ = []
++    for k, raw in enumerate(lines):
++        s = raw.strip()
++        tg = [labels[g] for g in _GOTO_ANY.findall(s) if g in labels]
++        fall = not _NOFALL.match(s) and k + 1 < n
++        succ.append(tg + ([k + 1] if fall else []))
++    full = None                                   # "top" (not reached yet)
++    state_in = [full] * n
++    state_in[0] = frozenset()
++    work = [0]
++
++    def transfer(k, st):
++        kind, d, src = info[k]
++        if kind == "f":
++            return st | {d}
++        if kind == "c":
++            return (st | {d}) if src in st else (st - {d})
++        return st - set(d) if d else st
++
++    while work:
++        k = work.pop()
++        out = transfer(k, state_in[k])
++        for j in succ[k]:
++            old = state_in[j]
++            new = out if old is None else (old & out)
++            if old is None or new != old:
++                state_in[j] = frozenset(new)
++                work.append(j)
++    res, wrapped = [], 0
++    for k, raw in enumerate(lines):
++        m = _FLOAT_ASSIGN.match(raw)
++        if not m:
++            res.append(raw); continue
++        ind, dst, op, args = m.groups()
++        st = state_in[k] or frozenset()
++        new = []
++        for a in args.split(", "):
++            if a.startswith("r_") and int(a[2:]) in st:
++                new.append(a)
++            else:
++                new.append(f"SPU_AXI({a})"); wrapped += 1
++        res.append(f"{ind}{dst} = {op}({', '.join(new)});")
++    return res, wrapped
++
++
++def mark_float_inputs(src: str, chains: bool = False, flow: bool = False) -> tuple[str, int]:
 +    """Whole translation unit: returns the rewritten source and how many operands were wrapped.
 +    chains=True also applies unclamp_chains to every function. (Leaving every result unclamped, only the
 +    SPU_AXI operands clamped, was measured slower in God of War III: 44.7 us per EDGE job against 42.3.)"""
@@ -2878,7 +2974,11 @@ index 00000000..8f857968
 +            j = i + 1
 +            while j < len(lines) and lines[j] != "}":
 +                j += 1
-+            body, n = mark_body(lines[i + 1:j])
++            body = lines[i + 1:j]
++            if flow and body and "u128 r_" in body[0]:
++                body, n = mark_body_flow(body)
++            else:
++                body, n = mark_body(body)
 +            if chains:
 +                body, _ = unclamp_chains(body)
 +            out.extend(body); total += n
@@ -3342,15 +3442,15 @@ index 00000000..2920aede
 +    main()
 diff --git a/tools/test_spu_float_inputs.py b/tools/test_spu_float_inputs.py
 new file mode 100644
-index 00000000..dc775a02
+index 00000000..b1f01880
 --- /dev/null
 +++ b/tools/test_spu_float_inputs.py
-@@ -0,0 +1,95 @@
+@@ -0,0 +1,138 @@
 +#!/usr/bin/env python3
 +"""spu_float_inputs.py: which float-op operands get SPU_AXI()."""
 +import unittest
 +
-+from spu_float_inputs import mark_body, mark_float_inputs, unclamp_chains
++from spu_float_inputs import mark_body, mark_body_flow, mark_float_inputs, unclamp_chains
 +
 +
 +class MarkBody(unittest.TestCase):
@@ -3437,6 +3537,49 @@ index 00000000..dc775a02
 +    def test_gpr_functions_are_left_alone(self):
 +        body = ["    ctx->gpr[3] = spu_fm(ctx->gpr[1], ctx->gpr[2]);", "    SPU_RET(ctx);"]
 +        self.assertEqual(unclamp_chains(body), (body, 0))
++
++
++class MarkBodyFlow(unittest.TestCase):
++    def test_loop_carried_copy_is_not_clamped_again(self):
++        out, _ = mark_body_flow([ENTRY,
++                                 "        r_3 = spu_fm(r_1, r_2);",
++                                 "loc_00000100:",
++                                 "        r_4 = spu_fma(r_3, r_3, r_4);",
++                                 "        r_2 = spu_fa(r_4, r_1);",
++                                 "        r_3 = spu_shlqbyi(r_2, 0);",
++                                 "        if (r_1._u32[0] != 0) goto loc_00000100;",
++                                 "        SPU_RET(ctx);"])
++        self.assertEqual(out[3].strip(), "r_4 = spu_fma(r_3, r_3, SPU_AXI(r_4));")   # r_4 comes from the entry
++        self.assertEqual(out[4].strip(), "r_2 = spu_fa(r_4, SPU_AXI(r_1));")
++
++    def test_one_unclamped_path_keeps_the_clamp(self):
++        out, _ = mark_body_flow([ENTRY,
++                                 "        r_3 = spu_fm(r_1, r_2);",
++                                 "        if (r_1._u32[0] != 0) goto loc_00000100;",
++                                 "        r_3 = spu_ori(r_9, 0);",
++                                 "loc_00000100:",
++                                 "        r_4 = spu_fm(r_3, r_3);",
++                                 "        SPU_RET(ctx);"])
++        self.assertEqual(out[5].strip(), "r_4 = spu_fm(SPU_AXI(r_3), SPU_AXI(r_3));")
++
++    def test_block_line_forgets_only_what_it_assigns(self):
++        out, _ = mark_body_flow([ENTRY,
++                                 "        r_3 = spu_fm(r_1, r_2);",
++                                 "        r_4 = spu_fm(r_1, r_2);",
++                                 "        if (r_1._u32[0] == 0) { ctx->gpr[3] = r_3; spu_call(ctx); r_4 = ctx->gpr[4]; }",
++                                 "        r_2 = spu_fa(r_3, r_4);",
++                                 "        SPU_RET(ctx);"])
++        self.assertEqual(out[4].strip(), "r_2 = spu_fa(r_3, SPU_AXI(r_4));")
++
++    def test_label_reached_only_by_goto_after_return(self):
++        out, _ = mark_body_flow([ENTRY,
++                                 "        r_3 = spu_fm(r_1, r_2);",
++                                 "        if (r_1._u32[0] != 0) goto loc_00000100;",
++                                 "        SPU_RET(ctx);",
++                                 "loc_00000100:",
++                                 "        r_4 = spu_fm(r_3, r_3);",
++                                 "        SPU_RET(ctx);"])
++        self.assertEqual(out[5].strip(), "r_4 = spu_fm(r_3, r_3);")
 +
 +
 +if __name__ == "__main__":

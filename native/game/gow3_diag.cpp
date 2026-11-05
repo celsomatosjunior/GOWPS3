@@ -51,6 +51,48 @@ static int load_env_file()
 }
 static int s_env_loaded = load_env_file();
 
+/* GOW3_PPU_PRIO (padrão 1; 0 desliga): a thread do PPU principal (o main do host, onde o boot roda o jogo) com prioridade acima do
+ * normal. Ela espera as SPUs e entrega os próximos jobs; com uns 12 threads ocupados, acordava atrasada. Ideia do
+ * repositório público do Ascension (arnaldolima1/gow-ascension-pc, ascension_defaults.cpp: PS3_PPU_PRIO). */
+static int ppu_prio_init()
+{
+    const char* e = getenv("GOW3_PPU_PRIO");
+    if (e && *e == '0') return 0;   /* medido em 05/11: mediana 18,0 -> 18,9 q/s, EDGE 54,4 -> 51,7 ms/quadro */
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+    fprintf(stderr, "[GOW3] thread principal com prioridade acima do normal\n");
+    return 1;
+}
+static int s_ppu_prio = (s_env_loaded, ppu_prio_init());
+
+/* GOW3_TIMER_RES=1: o timer do Windows na resolução máxima (NtSetTimerResolution, 0,5 ms em geral), como o RPCS3
+ * faz; o runtime pede 1 ms (timeBeginPeriod). E o processo fora do "power throttling" de timer e de velocidade: o
+ * Windows 11 ignora a resolução pedida por um processo de janela oculta/no fundo e pode pô-lo em EcoQoS. Toda espera
+ * que dorme (condition variables do SPURS, usleep do jogo) acorda pelo timer. Ideia do plano de desempenho do
+ * Ascension (diagnóstico, item 4). */
+#ifndef PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION
+#define PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION 0x4
+#endif
+static int timer_res_init()
+{
+    const char* e = getenv("GOW3_TIMER_RES");
+    if (!e || *e != '1') return 0;
+    typedef LONG(NTAPI * QueryRes)(PULONG, PULONG, PULONG);
+    typedef LONG(NTAPI * SetRes)(ULONG, BOOLEAN, PULONG);
+    HMODULE nt = GetModuleHandleA("ntdll.dll");
+    QueryRes q = nt ? (QueryRes)(void*)GetProcAddress(nt, "NtQueryTimerResolution") : nullptr;
+    SetRes s = nt ? (SetRes)(void*)GetProcAddress(nt, "NtSetTimerResolution") : nullptr;
+    ULONG mn = 0, mx = 0, cur = 0;
+    if (q && s && q(&mn, &mx, &cur) == 0) s(mx, TRUE, &cur);   /* mx: o menor intervalo (100 ns) */
+    PROCESS_POWER_THROTTLING_STATE pt = {};
+    pt.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+    pt.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED | PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
+    pt.StateMask = 0;   /* nenhum dos dois: velocidade normal, resolução respeitada */
+    const BOOL ok = SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &pt, sizeof pt);
+    fprintf(stderr, "[GOW3] timer em %lu x100ns (min %lu); sem power throttling: %d\n", cur, mx, ok);
+    return 1;
+}
+static int s_timer_res = (s_env_loaded, timer_res_init());
+
 extern "C" const char* g_hle_inflight[];   /* ppu_hle.cpp, 64 entradas */
 
 static char s_buf[1 << 16];

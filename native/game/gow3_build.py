@@ -356,7 +356,7 @@ def add_spu_jobs(args, proj: Path, cm: Path):
                 texto = inline_fallthrough(texto, max_lines=args.fundir_linhas, max_depth=args.fundir_trechos)[0]
             texto = localize_source(texto, max_lines=args.fundir_linhas + 100)
             if args.spu_float == "aprox":   # operandos de float a limitar (SPU_AX_CLAMP, ver spu_simd)
-                texto = mark_float_inputs(texto, chains=not args.sem_cadeias)[0]
+                texto = mark_float_inputs(texto, chains=not args.sem_cadeias, flow=args.fluxo_float)[0]
             alvo = d / "spu_recomp.c"
             if not alvo.is_file() or alvo.read_text(encoding="utf-8") != texto:
                 alvo.write_text(texto, encoding="utf-8")
@@ -391,7 +391,7 @@ def spu_dir_projeto(args, proj: Path) -> Path:
             texto = inline_fallthrough(texto, max_lines=args.fundir_linhas, max_depth=args.fundir_trechos)[0]
         texto = localize_source(texto, max_lines=args.fundir_linhas + 100)
         if args.spu_float == "aprox":
-            texto = mark_float_inputs(texto, chains=not args.sem_cadeias)[0]
+            texto = mark_float_inputs(texto, chains=not args.sem_cadeias, flow=args.fluxo_float)[0]
         c.write_text(texto, encoding="utf-8")
     return destino
 
@@ -674,6 +674,9 @@ def main() -> int:
                     help="pasta com ganchos.json: chamadas nativas inseridas em funções SPU traduzidas (só local; "
                          "padrão: <trabalho>/edge_nativo, quando existe)")
     ap.add_argument("--sem-ganchos", action="store_true", help="não aplicar os ganchos nativos")
+    ap.add_argument("--sem-fluxo-float", dest="fluxo_float", action="store_false",
+                    help="sem o mark_body_flow do spu_float_inputs (padrão: um operando de float fica sem SPU_AXI também "
+                         "depois de rótulos e cópias, quando todo caminho o traz de outra operação de float; -2%% por job EDGE)")
     ap.add_argument("--sem-cadeias", action="store_true",
                     help="limitar a ±FLT_MAX também os resultados de float que só alimentam outra operação de float")
     ap.add_argument("--fundir-trechos", type=int, default=4, help="quantos trechos seguintes fundir no máximo")
