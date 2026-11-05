@@ -626,6 +626,18 @@ fase estiver mais rápida.
   modo sombra que roda também o corpo do laço traduzido (extraído do código gerado por `gera_ref.py` da mesma pasta)
   e compara LS e registradores.
 
+- **RPCS3 na mesma luta (05/11, madrugada; `rpcs3_medir.ps1` com capturas no começo e no fim da janela):** Kratos
+  cercado pelos esqueletos no início da fase do Poseidon, com a configuração e os patches do Celso: **20,7-23,4 q/s**
+  entre 280 e 320 s (duas threads a ~99% de um núcleo, três a ~91%, três a ~54%). O nativo faz ~17-19 q/s nessa
+  luta: **~85% do RPCS3**. Os 38-45 q/s da primeira medida eram de outro trecho; os 60 q/s do RPCS3 são de cenas
+  mais leves.
+- **Núcleo nativo do skinning** (`<trabalho>\edge_nativo\gow3_edge_skin.h`, gancho no topo do laço 0x10E20; o
+  build usa `<trabalho>\edge_nativo` sozinho quando existe, `--sem-ganchos` desliga; `GOW3_EDGE_NATIVO=0` desliga
+  na execução): pares 0..n-2 em AVX2 (A e B no mesmo registrador), mesmas operações e limites do traduzido, o par 0
+  pelos registradores vivos. Modo sombra: **0 diferenças em mais de 4,19 milhões** de execuções (antes de copiar o
+  limite da 3a conta da linha r37 do vértice B, 3 diferenças em lixo perto de -FLT_MAX). Ganho medido pequeno:
+  us/job(60s) 41,4/41,2/41,5 ligado contra 43,2/40,4/42,3 desligado (~1,4%).
+
 **Próxima ação exata:** o fps depende só do tempo de SPU das listas EDGE por quadro (`edge_ms.py`, use o
 `us/job(60s)`). Teste do controle pelo Celso na v12. Caminho seguinte no código: a entrada/saída das funções
 traduzidas (cargas e gravações de `ctx->gpr`) e o despacho indireto por job. Candidatos:

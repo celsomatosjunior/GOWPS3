@@ -303,9 +303,13 @@ def aplica_ganchos(args, modulo: str, texto: str) -> str:
     O #include entra depois dos includes da fonte e a chamada como primeira linha do corpo da função (antes dos
     rótulos: roda uma vez a cada entrada, e um laço que volta ao rótulo não a repete). Os cabeçalhos ficam só na
     pasta local (são reescritas de código do jogo); o repositório só tem este mecanismo."""
-    if not args.spu_ganchos:
+    if args.sem_ganchos:
         return texto
-    pasta = Path(args.spu_ganchos).resolve()
+    pasta = Path(args.spu_ganchos).resolve() if args.spu_ganchos else Path(args.trabalho).resolve() / "edge_nativo"
+    if not (pasta / "ganchos.json").is_file():
+        if args.spu_ganchos:
+            raise StepError(f"--spu-ganchos: {pasta} não tem ganchos.json")
+        return texto
     import json
     for g in json.loads((pasta / "ganchos.json").read_text(encoding="utf-8")):
         if g["modulo"] != modulo:
@@ -667,7 +671,9 @@ def main() -> int:
                     help="não juntar a função SPU traduzida com o trecho seguinte (spu_inline_fallthrough.py)")
     ap.add_argument("--fundir-linhas", type=int, default=500, help="tamanho máximo de uma função fundida")
     ap.add_argument("--spu-ganchos", default="",
-                    help="pasta com ganchos.json: chamadas nativas inseridas em funções SPU traduzidas (só local)")
+                    help="pasta com ganchos.json: chamadas nativas inseridas em funções SPU traduzidas (só local; "
+                         "padrão: <trabalho>/edge_nativo, quando existe)")
+    ap.add_argument("--sem-ganchos", action="store_true", help="não aplicar os ganchos nativos")
     ap.add_argument("--sem-cadeias", action="store_true",
                     help="limitar a ±FLT_MAX também os resultados de float que só alimentam outra operação de float")
     ap.add_argument("--fundir-trechos", type=int, default=4, help="quantos trechos seguintes fundir no máximo")
