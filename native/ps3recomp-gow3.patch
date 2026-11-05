@@ -912,7 +912,7 @@ index bc05a308..815cb35b 100644
              u32 wslot = DRAW_SRV_BASE + _d * 4 + (u32)_u;
              dr->tex_rt[_u] = -1;
 diff --git a/libs/video/rsx_live_draw.c b/libs/video/rsx_live_draw.c
-index 25791179..3f334961 100644
+index 25791179..b0d6ff05 100644
 --- a/libs/video/rsx_live_draw.c
 +++ b/libs/video/rsx_live_draw.c
 @@ -22,7 +22,7 @@
@@ -1402,6 +1402,29 @@ index 25791179..3f334961 100644
      g.ps_cb_used += allocation_bytes;
  #if defined(YZ_PERF_PROFILE)
      g_ld_profile.total.ps_constant_allocations++;
+@@ -5423,14 +5695,14 @@ static void fetch_batches_hoisted(
+             dc.fetch_ok = 0;
+             return;
+         }
+-        for (u32 i = 0; i < dc.n_refs; i++) {
+-            u8* destination = layout->stride
+-                ? dc.compact_verts + (u64)i * layout->stride : NULL;
+-            if (!rsx_vertex_fetch_one(
+-                    &dc.fetch_plan, &dc.refs[i], destination)) {
+-                dc.fetch_ok = 0;
+-                return;
+-            }
++        /* fetch_many: the same bytes and result as fetch_one per reference
++         * (test_vertex_fetch_plan), with the type and stable range hoisted
++         * per attribute. The per-vertex loop was ~14% of the FIFO walker in
++         * God of War III's first fight. */
++        if (!rsx_vertex_fetch_many(&dc.fetch_plan, dc.refs, dc.n_refs,
++                                   layout->stride ? dc.compact_verts : NULL)) {
++            dc.fetch_ok = 0;
++            return;
+         }
+     } else {
+         /*
 @@ -6505,11 +6777,14 @@ static void live_draw_csv_emit(u32 prim, u32 n_tri, const char* outcome)
      /* LD_DRAW_DUMP=<dir> [LD_DRAW_DUMP_EVERY=k, default 10]: in the first
       * gated frame, read back each k-th draw's target BEFORE it is recorded,
@@ -1488,6 +1511,182 @@ index 32e8a959..e3ac93e8 100644
  
      s_state.hdc = GetDC(s_state.hwnd);
      s_state.last_fps_time = GetTickCount64();
+diff --git a/libs/video/rsx_vertex_compact.c b/libs/video/rsx_vertex_compact.c
+index e31b6112..a561d642 100644
+--- a/libs/video/rsx_vertex_compact.c
++++ b/libs/video/rsx_vertex_compact.c
+@@ -425,6 +425,57 @@ int rsx_vertex_remap_build(
+         remap->occurrence_capacity = count;
+     }
+ 
++    /* Dense path: the same unique order and occurrence map as the hash table
++     * below (first occurrence wins), for the common draw whose indices share
++     * one base_index and cover a range not much wider than the draw. */
++    {
++        u32 lo = refs[0].vertex_id, hi = lo;
++        const u32 base0 = refs[0].base_index;
++        u32 same = 1;
++        for (u32 i = 1; i < count; i++) {
++            const u32 v = refs[i].vertex_id;
++            lo = v < lo ? v : lo;
++            hi = v > hi ? v : hi;
++            same &= refs[i].base_index == base0;
++        }
++        const u32 width = hi - lo;
++        if (same && width < (1u << 20) && width < 4u * count + 4096u) {
++            const u32 range = width + 1u;
++            if (range > remap->dense_capacity) {
++                rsx_vertex_remap_dense* d = (rsx_vertex_remap_dense*)realloc(
++                    remap->dense, (size_t)range * sizeof(*d));
++                if (!d)
++                    return 0;
++                memset(d, 0, (size_t)range * sizeof(*d));
++                remap->dense = d;
++                remap->dense_capacity = range;
++                remap->dense_generation = 1u;
++            } else if (!++remap->dense_generation) {
++                memset(remap->dense, 0,
++                       (size_t)remap->dense_capacity * sizeof(*remap->dense));
++                remap->dense_generation = 1u;
++            }
++            const u32 gen = remap->dense_generation;
++            rsx_vertex_remap_dense* d = remap->dense;
++            u32* occ = remap->occurrence_to_unique;
++            u32 unique = 0;
++            for (u32 occurrence = 0; occurrence < count; occurrence++) {
++                const rsx_vertex_ref ref = refs[occurrence];
++                rsx_vertex_remap_dense* e = &d[ref.vertex_id - lo];
++                if (e->generation != gen) {
++                    e->generation = gen;
++                    e->value = unique;
++                    refs[unique] = ref;
++                    occ[occurrence] = unique++;
++                } else {
++                    occ[occurrence] = e->value;
++                }
++            }
++            *unique_count = unique;
++            return 1;
++        }
++    }
++
+     if (count > UINT_MAX / 2u)
+         return 0;
+     u32 slot_capacity = 16u;
+@@ -494,6 +545,7 @@ void rsx_vertex_remap_destroy(rsx_vertex_remap* remap)
+         return;
+     free(remap->occurrence_to_unique);
+     free(remap->slots);
++    free(remap->dense);
+     memset(remap, 0, sizeof(*remap));
+ }
+ 
+diff --git a/libs/video/rsx_vertex_compact.h b/libs/video/rsx_vertex_compact.h
+index 6a12f6f0..9bbbfb9b 100644
+--- a/libs/video/rsx_vertex_compact.h
++++ b/libs/video/rsx_vertex_compact.h
+@@ -38,12 +38,22 @@ typedef struct rsx_vertex_remap_slot {
+     u32 generation;
+ } rsx_vertex_remap_slot;
+ 
++typedef struct rsx_vertex_remap_dense {
++    u32 generation;
++    u32 value;
++} rsx_vertex_remap_dense;
++
+ typedef struct rsx_vertex_remap {
+     u32* occurrence_to_unique;
+     u32 occurrence_capacity;
+     rsx_vertex_remap_slot* slots;
+     u32 slot_capacity;
+     u32 generation;
++    /* Dense table for a draw whose references share one base_index and span a
++     * small vertex_id range: indexed by vertex_id - min, no hashing. */
++    rsx_vertex_remap_dense* dense;
++    u32 dense_capacity;
++    u32 dense_generation;
+ } rsx_vertex_remap;
+ 
+ typedef struct rsx_vertex_fetch_attr {
+diff --git a/libs/video/tests/test_vertex_remap.c b/libs/video/tests/test_vertex_remap.c
+new file mode 100644
+index 00000000..4b9d97a2
+--- /dev/null
++++ b/libs/video/tests/test_vertex_remap.c
+@@ -0,0 +1,73 @@
++/*
++ * rsx_vertex_remap_build against a naive first-occurrence reference, on random
++ * reference lists that take both the dense path (one base_index, narrow range)
++ * and the hash path (mixed base_index, wide range), reusing one remap across
++ * calls so the generation stamps are exercised too.
++ *
++ * Build (from the repo root):
++ *   clang -std=gnu17 -O2 -Wall -Wextra -Wno-unused-parameter -I include -I libs/video \
++ *     -o /tmp/test_vertex_remap libs/video/tests/test_vertex_remap.c \
++ *     libs/video/rsx_vertex_compact.c libs/video/rsx_dispatch.c
++ */
++#include "rsx_vertex_compact.h"
++
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++static uint64_t s_rng = 0x9E3779B97F4A7C15ull;
++static u32 rnd(void)
++{
++    s_rng ^= s_rng << 13; s_rng ^= s_rng >> 7; s_rng ^= s_rng << 17;
++    return (u32)(s_rng >> 16);
++}
++
++int main(void)
++{
++    enum { MAXN = 5000 };
++    static rsx_vertex_ref in[MAXN], got[MAXN], want[MAXN];
++    static u32 want_occ[MAXN];
++    rsx_vertex_remap remap;
++    memset(&remap, 0, sizeof remap);
++    int failures = 0, dense_like = 0;
++    for (int iter = 0; iter < 20000; iter++) {
++        const u32 n = 1 + rnd() % (iter % 7 == 0 ? MAXN : 300);
++        const u32 kind = rnd() % 4;
++        const u32 base = rnd() % 3 == 0 ? rnd() : 0;
++        const u32 lo = rnd() % 4 == 0 ? rnd() : rnd() % 70000;
++        const u32 span = kind == 0 ? 1 + rnd() % 8 : kind == 1 ? 1 + rnd() % (n + 1)
++                       : kind == 2 ? 1 + rnd() % (8 * n + 9000) : rnd() | 1;
++        for (u32 i = 0; i < n; i++) {
++            in[i].vertex_id = lo + rnd() % span;
++            in[i].base_index = (kind == 3 && rnd() % 5 == 0) ? base + 1 : base;
++        }
++        if (kind <= 1) dense_like++;
++        /* reference: quadratic first-occurrence dedup */
++        u32 wu = 0;
++        for (u32 i = 0; i < n; i++) {
++            u32 j = 0;
++            for (; j < wu; j++)
++                if (want[j].vertex_id == in[i].vertex_id && want[j].base_index == in[i].base_index) break;
++            if (j == wu) want[wu++] = in[i];
++            want_occ[i] = j;
++        }
++        memcpy(got, in, n * sizeof *got);
++        u32 unique = 0;
++        if (!rsx_vertex_remap_build(&remap, got, n, &unique)) {
++            printf("iter %d: build failed\n", iter); failures++; continue;
++        }
++        int bad = unique != wu;
++        for (u32 i = 0; !bad && i < wu; i++)
++            bad = got[i].vertex_id != want[i].vertex_id || got[i].base_index != want[i].base_index;
++        for (u32 i = 0; !bad && i < n; i++)
++            bad = rsx_vertex_remap_index(&remap, i) != want_occ[i];
++        if (bad) {
++            if (failures < 5) printf("iter %d (kind %u n %u): unique %u want %u\n", iter, kind, n, unique, wu);
++            failures++;
++        }
++    }
++    rsx_vertex_remap_destroy(&remap);
++    printf("test_vertex_remap: 20000 lists (%d narrow), %d failure(s)\n", dense_like, failures);
++    return failures != 0;
++}
 diff --git a/runtime/ppu/ppu_vmx.h b/runtime/ppu/ppu_vmx.h
 index 35052c67..b059c9ef 100644
 --- a/runtime/ppu/ppu_vmx.h

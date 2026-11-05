@@ -692,6 +692,16 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
   para todas, us/job(60s) 38,5-39,7. A mediana sobe junto com o número de janelas "fora" (o jogo nem sempre chega
   à luta no mesmo ponto), então só comparar execuções com fora baixo. As opções ficam no build, desligadas.
 - `--ppu-restrict` (`__restrict` no ctx do PPU): o jogo fica preso antes da fase. Não usar.
+- Onde o PPU espera na luta (`PS3_POLLTOP=20`): ~10,5 s de cada 20 s em `func_0028DA14` (lr 0x2622EC), o slot
+  0x649EC8 que a lista EDGE zera ao terminar (o mesmo de 02/11). Ou seja, a espera do PPU é a cadeia EDGE.
+- **v18 (`gow3-fase-v18`): menos CPU na thread do RSX** (ps3recomp, sem mudar os bytes):
+  - o live draw busca os vértices com `rsx_vertex_fetch_many` (já testado como igual ao `fetch_one`): de 14,2% para
+    4,3% da thread do RSX (prof23);
+  - `rsx_vertex_remap_build` com tabela direta quando as referências têm um só base_index e faixa estreita (mesma
+    ordem e mapa do hash; `libs/video/tests/test_vertex_remap.c`, 20 mil listas, 0 falhas): de 6% para 3% (prof24);
+  - a thread do RSX fica ~44% parada (antes ~33%); o fps da fase não muda (o RSX não está no caminho crítico).
+  - 10 inicializações: 1 travada aos 12 s com a assinatura antiga (`identical transfers` img 278921217 pc 0x2554 em
+    4 SPUs, como st1e5_11 e stats_aff1_10 em 04/11); mais 10: 0. É um impasse raro do policy module, a investigar.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
