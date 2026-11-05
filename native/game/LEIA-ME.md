@@ -656,6 +656,14 @@ fase estiver mais rápida.
   12 acumuladores); a 0x6C10 empacota os vértices com dezenas de máscaras e rotações calculadas; o módulo 912f são
   testes de caixas cheios de desvios.
 
+- **Quarto núcleo: as normais 0xC168** (produto vetorial de dois fluxos, troca de componentes pela máscara de LS
+  0x12680, normalização com passo de Newton; 8 vetores por volta em SoA; a chamada salta para a 0xC520, que põe
+  r3 = r45 e faz o epílogo). Primeira sombra: 137 mil diferenças de sinal no zero em vetores de enchimento (L = 0):
+  o traduzido não limita y*y em 6 das 8 cadeias (y = FLT_MAX, y*y = Inf, L*y*y = NaN -> -FLT_MAX), e o núcleo
+  limitava tudo. Copiado o padrão (limite só nos vetores 5 e 6, sem limite nos dois intermediários fm_u/fa_u):
+  0 diferenças em mais de 524 mil. **Os quatro: us/job(60s) 40,6/40,2/39,5 contra 42,9/43,1/42,5 desligados
+  (-6,4%).** Lição: copiar o padrão de limites do código gerado vale mesmo onde parece só lixo.
+
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
 do job EDGE (`<trabalho>\edge_nativo`, ganchos.json, sempre com o modo sombra `GOW3_EDGE_SOMBRA=1` até 0 diferenças,
