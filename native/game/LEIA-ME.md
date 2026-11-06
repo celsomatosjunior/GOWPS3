@@ -592,7 +592,7 @@ fase estiver mais rápida.
   e `GOW3_PASTA=<pasta>` vira a pasta atual (a do save). Testado aberto direto de `C:\`: leu as 13 variáveis e chegou à
   fase. Serve para o Steam: o Steam Input só traduz o controle (o Switch 2 Pro do Celso, **só por USB**) para o
   processo que ele mesmo abre. No Steam: *Jogos -> Adicionar um jogo não Steam*, escolher o `GOW3Native.exe` da
-  `Projetosersoes\gow3-fase-v14` e pôr nas opções de inicialização o caminho do `EBOOT.pular_videos.ELF` da mesma
+  `Projetos\versoes\gow3-fase-v14` e pôr nas opções de inicialização o caminho do `EBOOT.pular_videos.ELF` da mesma
   pasta, entre aspas. Versão **`gow3-fase-v14`** (mesmo código SPU da v13).
 - Contagem de entradas por função (PGO, `--spu-pgo gerar`, 60 s da fase): ~6 milhões de entradas de função traduzida por
   segundo na cadeia EDGE (~160 ns de trabalho por entrada). As folhas chamadas por `brsl` direto são só ~2% das
@@ -646,7 +646,7 @@ fase estiver mais rápida.
   desligados (-5,5%), medianas 18,3/17,55/18,6 contra 16,4/15,7/16,1 q/s (+13%).** 10 inicializações sem travar com os
   ganchos. Uma execução no modo sombra (cópias de 768 KB a cada chamada) travou na abertura do mesmo jeito que a
   afinidade travava: a corrida antiga aparece quando o tempo das threads muda. Versão **`gow3-fase-v15`**
-  (`Projetosersoes\gow3-fase-v15`, com cópia dos núcleos em `edge_nativo`).
+  (`Projetos\versoes\gow3-fase-v15`, com cópia dos núcleos em `edge_nativo`).
 
 - Atalho no núcleo do skinning (as máscaras de shufb que só permutam palavras viram vpermilps; o último par segue o
   caminho genérico): 0 diferenças no modo sombra, us/job(60s) 40,1/39,7/40,2 (neutro, fica). **Teste de 15 min da v15
@@ -742,7 +742,7 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
     retorno do PM Wws/EDGE usa registrador volátil como saída. Pista para a travada rara: ela pode ser um valor de
     registrador perdido nesse caminho, não uma corrida do agendador.
   - 50 inicializações da v20: 0 travadas. `--spu-vivos abi-jobs` ("abi" só nos módulos de job) também trava (6/6);
-    bissecção por módulo (`GOW3_VIVOS_ABI_MODS`, `scripts_locaisissec_*.sh`): só o job baf5d88 trava, mas a análise
+    bissecção por módulo (`GOW3_VIVOS_ABI_MODS`, `scripts_locais\bissec_*.sh`): só o job baf5d88 trava, mas a análise
     mostra chamadas que leem registradores voláteis (r4-r79) depois do retorno em todos os módulos (código à mão
     do EDGE devolve resultados fora da ABI): o "abi" fixo é inseguro mesmo onde abre. `abi-auto` (por função: tudo
     vivo nos retornos de quem tem chamador que lê volátil, `spu_live_flush.abi_returns`) corta quase nada a mais
@@ -756,6 +756,14 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
     neutro no A/B (us/job 38,2 contra 38,3): a maioria das chamadas tem 2-3 luzes (n=1..4) e o gancho grava e relê
     ~80 registradores locais na entrada. Fora do ganchos.json. Lição: núcleo só vale para laços longos ou com o
     gancho fora do caminho dos registradores locais.
+- `spu_shufb` (ps3recomp `spu_helpers.h`): os seletores especiais (0xC0-0xDF -> 0xFF, 0xE0-0xFF -> 0x80) saem
+  de um `pshufb` numa tabela de 16 bytes indexada pelo nibble alto (4 instruções e 2 constantes no lugar de 7 e 3;
+  `SPU_SHUFB_SPECIAL_CMP` volta à forma antiga). `tests/test_spu_shufb.c`: 200 mil casos iguais, SSE4.1 e AVX2.
+  `shufb` é a operação mais frequente nas funções quentes (167 nas seis maiores; ~12 instruções x86 cada com
+  máscara variável). A/B 06/11: us/job(60s) 37,6/37,3/37,6 contra 37,6/37,2 (v20): neutro; fica (exato e menor).
+  - Na mesma série, uma travada rara na v20 (`rodar_06nov_sl_vivseguro_2`): mesma assinatura (img 278921217 pc
+    0x2554, wids 5 e 7 em lsa 0x00D00), e a linha de 128 bytes relida está **toda em zero**: o PM espera a lista
+    que o PPU ainda não escreveu. Sem `PS3_POLLTOP` nessa execução, não se sabe onde o PPU estava.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
