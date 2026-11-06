@@ -705,6 +705,12 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
 - `GCM_FLIP_NOW=1` (main.cpp do modelo: conclui o flip logo após a drenagem, sem esperar o tick de 16 ms): A/B
   intercalado 3x3, base 19,6/20,2/17,5 contra 17,5/17,6/18,6. Sem ganho: o tick não está no caminho crítico.
   O fps segue jobs EDGE por quadro x us/job (1270-1480 jobs conforme a cena); desligado.
+- Linha do tempo (`PS3_FTRACE=170:3:...`, `scratch\ft_wid.py`): as listas EDGE rodam uma atrás da outra sem
+  buraco entre quadros (EDGE1 -> EDGE2 -> EDGE0) e a cadeia fica 94% ocupada (buracos entre jobs ~6%). Os ~21%
+  de ntdll da thread de SPU no perfil são de outros workloads que dividem a thread (ModelServer, MSPrep e
+  RenderJobs sondam por DMA ~5 s a cada 10 s, `SPU_DMA_POLL_STATS=1`); as EDGE quase não sondam.
+- `SPURS_MAXCONT_WID=8:2,9:2,10:2` (cellSpurs.c, novo, desligado): uma lista EDGE em duas SPUs. Mediana 9,5 q/s,
+  "jobs" por quadro 1350 -> 4741: o policy module Wws não divide a lista. Confirmado: só o us/job conta.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos

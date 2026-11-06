@@ -153,7 +153,7 @@ index 7e222c92..33b21296 100644
  }
  
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
-index 82ea66c6..beb35e45 100644
+index 82ea66c6..1b22e60c 100644
 --- a/libs/spurs/cellSpurs.c
 +++ b/libs/spurs/cellSpurs.c
 @@ -16,6 +16,7 @@
@@ -407,7 +407,7 @@ index 82ea66c6..beb35e45 100644
  s32 cellSpursCreateTask(CellSpursTaskset* taskset, CellSpursTaskId* taskId,
                          void* elf, void* context, u32 sizeContext,
                          u32 lsPattern_ea, u32 argument_ea)
-@@ -1714,6 +1909,105 @@ static WklPm* spurs_resolve_pm(u32 wid)
+@@ -1714,6 +1909,126 @@ static WklPm* spurs_resolve_pm(u32 wid)
   * occupies only its own slot; a later runnable producer can use another slot.
   * Admission and lifecycle state are serialized per instance. Guest execution
   * never runs under that lock, and only a genuine return releases contention. */
@@ -436,12 +436,33 @@ index 82ea66c6..beb35e45 100644
 +    return v;
 +}
 +
++/* SPURS_MAXCONT_WID=<wid>:<n>[,...]: run workload wid on up to n SPUs at once whatever the
++ * title registered (experiment: a Wws job list fetches its jobs with atomics, so a policy module
++ * written for several SPUs can share one list). Unset: the guest's own byte, as before. */
++static u32 spurs_maxcont(u32 ea, u32 wid)
++{
++    static int init = 0; static u8 ov[32];
++    if (!init) {
++        const char* e = getenv("SPURS_MAXCONT_WID");
++        while (e && *e) {
++            char* end; const unsigned long w = strtoul(e, &end, 0);
++            if (*end != ':') break;
++            const unsigned long n = strtoul(end + 1, &end, 0);
++            if (w < 32 && n > 0 && n < 256) ov[w] = (u8)n;
++            e = *end == ',' ? end + 1 : NULL;
++        }
++        init = 1;
++    }
++    const u32 g = vm_read8(ea + SPURS_WKL_MAXCONT + wid);
++    return (wid < 32 && ov[wid] && g) ? ov[wid] : g;
++}
++
 +static int spurs_wkl_runnable(u32 ea, u32 enabled, u32 wid, u32 sn)
 +{
 +    return (enabled & (0x80000000u >> wid)) && vm_read8(ea + SPURS_WKL_STATE1 + wid) == 2 &&
 +           s_workloads[wid].in_use && s_workloads[wid].spurs_ea == ea &&
 +           vm_read8(ea + SPURS_WKL_INFO1 + wid * SPURS_WKL_INFO_SZ + 0x18 + sn) &&
-+           vm_read8(ea + SPURS_WKL_MAXCONT + wid) && spurs_resolve_pm(wid);
++           spurs_maxcont(ea, wid) && spurs_resolve_pm(wid);
 +}
 +
 +/* Called by the worker without si->lock, its run just finished and its contention not yet
@@ -466,7 +487,7 @@ index 82ea66c6..beb35e45 100644
 +        int other_kicked = 0;
 +        for (u32 w = 0; w < 16 && !other_kicked; w++) {
 +            if (w == wid || !spurs_wkl_runnable(ea, enabled, w, sn) ||
-+                si->active[w] >= vm_read8(ea + SPURS_WKL_MAXCONT + w))
++                si->active[w] >= spurs_maxcont(ea, w))
 +                continue;
 +            if (!(vm_read8(ea + SPURS_WKL_READY1 + w) || (signal & (0x8000u >> w)) || flagrecv == w))
 +                continue;
@@ -513,7 +534,7 @@ index 82ea66c6..beb35e45 100644
  static DWORD WINAPI spurs_pm_worker(LPVOID p)
  {
      struct SpursPmSlot* slot = (struct SpursPmSlot*)p;
-@@ -1723,16 +2017,88 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
+@@ -1723,16 +2038,88 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
      { ULONG g = 256 * 1024; SetThreadStackGuarantee(&g); }
  #endif
      ps3_tprof_thread('S', (uint32_t)slot->spu_num);
@@ -606,7 +627,7 @@ index 82ea66c6..beb35e45 100644
          AcquireSRWLockExclusive(&si->lock);
          u32 wid = slot->wid;
          if (si->active[wid]) si->active[wid]--;
-@@ -1740,7 +2106,7 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
+@@ -1740,7 +2127,7 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
          vm_base[slot->ea + SPURS_WKL_CURCONT + wid] = si->active[wid];
          ef_line_end(slot->ea);
          if (polls) si->idle[wid] = 0;
@@ -615,7 +636,7 @@ index 82ea66c6..beb35e45 100644
          slot->busy = 0;
          WakeAllConditionVariable(&si->wake);
      }
-@@ -1767,7 +2133,23 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1767,7 +2154,23 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
          if (__atomic_exchange_n(&si->kick, 0, __ATOMIC_ACQ_REL)) {
              kick_pass = ++kick_run < 16;
          } else {
@@ -640,7 +661,7 @@ index 82ea66c6..beb35e45 100644
              /* This full pass reads the line after any commit that woke it. */
              (void)__atomic_exchange_n(&si->kick, 0, __ATOMIC_ACQ_REL);
          }
-@@ -1779,8 +2161,52 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1779,8 +2182,52 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
          if (!kick_pass) si->pass_no++;
          u32 enabled = vm_read32(ea + SPURS_WKL_ENABLED);
          for (u32 sn = 0; sn < si->nspus; sn++) {
@@ -655,7 +676,7 @@ index 82ea66c6..beb35e45 100644
 +              fprintf(stderr, "[flagdbg] wid=%u enabled=%d state=%u in_use=%d same_spurs=%d prio0=%u maxcont=%u active=%u pm=%d free_lanes=%d\n",
 +                      rw, !!(enabled & (0x80000000u >> rw)), vm_read8(ea + SPURS_WKL_STATE1 + rw), s_workloads[rw].in_use,
 +                      s_workloads[rw].spurs_ea == ea, vm_read8(ea + SPURS_WKL_INFO1 + rw * SPURS_WKL_INFO_SZ + 0x18),
-+                      vm_read8(ea + SPURS_WKL_MAXCONT + rw), si->active[rw], spurs_resolve_pm(rw) != NULL, free_lanes);
++                      spurs_maxcont(ea, rw), si->active[rw], spurs_resolve_pm(rw) != NULL, free_lanes);
 +          } }
              struct SpursPmSlot* slot = &si->slots[sn];
              if (slot->busy) continue;
@@ -677,7 +698,7 @@ index 82ea66c6..beb35e45 100644
 +                        !s_workloads[wid].in_use || s_workloads[wid].spurs_ea != ea)
 +                        continue;
 +                    const u32 prio = vm_read8(ea + SPURS_WKL_INFO1 + wid * SPURS_WKL_INFO_SZ + 0x18 + sn);
-+                    const u32 maxcont = vm_read8(ea + SPURS_WKL_MAXCONT + wid);
++                    const u32 maxcont = spurs_maxcont(ea, wid);
 +                    if (!prio || !maxcont || si->active[wid] >= maxcont || !spurs_resolve_pm(wid))
 +                        continue;
 +                    const int kicked = vm_read8(ea + SPURS_WKL_READY1 + wid) ||
@@ -693,7 +714,14 @@ index 82ea66c6..beb35e45 100644
              for (u32 checked = 0; checked < 16; checked++) {
                  u32 wid = si->cursor;
                  si->cursor = (wid + 1) & 15;
-@@ -1796,7 +2222,11 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1790,13 +2237,17 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+                     continue;
+                 if (!vm_read8(ea + SPURS_WKL_INFO1 + wid * SPURS_WKL_INFO_SZ + 0x18 + sn))
+                     continue; /* priority zero makes this physical lane ineligible */
+-                u32 maxcont = vm_read8(ea + SPURS_WKL_MAXCONT + wid);
++                u32 maxcont = spurs_maxcont(ea, wid);
+                 if (!maxcont || si->active[wid] >= maxcont) continue;
+                 WklPm* pm = spurs_resolve_pm(wid);
                  if (!pm) continue;
                  u32 signal = vm_read16(ea + SPURS_WKL_SIGNAL1);
                  u32 ready = vm_read8(ea + SPURS_WKL_READY1 + wid);
@@ -706,7 +734,7 @@ index 82ea66c6..beb35e45 100644
                  if (kicked) si->idle[wid] = 0;
                  if (!kicked && (kick_pass || (si->pass_no & ((1u << si->idle[wid]) - 1))))
                      continue;
-@@ -1806,7 +2236,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1806,7 +2257,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                  if (ready) vm_base[ea + SPURS_WKL_READY1 + wid] = (u8)(ready - 1);
                  if (signal & (0x8000u >> wid))
                      ef_w16(ea + SPURS_WKL_SIGNAL1, (u16)(signal & ~(0x8000u >> wid)));
