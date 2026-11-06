@@ -730,6 +730,19 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
   0 travadas. Sem efeito: `-enable-misched=false` (pior), `-regalloc=pbqp` (41,5% de pilha), `-misched=ilpmin`
   (31,0%), `-enable-ipra`, `-exhaustive-register-search` (iguais). O derramamento é estrutural: 16 registradores
   AVX2 no Ryzen 9 5950X (sem AVX-512), 25% das amostras dos jobs na pilha e 12% em cópias de registrador.
+- **v20 (`gow3-fase-v20`): `--spu-vivos seguro` (padrão)**: o `spu_reg_locals.py` gravava de volta em `ctx->gpr`
+  todo local escrito em cada saída, o que mantinha vivos temporários de laço até o teste de saída. A passagem nova
+  (ps3recomp `tools/spu_live_flush.py`, testes em `tools/test_spu_live_flush.py`) faz vivacidade de trás para frente
+  sobre o módulo inteiro e só grava os registradores vivos no destino (`SPU_DIRECT` para função do módulo: o que está
+  vivo na entrada dela; retorno: tudo). Instruções nas 8 funções quentes: 15.160 -> 13.872, acessos à pilha
+  4.632 -> 4.193. A/B intercalado 3x3 (06/11): us/job(60s) 37,9/39,1/39,8 (v19) contra 38,1/37,5/38,1 (~-2,5%);
+  medianas misturadas (cenas com mais jobs por quadro nas execuções da v20).
+  - O modo `abi` (num retorno só r0-r3 e r80-r127 vivos) corta mais (pilha 3.617), mas **trava a abertura sempre**,
+    com a mesma assinatura da travada rara (img 278921217 pc 0x2554, 5 lanes relendo 0x70A6E100 etc.): algum
+    retorno do PM Wws/EDGE usa registrador volátil como saída. Pista para a travada rara: ela pode ser um valor de
+    registrador perdido nesse caminho, não uma corrida do agendador.
+  - 50 inicializações da v20: 0 travadas. Em teste: `--spu-vivos abi-jobs` ("abi" só nos módulos de job, "seguro"
+    no PM), com o mesmo corte estático do "abi" nas funções quentes.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos

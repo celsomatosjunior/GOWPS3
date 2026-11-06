@@ -3568,6 +3568,279 @@ index 35d8d428..027a2240 100644
      lifter.bi_r0_jump = compute_bi_r0_jumps(insns, bounds)
      if lifter.bi_r0_jump:
          print(f"  {len(lifter.bi_r0_jump)} `bi $r0` computed-jump site(s) "
+diff --git a/tools/spu_live_flush.py b/tools/spu_live_flush.py
+new file mode 100644
+index 00000000..74fb58f0
+--- /dev/null
++++ b/tools/spu_live_flush.py
+@@ -0,0 +1,267 @@
++#!/usr/bin/env python3
++"""
++Store back only the live registers at the exits of register-local SPU functions.
++
++spu_reg_locals.py stores every written local back to ctx->gpr at each exit of a
++function (a tail branch SPU_DIRECT, a return). Those stores keep every value a
++loop writes alive until the loop's exit test -- a temporary used once at the top
++of an iteration lives through the whole iteration only to be stored when the
++loop leaves -- and with 16 AVX registers for the SPU's 128 that pressure is what
++the code spends on the stack.
++
++This pass runs a backward liveness over the whole generated module, on SPU
++register numbers (r_N and ctx->gpr[N] are the same register; the stores and
++reloads spu_reg_locals adds are copies and do not count):
++
++  * a line `r_N = <expr>;` (one statement) defines N and uses the registers in
++    <expr>; any other line uses every register it mentions and defines none;
++  * gotos and labels inside a function are followed;
++  * `SPU_DIRECT(ctx, PC, fn)` to a function of the module: what is live there is
++    what is live at fn's entry (a fixpoint over the module); to anything else:
++    every register;
++  * a return (SPU_RET...): `ret_live` (every register unless the caller passes
++    a smaller set);
++  * an indirect branch, a call, a channel, anything else that leaves the code
++    or touches ctx: every register.
++
++The stores in front of an SPU_DIRECT exit (and in front of a return) are then
++cut to the registers live there. Everything else is left as it is.
++"""
++
++import re
++import sys
++
++ALL = frozenset(range(128))
++_SIG = re.compile(r"^void (\w+)\(spu_context\* ctx\) \{$")
++_REG = re.compile(r"\br_(\d+)\b|ctx->gpr\[(\d+)\]")
++_FLUSH = re.compile(r"ctx->gpr\[(\d+)\] = r_(\d+);\s*")
++_RELOAD = re.compile(r"\br_(\d+) = ctx->gpr\[(\d+)\];\s*")
++_DECL = re.compile(r"u128 r_(\d+) = ctx->gpr\[(\d+)\];\s*")
++_DEF = re.compile(r"^(?:r_(\d+)|ctx->gpr\[(\d+)\]) = ([^;]*);$")
++_LABEL = re.compile(r"^loc_([0-9A-Fa-f]{8}):$")
++_GOTO = re.compile(r"goto loc_([0-9A-Fa-f]{8});")
++_DIRECT = re.compile(r"SPU_DIRECT\(ctx, 0x[0-9A-Fa-f]+, (\w+)\);")
++_OKGOTO = re.compile(r"^if \(SPU_DIRECT_LOCAL_OK\(ctx, 0x[0-9A-Fa-f]+\)\) goto loc_([0-9A-Fa-f]{8});$")
++_LS = re.compile(r"spu_ls_(?:read|write)128\(ctx,|SPU_LS[RW]\(ctx, _ls,")
++_RET = ("SPU_RET(", "SPU_RET_REG(", "SPU_TAILCALL(")
++
++
++def _regs(s):
++    return {int(a or b) for a, b in _REG.findall(s)}
++
++
++_LSPTR = re.compile(r"(?:uint8_t\* )?_ls = ctx->ls;\s*")
++# channel accesses read only the register they are given
++_CHAN = re.compile(r"spu_(?:wrch|rdch)\(ctx, ")
++_CALL = re.compile(r"\b(\w+_spu_func_[0-9A-Fa-f]{8})\(ctx\);")
++
++
++def _strip_copies(s):
++    s = _LSPTR.sub("", _DECL.sub("", s))
++    s = _FLUSH.sub(lambda m: "" if m.group(1) == m.group(2) else m.group(0), s)
++    s = _RELOAD.sub(lambda m: "" if m.group(1) == m.group(2) else m.group(0), s)
++    return s.strip()
++
++
++def _split_if(s):
++    """`if (cond) rest` -> (cond, rest)."""
++    if not s.startswith("if ("):
++        return None
++    d = 0
++    for i in range(3, len(s)):
++        if s[i] == "(":
++            d += 1
++        elif s[i] == ")":
++            d -= 1
++            if d == 0:
++                return s[4:i], s[i + 1:].strip()
++    return None
++
++
++class Fn:
++    def __init__(self, name, start, body):
++        self.name, self.start, self.body = name, start, body
++        self.nodes = []          # per line: (uses, defs, succ_lines, exit_kind, exit_target)
++        self.labels = {}
++        self.live_in = frozenset()   # least fixpoint: grows from empty
++
++
++def _exit_of(s):
++    """('direct', fn) / ('ret', None) / ('all', None) / None for a statement that may leave."""
++    m = _DIRECT.search(s)
++    if m:
++        return ("direct", m.group(1))
++    if any(k in s for k in _RET) or "return;" in s or "g_spu_trampoline_fn" in s:
++        return ("all" if "g_spu_trampoline_fn" in s else "ret", None)
++    return None
++
++
++def analyse(fn: Fn):
++    for i, raw in enumerate(fn.body):
++        m = _LABEL.match(raw.strip())
++        if m:
++            fn.labels[int(m.group(1), 16)] = i
++    n = len(fn.body)
++    for i, raw in enumerate(fn.body):
++        s = _strip_copies(raw.strip())
++        nxt = [i + 1] if i + 1 < n else []
++        if not s or _LABEL.match(s):
++            fn.nodes.append((set(), set(), nxt, None, None))
++            continue
++        m = _OKGOTO.match(s)
++        if m:
++            fn.nodes.append((set(), set(), nxt + [fn.labels[int(m.group(1), 16)]], None, None))
++            continue
++        sp = _split_if(s)
++        if sp and sp[1].startswith("{") and sp[1].endswith("}") or sp and sp[1].startswith("goto "):
++            cond, rest = sp
++            inner = rest[1:-1].strip() if rest.startswith("{") else rest
++            uses = _regs(cond)
++            succ = list(nxt)
++            ex = None
++            for g in _GOTO.findall(inner):
++                succ.append(fn.labels[int(g, 16)])
++            e = _exit_of(inner)
++            if e:
++                ex = e
++            rest_s = _GOTO.sub("", _OKGOTO.sub("", inner))
++            rest_s = re.sub(r"if \(SPU_DIRECT_LOCAL_OK\(ctx, 0x[0-9A-Fa-f]+\)\) ", "", rest_s)
++            if ex is None and _strip_copies(rest_s).strip("; {}"):
++                uses |= _regs(rest_s)     # something else inside the block: be conservative
++                if re.search(r"\bctx\b", _LS.sub("", _REG.sub("", rest_s))):
++                    ex = ("all", None)
++            fn.nodes.append((uses, set(), succ, ex, None))
++            continue
++        e = _exit_of(s)
++        if e and not s.startswith("if"):
++            # an unconditional exit (possibly braced): nothing after it in this path
++            fn.nodes.append((set(), set(), [], e, None))
++            continue
++        if s.startswith("goto "):
++            g = _GOTO.findall(s)
++            fn.nodes.append((set(), set(), [fn.labels[int(g[0], 16)]], None, None))
++            continue
++        m = _DEF.match(s)
++        if m and s.count(";") == 1:
++            d = int(m.group(1) or m.group(2))
++            fn.nodes.append((_regs(m.group(3)), {d}, nxt, None, None))
++            continue
++        rest = _CHAN.sub("", _LS.sub("", _REG.sub("", s)))
++        calls = _CALL.findall(s)
++        if len(calls) == 1 and "spu_link(" in s:
++            # a call to a lifted function: what the callee reads, and what is live after it
++            # (the callee may leave any register as it was)
++            fn.nodes.append((_regs(s), set(), nxt, ("call", calls[0]), None))
++            continue
++        if re.search(r"\bctx\b", rest):
++            # touches ctx (call, channel, stop...): everything may be read
++            fn.nodes.append((set(ALL), set(), nxt, None, None))
++            continue
++        fn.nodes.append((_regs(s), set(), nxt, None, None))
++
++
++def solve(fns: dict, ret_live=ALL, rounds=50):
++    for _ in range(rounds):
++        changed = False
++        for fn in fns.values():
++            live = [set() for _ in fn.nodes]
++            for _it in range(1000):
++                ch = False
++                for i in range(len(fn.nodes) - 1, -1, -1):
++                    uses, defs, succ, ex, _ = fn.nodes[i]
++                    out = set()
++                    for j in succ:
++                        out |= live[j]
++                    if ex:
++                        k, t = ex
++                        out |= (fns[t].live_in if k in ("direct", "call") and t in fns else
++                                ret_live if k == "ret" else ALL)
++                    new = uses | (out - defs)
++                    if new != live[i]:
++                        live[i] = new
++                        ch = True
++                if not ch:
++                    break
++            fn.live = live
++            li = frozenset(live[0]) if live else frozenset()
++            if li != fn.live_in:
++                fn.live_in = li
++                changed = True
++        if not changed:
++            break
++
++
++def rewrite(fn: Fn, fns: dict, ret_live=ALL):
++    """Cut the flush stores in front of exits to the live set."""
++    out = []
++    cut = 0
++    for i, raw in enumerate(fn.body):
++        s = raw.strip()
++        uses, defs, succ, ex, _ = fn.nodes[i]
++        def keep(target_live):
++            nonlocal cut
++            def f(m):
++                nonlocal cut
++                if m.group(1) != m.group(2):
++                    return m.group(0)
++                if int(m.group(1)) in target_live:
++                    return m.group(0)
++                cut += 1
++                return ""
++            return f
++        if ex and ex[0] in ("direct", "ret") and _FLUSH.search(s):
++            k, t = ex
++            tl = fns[t].live_in if k == "direct" and t in fns else ret_live if k == "ret" else ALL
++            raw = _FLUSH.sub(keep(tl), raw)
++        elif _FLUSH.search(s) and not _strip_copies(s) and i + 1 < len(fn.body):
++            # a line of stores followed by an unconditional exit line
++            e = fn.nodes[i + 1][3]
++            if e and e[0] in ("direct", "ret") and not fn.body[i + 1].strip().startswith("if"):
++                k, t = e
++                tl = fns[t].live_in if k == "direct" and t in fns else ret_live
++                raw = _FLUSH.sub(keep(tl), raw)
++        out.append(raw)
++    return out, cut
++
++
++def process(text: str, ret_live=ALL):
++    lines = text.split("\n")
++    fns = {}
++    spans = []
++    i = 0
++    while i < len(lines):
++        m = _SIG.match(lines[i])
++        if m:
++            j = i + 1
++            while j < len(lines) and lines[j] != "}":
++                j += 1
++            fns[m.group(1)] = Fn(m.group(1), i, lines[i + 1:j])
++            spans.append((m.group(1), i + 1, j))
++            i = j + 1
++            continue
++        i += 1
++    for fn in fns.values():
++        analyse(fn)
++    solve(fns, ret_live)
++    total = 0
++    for name, a, b in reversed(spans):
++        new, cut = rewrite(fns[name], fns, ret_live)
++        total += cut
++        lines[a:b] = new
++    return "\n".join(lines), total
++
++
++ABI_RET_LIVE = frozenset(range(0, 4)) | frozenset(range(80, 128))
++
++
++def main():
++    if len(sys.argv) < 3:
++        sys.exit("uso: spu_live_flush.py <entrada.c> <saida.c> [--abi-ret]")
++    t = open(sys.argv[1], encoding="utf-8").read()
++    t, n = process(t, ABI_RET_LIVE if "--abi-ret" in sys.argv else ALL)
++    open(sys.argv[2], "w", encoding="utf-8", newline="\n").write(t)
++    print(f"{n} stores cut")
++
++
++if __name__ == "__main__":
++    main()
 diff --git a/tools/spu_program_pipeline.py b/tools/spu_program_pipeline.py
 index 36cbc240..d18fb1db 100644
 --- a/tools/spu_program_pipeline.py
@@ -4057,6 +4330,122 @@ index 00000000..01ba966c
 +        self.assertEqual(out.split("void m_spu_func_00000110")[0].count("SPU_DIRECT"), 1)
 +        out, n = inline_fallthrough(src, max_depth=1)
 +        self.assertEqual(out.split("void m_spu_func_00000110")[0].count("SPU_DIRECT(ctx, 0x120"), 1)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tools/test_spu_live_flush.py b/tools/test_spu_live_flush.py
+new file mode 100644
+index 00000000..f4735b51
+--- /dev/null
++++ b/tools/test_spu_live_flush.py
+@@ -0,0 +1,110 @@
++#!/usr/bin/env python3
++"""Tests for spu_live_flush.py (run: python tools/test_spu_live_flush.py)."""
++import os
++import sys
++import unittest
++
++sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
++import spu_live_flush as L  # noqa: E402
++
++
++def fn(name, body):
++    return f"void {name}(spu_context* ctx) {{\n" + "\n".join("        " + b for b in body) + "\n}\n"
++
++
++def stores(text, name):
++    seg = text[text.index(f"void {name}("):]
++    seg = seg[:seg.index("\n}\n")]
++    return sorted(int(x) for x in __import__("re").findall(r"ctx->gpr\[(\d+)\] = r_\1;", seg))
++
++
++class LiveFlush(unittest.TestCase):
++    def test_dead_temp_cut(self):
++        # A writes r5 and r6 and leaves to B; B reads r6 and overwrites r5 before returning.
++        a = fn("m_spu_func_00000100", [
++            "u128 r_5 = ctx->gpr[5]; u128 r_6 = ctx->gpr[6]; u128 r_7 = ctx->gpr[7];",
++            "r_5 = spu_ai(r_7, 1);",
++            "r_6 = spu_ai(r_5, 2);",
++            "ctx->gpr[5] = r_5; ctx->gpr[6] = r_6;",
++            "{ SPU_DIRECT(ctx, 0x200, m_spu_func_00000200); }"])
++        b = fn("m_spu_func_00000200", [
++            "ctx->gpr[8] = spu_ai(ctx->gpr[6], 3);",
++            "ctx->gpr[5] = spu_il(0);",
++            "SPU_RET(ctx);"])
++        out, n = L.process(a + b)
++        self.assertEqual(stores(out, "m_spu_func_00000100"), [6])
++        self.assertEqual(n, 1)
++
++    def test_live_to_return_kept(self):
++        a = fn("m_spu_func_00000100", [
++            "u128 r_5 = ctx->gpr[5]; u128 r_6 = ctx->gpr[6];",
++            "r_5 = spu_il(1);",
++            "r_6 = spu_il(2);",
++            "ctx->gpr[5] = r_5; ctx->gpr[6] = r_6;",
++            "{ SPU_DIRECT(ctx, 0x200, m_spu_func_00000200); }"])
++        b = fn("m_spu_func_00000200", ["SPU_RET(ctx);"])
++        out, _ = L.process(a + b)
++        self.assertEqual(stores(out, "m_spu_func_00000100"), [5, 6])
++        out, _ = L.process(a + b, L.ABI_RET_LIVE)    # r5/r6 are volatile under the ABI
++        self.assertEqual(stores(out, "m_spu_func_00000100"), [])
++
++    def test_unknown_target_keeps_all(self):
++        a = fn("m_spu_func_00000100", [
++            "u128 r_5 = ctx->gpr[5];",
++            "r_5 = spu_il(1);",
++            "ctx->gpr[5] = r_5;",
++            "{ SPU_DIRECT(ctx, 0x900, other_spu_func_00000900); }"])
++        out, _ = L.process(a)
++        self.assertEqual(stores(out, "m_spu_func_00000100"), [5])
++
++    def test_conditional_exit_in_loop(self):
++        # loop: r9 counter; r5 temp each pass; exit to B, which reads only r9.
++        a = fn("m_spu_func_00000100", [
++            "u128 r_5 = ctx->gpr[5]; u128 r_9 = ctx->gpr[9];",
++            "loc_00000100:",
++            "r_5 = spu_ai(r_9, 4);",
++            "r_9 = spu_ai(r_5, -1);",
++            "if (r_9._u32[0] == 0) { ctx->gpr[5] = r_5; ctx->gpr[9] = r_9; SPU_DIRECT(ctx, 0x200, m_spu_func_00000200); }",
++            "goto loc_00000100;"])
++        b = fn("m_spu_func_00000200", [
++            "ctx->gpr[5] = spu_ai(ctx->gpr[9], 1);",
++            "SPU_RET(ctx);"])
++        out, _ = L.process(a + b)
++        self.assertEqual(stores(out, "m_spu_func_00000100"), [9])
++
++    def test_channel_reads_only_its_register(self):
++        a = fn("m_spu_func_00000100", [
++            "u128 r_5 = ctx->gpr[5]; u128 r_6 = ctx->gpr[6];",
++            "r_5 = spu_il(1);",
++            "r_6 = spu_il(2);",
++            "ctx->gpr[5] = r_5; ctx->gpr[6] = r_6;",
++            "{ SPU_DIRECT(ctx, 0x200, m_spu_func_00000200); }"])
++        b = fn("m_spu_func_00000200", [
++            "spu_wrch(ctx, MFC_LSA, ctx->gpr[6]);",
++            "ctx->gpr[5] = spu_il(0); ctx->gpr[6] = spu_il(0);",
++            "SPU_RET(ctx);"])
++        out, _ = L.process(a + b)
++        # the second line of B has two statements: conservatively a use of r5/r6, no kill
++        self.assertEqual(stores(out, "m_spu_func_00000100"), [5, 6])
++
++    def test_call_keeps_callee_reads_and_after(self):
++        a = fn("m_spu_func_00000100", [
++            "u128 r_5 = ctx->gpr[5]; u128 r_6 = ctx->gpr[6];",
++            "r_5 = spu_il(1);",
++            "r_6 = spu_il(2);",
++            "ctx->gpr[5] = r_5; ctx->gpr[6] = r_6;",
++            "{ SPU_DIRECT(ctx, 0x200, m_spu_func_00000200); }"])
++        b = fn("m_spu_func_00000200", [
++            "ctx->gpr[0] = spu_link(0x210); { int32_t _si = (int32_t)ctx->image_id; ctx->host_depth++; "
++            "m_spu_func_00000300(ctx); spu_drain_call(ctx, 0x210); ctx->host_depth--; }",
++            "ctx->gpr[6] = spu_il(0);",
++            "SPU_RET(ctx);"])
++        c = fn("m_spu_func_00000300", [
++            "ctx->gpr[3] = spu_ai(ctx->gpr[5], 1);",
++            "SPU_RET(ctx);"])
++        out, _ = L.process(a + b + c, L.ABI_RET_LIVE)
++        self.assertEqual(stores(out, "m_spu_func_00000100"), [5])
 +
 +
 +if __name__ == "__main__":
