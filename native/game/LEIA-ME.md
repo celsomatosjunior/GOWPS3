@@ -748,6 +748,9 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
     vivo nos retornos de quem tem chamador que lê volátil, `spu_live_flush.abi_returns`) corta quase nada a mais
     (pilha 4.193 -> 4.127) e ainda trava (retorno das entradas do job ao PM). Fica o "seguro"; os outros modos só
     para estudo.
+  - Perfil da v20 (`logsodar_06nov_prof25.log`, mapa `logsivseguro.map`, us/job(60s) 37,3): plano, o maior é
+    0x6C10 com 4,5%; depois 0x9A68 4,2%, 912f:0x52A4 3,3%, 0xFA78 3,3%, 0xF428 3,3%, 912f:0x4C48 2,5%, 0x7D78 2,3%.
+    Módulos: 14561 44,6%, 2be92eb 27,6% (espalhado), 912f 14,9%. Cada núcleo nativo novo rende 1-2%.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
