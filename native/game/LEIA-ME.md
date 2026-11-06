@@ -720,6 +720,16 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
   sondando as mesmas EAs da trava (0x70A6E100, 0x7150D800, 0x70A74480, 0x70A68200) e nenhum workload sem lane
   pronto: não é falta de lane. Na trava quem não entrega trabalho está fora das SPUs (PPU/RSX): próximo passo é
   pegar uma com `PS3_POLLTOP=5` junto (onde o PPU está).
+  - Pegamos uma (poll50_19, 23 s): o PPU principal em `func_0028DA14` (lr 0x2622EC, à espera da lista EDGE zerar o
+    slot do quadro) e as 5 lanes no PM Wws (wids 1, 7, 8, 3, 4) relendo suas listas, nenhum workload pronto sem
+    lane. Impasse "PPU espera o fim da lista / a lista espera o PPU". O vigia agora também imprime o wid (LS
+    0x1DC), o LSA e os 128 bytes da linha relida, para a próxima.
+- **v19 (`gow3-fase-v19`): `-pre-RA-sched=list-burr` nas fontes SPU** (padrão do `--spu-opt`). Instruções nos jobs
+  (`scratchpad\spillcnt.py`, 8 funções quentes): 32,5% acessos à pilha -> 30,6%. A/B intercalado 3x3: us/job
+  39,6/38,9/37,2 contra 39,9/38,8/38,8, medianas 17,85/19,0/19,65 contra 16,2/18,8/17,1 (~2%). 50 inicializações:
+  0 travadas. Sem efeito: `-enable-misched=false` (pior), `-regalloc=pbqp` (41,5% de pilha), `-misched=ilpmin`
+  (31,0%), `-enable-ipra`, `-exhaustive-register-search` (iguais). O derramamento é estrutural: 16 registradores
+  AVX2 no Ryzen 9 5950X (sem AVX-512), 25% das amostras dos jobs na pilha e 12% em cópias de registrador.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos

@@ -2373,7 +2373,7 @@ index c5ccbec7..b1615e48 100644
   * brsl/bisl frame is live (host_depth>0); at 0 the frame was destroyed (task
   * resume / restack unwind) so dispatch to the link register instead -- faithful
 diff --git a/runtime/spu/spu_dma.h b/runtime/spu/spu_dma.h
-index 8c4ccaa8..77301c81 100644
+index 8c4ccaa8..870cce2e 100644
 --- a/runtime/spu/spu_dma.h
 +++ b/runtime/spu/spu_dma.h
 @@ -595,8 +595,11 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
@@ -2474,7 +2474,7 @@ index 8c4ccaa8..77301c81 100644
        if ((uint32_t)ea == s_last_ea && lsa == s_last_lsa) {
            if (++s_rep >= s_limit) {
                unsigned long long now = ps3_ms_now();
-@@ -1354,6 +1411,16 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
+@@ -1354,6 +1411,25 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
                    s_since = now;
                    if (s_log) spu_dma_repeat_log_start(spu);
                }
@@ -2484,14 +2484,23 @@ index 8c4ccaa8..77301c81 100644
 +                if (now - s_since >= 5000u && t_dumped_since != s_since) {
 +                    extern void (*g_spu_poll_dump_hook)(void);
 +                    t_dumped_since = s_since;
-+                    fprintf(stderr, "[spu-dma] img=%d pc=0x%05X polling ea=0x%08X for 5 s\n", spu->image_id,
-+                            (uint32_t)spu->pc & SPU_LS_MASK, (uint32_t)ea);
++                    const uint8_t* wl = spu->ls + 0x1DC;   /* SpursKernelContext.wklCurrentId */
++                    fprintf(stderr, "[spu-dma] img=%d pc=0x%05X wid=%u lsa=0x%05X polling ea=0x%08X for 5 s; line:",
++                            spu->image_id, (uint32_t)spu->pc & SPU_LS_MASK,
++                            (unsigned)((uint32_t)wl[0] << 24 | (uint32_t)wl[1] << 16 | (uint32_t)wl[2] << 8 | wl[3]),
++                            (unsigned)lsa, (uint32_t)ea);
++                    if (vm_base) {
++                        const uint8_t* ln = vm_base + ((uint32_t)ea & ~127u);
++                        for (int q = 0; q < 128; q += 4)
++                            fprintf(stderr, " %02X%02X%02X%02X", ln[q], ln[q + 1], ln[q + 2], ln[q + 3]);
++                    }
++                    fprintf(stderr, "\n");
 +                    if (g_spu_poll_dump_hook) g_spu_poll_dump_hook();
 +                } }
                if (now - s_since >= s_secs * 1000u) {
                    s_rep = 0; s_since = 0;   /* re-arm: the chain may run this job again */
                    extern void spu_halt(spu_context*);
-@@ -1573,6 +1640,24 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
+@@ -1573,6 +1649,24 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
          }
      }
  

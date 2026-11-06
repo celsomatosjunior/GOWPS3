@@ -433,7 +433,10 @@ def spu_simd(args, cm: Path):
     sse41 deixa só o pshufb, para CPUs sem AVX2. -ffp-contract=off fica explícito."""
     # -w: no clang-cl o -Wall do modelo vale -Weverything, e a análise dos avisos nas funções longas com gotos e
     # registradores locais levava minutos por módulo de job.
-    opts = (args.spu_opt or "-O2") + ";-ffp-contract=off;-w;" + ("-mavx2;-mfma" if args.spu_simd == "avx2" else "-msse4.1")
+    # -pre-RA-sched=list-burr (o escalonador do SelectionDAG que reduz registradores): no código dos jobs o
+    # derramamento na pilha é ~25% das amostras (16 registradores AVX para 128 da SPU); ~6% menos acessos à pilha
+    # nas funções quentes e ~2% de us/job (05/11).
+    opts = (args.spu_opt or "-O2;-mllvm;-pre-RA-sched=list-burr") + ";-ffp-contract=off;-w;" + ("-mavx2;-mfma" if args.spu_simd == "avx2" else "-msse4.1")
     # --spu-float aprox: fa/fm/fma do SPU como as operações do host (SPU_FLOAT_APPROX do spu_helpers.h, como o
     # "approximate xfloat" padrão do RPCS3); exato = a emulação bit a bit (truncamento, faixa estendida).
     # SPU_LS_NODIAG: sem o teste das sondas de LS (SPU_LS_WATCH, SPU_SMC_WATCH...) em cada lqd/stqd; --spu-ls-diag
@@ -718,7 +721,7 @@ def main() -> int:
     ap.add_argument("--spu-ls-diag", action="store_true",
                     help="compila as sondas de LS do runtime SPU (SPU_LS_WATCH etc.) no código traduzido")
     ap.add_argument("--spu-opt", default="",
-                    help="opções de otimização das fontes SPU no lugar de -O2, separadas por ; (ex.: -O3;-march=znver3)")
+                    help="opções de otimização das fontes SPU no lugar de -O2;-mllvm;-pre-RA-sched=list-burr, separadas por ;")
     ap.add_argument("--spu-float", choices=["aprox", "exato"], default="aprox",
                     help="ponto flutuante do SPU: aprox = operações do host (como o RPCS3); exato = bit a bit")
     ap.add_argument("--sem-fundir", action="store_true",
