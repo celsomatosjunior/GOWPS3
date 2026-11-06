@@ -711,6 +711,9 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
   RenderJobs sondam por DMA ~5 s a cada 10 s, `SPU_DMA_POLL_STATS=1`); as EDGE quase não sondam.
 - `SPURS_MAXCONT_WID=8:2,9:2,10:2` (cellSpurs.c, novo, desligado): uma lista EDGE em duas SPUs. Mediana 9,5 q/s,
   "jobs" por quadro 1350 -> 4741: o policy module Wws não divide a lista. Confirmado: só o us/job conta.
+- `--fundir-trechos 6 --fundir-linhas 700`: a 0xA110 entra na função da 0x9A68 e o laço externo inteiro fica em
+  locais (`goto loc_00009A68`, 10 acessos ao ctx). us/job(60s) 38,6/39,0/39,4: neutro (o custo está nos laços de
+  dentro, 0x9C48/0x9F90). Padrão continua 4/500.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
