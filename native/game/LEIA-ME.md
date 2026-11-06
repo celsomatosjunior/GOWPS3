@@ -714,6 +714,12 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
 - `--fundir-trechos 6 --fundir-linhas 700`: a 0xA110 entra na função da 0x9A68 e o laço externo inteiro fica em
   locais (`goto loc_00009A68`, 10 acessos ao ctx). us/job(60s) 38,6/39,0/39,4: neutro (o custo está nos laços de
   dentro, 0x9C48/0x9F90). Padrão continua 4/500.
+- Travada rara da abertura: novo `[spurs-dump]` (cellSpurs.c `spurs_debug_dump`, chamado pelo vigia de DMA do
+  `spu_dma.h` quando um job repete a mesma transferência por 5 s; até 3 por execução): lanes e workloads. Em 30
+  inicializações com ele, 0 travadas (agora 1 em 50). O dump que saiu (sem trava) mostra as 5 lanes no PM Wws
+  sondando as mesmas EAs da trava (0x70A6E100, 0x7150D800, 0x70A74480, 0x70A68200) e nenhum workload sem lane
+  pronto: não é falta de lane. Na trava quem não entrega trabalho está fora das SPUs (PPU/RSX): próximo passo é
+  pegar uma com `PS3_POLLTOP=5` junto (onde o PPU está).
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
