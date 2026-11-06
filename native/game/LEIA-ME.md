@@ -741,8 +741,13 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
     com a mesma assinatura da travada rara (img 278921217 pc 0x2554, 5 lanes relendo 0x70A6E100 etc.): algum
     retorno do PM Wws/EDGE usa registrador volátil como saída. Pista para a travada rara: ela pode ser um valor de
     registrador perdido nesse caminho, não uma corrida do agendador.
-  - 50 inicializações da v20: 0 travadas. Em teste: `--spu-vivos abi-jobs` ("abi" só nos módulos de job, "seguro"
-    no PM), com o mesmo corte estático do "abi" nas funções quentes.
+  - 50 inicializações da v20: 0 travadas. `--spu-vivos abi-jobs` ("abi" só nos módulos de job) também trava (6/6);
+    bissecção por módulo (`GOW3_VIVOS_ABI_MODS`, `scripts_locaisissec_*.sh`): só o job baf5d88 trava, mas a análise
+    mostra chamadas que leem registradores voláteis (r4-r79) depois do retorno em todos os módulos (código à mão
+    do EDGE devolve resultados fora da ABI): o "abi" fixo é inseguro mesmo onde abre. `abi-auto` (por função: tudo
+    vivo nos retornos de quem tem chamador que lê volátil, `spu_live_flush.abi_returns`) corta quase nada a mais
+    (pilha 4.193 -> 4.127) e ainda trava (retorno das entradas do job ao PM). Fica o "seguro"; os outros modos só
+    para estudo.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos

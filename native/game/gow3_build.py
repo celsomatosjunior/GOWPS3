@@ -357,7 +357,7 @@ def add_spu_jobs(args, proj: Path, cm: Path):
             texto = localize_source(texto, max_lines=args.fundir_linhas + 100)
             if args.spu_float == "aprox":   # operandos de float a limitar (SPU_AX_CLAMP, ver spu_simd)
                 texto = mark_float_inputs(texto, chains=not args.sem_cadeias, flow=args.fluxo_float)[0]
-            texto = spu_vivos(args, texto, jobs=True)
+            texto = spu_vivos(args, texto, jobs=True, nome=c.parent.name)
             alvo = d / "spu_recomp.c"
             if not alvo.is_file() or alvo.read_text(encoding="utf-8") != texto:
                 alvo.write_text(texto, encoding="utf-8")
@@ -393,12 +393,12 @@ def spu_dir_projeto(args, proj: Path) -> Path:
         texto = localize_source(texto, max_lines=args.fundir_linhas + 100)
         if args.spu_float == "aprox":
             texto = mark_float_inputs(texto, chains=not args.sem_cadeias, flow=args.fluxo_float)[0]
-        texto = spu_vivos(args, texto)
+        texto = spu_vivos(args, texto, nome=c.parent.name)
         c.write_text(texto, encoding="utf-8")
     return destino
 
 
-def spu_vivos(args, texto: str, jobs: bool = False) -> str:
+def spu_vivos(args, texto: str, jobs: bool = False, nome: str = "") -> str:
     """--spu-vivos: nas saídas das funções SPU com registradores locais, grava de volta só os registradores vivos
     (ps3recomp tools/spu_live_flush.py, vivacidade sobre o módulo inteiro). "seguro": num retorno tudo está vivo;
     "abi": num retorno só r0-r3 e r80-r127 (os preservados da ABI da SPU), o que vale se quem chama é código
@@ -408,7 +408,12 @@ def spu_vivos(args, texto: str, jobs: bool = False) -> str:
     sys.path.insert(0, str(Path(args.ps3recomp).resolve() / "tools"))
     import spu_live_flush
     abi = args.spu_vivos == "abi" or (args.spu_vivos == "abi-jobs" and jobs)
+    filtro = os.environ.get("GOW3_VIVOS_ABI_MODS", "")   # depuração: "abi" só nos módulos com um destes trechos
+    if abi and filtro:
+        abi = any(f and f in nome for f in filtro.split(","))
     ret = spu_live_flush.ABI_RET_LIVE if abi else spu_live_flush.ALL
+    if args.spu_vivos == "abi-auto":   # só nos jobs; por função, "tudo" onde quem chama lê um volátil depois
+        return spu_live_flush.process(texto, auto_abi=jobs)[0]
     return spu_live_flush.process(texto, ret)[0]
 
 
@@ -752,7 +757,7 @@ def main() -> int:
                          "depois de rótulos e cópias, quando todo caminho o traz de outra operação de float; -2%% por job EDGE)")
     ap.add_argument("--sem-cadeias", action="store_true",
                     help="limitar a ±FLT_MAX também os resultados de float que só alimentam outra operação de float")
-    ap.add_argument("--spu-vivos", choices=["nao", "seguro", "abi", "abi-jobs"], default="seguro",
+    ap.add_argument("--spu-vivos", choices=["nao", "seguro", "abi", "abi-jobs", "abi-auto"], default="seguro",
                     help="gravar de volta só os registradores SPU vivos nas saídas das funções (spu_live_flush.py)")
     ap.add_argument("--fundir-trechos", type=int, default=4, help="quantos trechos seguintes fundir no máximo")
     ap.add_argument("--spu-pgo", default="",
