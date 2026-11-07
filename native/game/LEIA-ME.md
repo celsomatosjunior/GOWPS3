@@ -770,6 +770,20 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
   a lista toda em zero da travada rara. Agora são 16 `vm_write64(ea + k, 0)` (caminho rápido em linha sem reserva).
   O jogo tem 4 (`ppu_recomp_073.cpp`, 0x2E9290/0x2E98A0/0x2E98E0). 100 inicializações de 55 s: **0 travadas** (antes
   ~1 em 50-70; 100 limpas por acaso teriam ~19% de chance). Não prova, mas fica no padrão.
+- **Limites do float aproximado (07/11): o custo aparente era falso.** Builds de estudo (`spu_helpers.h`,
+  `-DSPU_AX_TESTE_SEMCLAMP/SEMAXI/SEMRES=1` via `--spu-opt=`): sem nenhum limite ou sem os das entradas (`SPU_AXI`)
+  o us/job(60s) cai de ~37 para ~31,7 e a mediana sobe a ~23 q/s, **mas a fase fica amarela** (NaN; quadro 9600 em
+  `quadros_semaxi`): o EDGE usa float sobre máscaras inteiras (0xFFFFFFFF, resultados de comparação; p.ex. `fnms`
+  na 0xFA78) e, sem o limite, joga fora trabalho de verdade. Sem os limites dos resultados: pior (39,7).
+  - `-DSPU_AX_TESTE_CONTA=1` (conta os operandos que o limite muda, por linha; `spu__axi_hit` em spu_coherency.c):
+    ~21 milhões em 192 pontos numa execução (EDGE 0x14561 linha da 0xFA78 com as 4 faixas, 6 milhões). Esses
+    builds travam a abertura sempre aos ~13 s, com a assinatura da travada rara (também com o dcbz corrigido):
+    a travada é uma corrida que certas mudanças de tempo tornam determinística.
+  - `spu_float_inputs.py`: `and`/`andc` com um operando na faixa e constantes `il/ilh/ilhu/fsmbi` sem expoente
+    255 passam a contar como "na faixa" (exato): limites do EDGE 3.802 -> 3.473; A/B neutro (37,6/37,9 contra
+    38,4); fica no padrão. `--float-ls` (estudo, desligado): leituras da LS e movimentos de palavras
+    (`shufb/selb/rot*`) marcados `SPU_AXL` (assumidos na faixa; `-DSPU_AXL_NOCLAMP=1` tira o limite): 1.560 a
+    menos e nenhum ganho (37,7/37,9). Conclusão: os limites não são o gargalo.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos

@@ -356,7 +356,7 @@ def add_spu_jobs(args, proj: Path, cm: Path):
                 texto = inline_fallthrough(texto, max_lines=args.fundir_linhas, max_depth=args.fundir_trechos)[0]
             texto = localize_source(texto, max_lines=args.fundir_linhas + 100)
             if args.spu_float == "aprox":   # operandos de float a limitar (SPU_AX_CLAMP, ver spu_simd)
-                texto = mark_float_inputs(texto, chains=not args.sem_cadeias, flow=args.fluxo_float)[0]
+                texto = mark_float_inputs(texto, chains=not args.sem_cadeias, flow=args.fluxo_float, ls_assumed=args.float_ls)[0]
             texto = spu_vivos(args, texto, jobs=True, nome=c.parent.name)
             alvo = d / "spu_recomp.c"
             if not alvo.is_file() or alvo.read_text(encoding="utf-8") != texto:
@@ -392,7 +392,7 @@ def spu_dir_projeto(args, proj: Path) -> Path:
             texto = inline_fallthrough(texto, max_lines=args.fundir_linhas, max_depth=args.fundir_trechos)[0]
         texto = localize_source(texto, max_lines=args.fundir_linhas + 100)
         if args.spu_float == "aprox":
-            texto = mark_float_inputs(texto, chains=not args.sem_cadeias, flow=args.fluxo_float)[0]
+            texto = mark_float_inputs(texto, chains=not args.sem_cadeias, flow=args.fluxo_float, ls_assumed=args.float_ls)[0]
         texto = spu_vivos(args, texto, nome=c.parent.name)
         c.write_text(texto, encoding="utf-8")
     return destino
@@ -752,6 +752,9 @@ def main() -> int:
                     help="pasta com ganchos.json: chamadas nativas inseridas em funções SPU traduzidas (só local; "
                          "padrão: <trabalho>/edge_nativo, quando existe)")
     ap.add_argument("--sem-ganchos", action="store_true", help="não aplicar os ganchos nativos")
+    ap.add_argument("--float-ls", action="store_true",
+                    help="operando de float que vem direto de uma leitura da LS marcado SPU_AXL (em vez de SPU_AXI); "
+                         "com -DSPU_AXL_NOCLAMP=1 nas fontes SPU ele fica sem o limite (estudo)")
     ap.add_argument("--sem-fluxo-float", dest="fluxo_float", action="store_false",
                     help="sem o mark_body_flow do spu_float_inputs (padrão: um operando de float fica sem SPU_AXI também "
                          "depois de rótulos e cópias, quando todo caminho o traz de outra operação de float; -2%% por job EDGE)")

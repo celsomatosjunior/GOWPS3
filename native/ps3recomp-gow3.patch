@@ -2230,6 +2230,53 @@ index 5fc50208..34195037 100644
      /* Synthetic HLE tasks have no resident taskset policy at 0xA70. Real
       * tasksets use the SAME syscall address, so the API table alone is not
       * evidence that this is an HLE context. LLE tasks must enter Sony's policy
+diff --git a/runtime/spu/spu_coherency.c b/runtime/spu/spu_coherency.c
+index ed2bcf58..54bca2f6 100644
+--- a/runtime/spu/spu_coherency.c
++++ b/runtime/spu/spu_coherency.c
+@@ -398,3 +398,42 @@ void spu_coh_notify_write(uint32_t ea)
+ #ifdef __cplusplus
+ }
+ #endif
++
++/* SPU_AX_TESTE_CONTA (measurement only, spu_helpers.h): an operand clamp that changed a value (a lane with
++ * biased exponent 255), counted per line of the translated source; every 2^14 hits the top sites. */
++#include <string.h>
++#if defined(_MSC_VER)
++#include <intrin.h>
++#endif
++static struct { const char* f; int line; long long n; unsigned lanes; } s_axi[8192];
++static volatile long s_axi_lock;
++static long long s_axi_total;
++void spu__axi_hit(const char* file, int line, uint32_t lanes)
++{
++#if defined(_MSC_VER)
++    while (_InterlockedExchange(&s_axi_lock, 1)) _mm_pause();
++#endif
++    unsigned h = ((unsigned)(uintptr_t)file * 2654435761u ^ (unsigned)line * 40503u) & 8191u;
++    for (int k = 0; k < 8192; k++, h = (h + 1) & 8191u) {
++        if (!s_axi[h].f) { s_axi[h].f = file; s_axi[h].line = line; }
++        if (s_axi[h].f == file && s_axi[h].line == line) { s_axi[h].n++; s_axi[h].lanes |= lanes; break; }
++    }
++    if ((++s_axi_total & 1048575) == 1 || s_axi_total == 200000) {
++        int idx[15]; int ni = 0;
++        for (int i = 0; i < 8192; i++) if (s_axi[i].f) {
++            int j = ni < 15 ? ni++ : 14;
++            if (j == 14 && ni == 15 && s_axi[idx[14]].n >= s_axi[i].n) continue;
++            idx[j] = i;
++            while (j > 0 && s_axi[idx[j]].n > s_axi[idx[j-1]].n) { int x = idx[j]; idx[j] = idx[j-1]; idx[j-1] = x; j--; }
++        }
++        int sites = 0; for (int i = 0; i < 8192; i++) if (s_axi[i].f) sites++;
++        fprintf(stderr, "[axi-hit] total=%lld sites=%d\n", s_axi_total, sites);
++        for (int i = 0; i < ni; i++) {
++            const char* b = strstr(s_axi[idx[i]].f, "jobmod_"); if (!b) b = s_axi[idx[i]].f;
++            fprintf(stderr, "[axi-hit]   %lld %s:%d lanes=%X\n", s_axi[idx[i]].n, b, s_axi[idx[i]].line, s_axi[idx[i]].lanes);
++        }
++    }
++#if defined(_MSC_VER)
++    _InterlockedExchange(&s_axi_lock, 0);
++#endif
++}
 diff --git a/runtime/spu/spu_context.h b/runtime/spu/spu_context.h
 index c5ccbec7..b1615e48 100644
 --- a/runtime/spu/spu_context.h
@@ -2538,7 +2585,7 @@ index 49bc2b94..53fb66b4 100644
  #include "spu_lockstep.h"
  #include <setjmp.h>
 diff --git a/runtime/spu/spu_helpers.h b/runtime/spu/spu_helpers.h
-index f04fda63..07e58a93 100644
+index f04fda63..adfd39ea 100644
 --- a/runtime/spu/spu_helpers.h
 +++ b/runtime/spu/spu_helpers.h
 @@ -467,18 +467,34 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) { return spu_selb_ref(a, b,
@@ -2586,7 +2633,7 @@ index f04fda63..07e58a93 100644
      u128 out; memcpy(&out, &r, 16); return out;
  }
  #elif defined(__ARM_NEON)
-@@ -787,7 +803,122 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
+@@ -787,7 +803,148 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
  SPU__SF_V3(spu__fma_s,  spu__fma_any(x, y, z, 0, 0))
  SPU__SF_V3(spu__fms_s,  spu__fma_any(x, y, z, 0, 0x80000000u))
  SPU__SF_V3(spu__fnms_s, spu__fma_any(x, y, z, 0x80000000u, 0))
@@ -2671,10 +2718,36 @@ index f04fda63..07e58a93 100644
 + * half of the hottest EDGE loop (57 -> ~30 ns an iteration, tests/bench-like harness). Needs sources
 + * marked by spu_float_inputs.py: unmarked, operands are not clamped at all. */
 +SPU__AX_INLINE __m128 spu__ax_cl(__m128 r) {
++#if defined(SPU_AX_TESTE_SEMCLAMP) && SPU_AX_TESTE_SEMCLAMP
++    return r;   /* measurement only: the clamps' cost, results wrong */
++#endif
 +    return _mm_min_ps(_mm_max_ps(r, _mm_set1_ps(-0x1.fffffep127f)), _mm_set1_ps(0x1.fffffep127f));
 +}
++#if defined(SPU_AX_TESTE_SEMRES) && SPU_AX_TESTE_SEMRES   /* measurement only: no result clamps */
++SPU__AX_INLINE u128 spu__ax_clo(__m128 r) { u128 o; _mm_storeu_ps(o._f32, r); return o; }
++SPU__AX_INLINE u128 SPU_AXI(u128 x) { u128 o; _mm_storeu_ps(o._f32, spu__ax_cl(spu__ax_raw(x))); return o; }
++#else
 +SPU__AX_INLINE u128 spu__ax_clo(__m128 r) { u128 o; _mm_storeu_ps(o._f32, spu__ax_cl(r)); return o; }
++#if defined(SPU_AX_TESTE_SEMAXI) && SPU_AX_TESTE_SEMAXI   /* measurement only: no operand clamps */
++SPU__AX_INLINE u128 SPU_AXI(u128 x) { return x; }
++#elif defined(SPU_AX_TESTE_CONTA) && SPU_AX_TESTE_CONTA
++/* measurement only: count the operand clamps that change a value (a lane with biased exponent 255), per
++ * source line of the translated file, printed every 2^14 hits */
++#include <stdio.h>
++void spu__axi_hit(const char* file, int line, uint32_t lanes);
++static __attribute__((noinline, cold)) void spu__axi_hit_l(const char* file, int line, uint32_t lanes) { spu__axi_hit(file, line, lanes); }
++SPU__AX_INLINE u128 spu__axi_c(u128 x, const char* file, int line) {
++    const __m128i e = _mm_and_si128(_mm_loadu_si128((const __m128i*)&x), _mm_set1_epi32(0x7F800000));
++    const int m = _mm_movemask_ps(_mm_castsi128_ps(_mm_cmpeq_epi32(e, _mm_set1_epi32(0x7F800000))));
++    if (__builtin_expect(m != 0, 0)) spu__axi_hit_l(file, line, (uint32_t)m);
++    return spu__ax_clo(spu__ax_raw(x));
++}
++#define SPU_AXI(x) spu__axi_c((x), __FILE__, __LINE__)
++#define SPU_AXL(x) spu__axi_c((x), "AXL", __LINE__)
++#else
 +SPU__AX_INLINE u128 SPU_AXI(u128 x) { return spu__ax_clo(spu__ax_raw(x)); }
++#endif
++#endif
 +/* name##_u: the same op without the clamp, for a result tools/spu_float_inputs.py (unclamp_chains) found
 + * is only ever read by another of these ops, which clamps its own result. */
 +SPU__AX_INLINE u128 spu__ax_uo(__m128 r) { u128 o; _mm_storeu_ps(o._f32, r); return o; }
@@ -2710,7 +2783,7 @@ index f04fda63..07e58a93 100644
  /* Four lanes at a time, every lane exact, with no FPCR change. The host rounds to nearest (the
   * thread's default FPCR: RN, no flush-to-zero -- writing FPCR per op serializes, ~17 ns on an
   * M4); the SPU truncates. A result rounded to nearest is either the truncated one or one step
-@@ -1575,7 +1706,7 @@ SPU__XE_INLINE __m128i spu__xe_narrow(__m256i v) {
+@@ -1575,7 +1732,7 @@ SPU__XE_INLINE __m128i spu__xe_narrow(__m256i v) {
  /* (2^13 | base) * 2^19 - step * y is 2^32 + d with d = base * 2^19 - step * y (base < 2^13,
   * step * y < 2^29): the magnitude is >= 2^32 exactly when base * 2^19 >= step * y, and its low
   * 32 bits are d mod 2^32 either way, so 32-bit lanes suffice. */
@@ -2719,7 +2792,7 @@ index f04fda63..07e58a93 100644
      const __m128i est = spu__xe_ld(b), y = _mm_and_si128(spu__xe_ld(a), _mm_set1_epi32(0x7FFFF));
      const __m128i exp = _mm_and_si128(_mm_srli_epi32(est, 23), _mm_set1_epi32(0xFF));
      const __m128i b19 = _mm_slli_epi32(_mm_and_si128(_mm_srli_epi32(est, 10), _mm_set1_epi32(0x1FFF)), 19);
-@@ -1603,7 +1734,7 @@ SPU__XE_INLINE __m128i spu__xe_lut(const uint32_t* tbl, int n, __m128i idx) {
+@@ -1603,7 +1760,7 @@ SPU__XE_INLINE __m128i spu__xe_lut(const uint32_t* tbl, int n, __m128i idx) {
      }
      return r;
  }
@@ -2728,7 +2801,7 @@ index f04fda63..07e58a93 100644
      const __m128i x = spu__xe_ld(a);
      const __m128i exp = _mm_and_si128(_mm_srli_epi32(x, 23), _mm_set1_epi32(0xFF));
      const __m128i idx = _mm_and_si128(_mm_srli_epi32(x, 18), _mm_set1_epi32(0x1F));
-@@ -1614,7 +1745,7 @@ SPU__XE_INLINE u128 spu_frest(u128 a) {
+@@ -1614,7 +1771,7 @@ SPU__XE_INLINE u128 spu_frest(u128 a) {
      return spu__xe_st(_mm_or_si128(_mm_or_si128(_mm_and_si128(x, _mm_set1_epi32((int)0x80000000u)),
                                                  _mm_slli_epi32(rexp, 23)), frac));
  }
@@ -2737,7 +2810,7 @@ index f04fda63..07e58a93 100644
      const __m128i x = spu__xe_ld(a);
      const __m128i exp = _mm_and_si128(_mm_srli_epi32(x, 23), _mm_set1_epi32(0xFF));
      const __m128i idx = _mm_and_si128(_mm_srli_epi32(x, 18), _mm_set1_epi32(0x3F));
-@@ -1673,6 +1804,38 @@ SPU__XE_INLINE u128 spu_cuflt(u128 a, int i8) {
+@@ -1673,6 +1830,38 @@ SPU__XE_INLINE u128 spu_cuflt(u128 a, int i8) {
      const __m128i nz = _mm_xor_si128(_mm_cmpeq_epi32(v, _mm_setzero_si128()), _mm_set1_epi32(-1));
      return spu__xe_st(spu__xe_cxflt(d, _mm_setzero_si128(), nz, i8));
  }
@@ -2776,10 +2849,19 @@ index f04fda63..07e58a93 100644
  #else
  static inline u128 spu_fi(u128 a, u128 b)      { return spu_fi_ref(a, b); }
  static inline u128 spu_frest(u128 a)           { return spu_frest_ref(a); }
-@@ -2330,4 +2493,38 @@ static inline u128 spu_fsmh(u128 a) { return spu_fsmh_ref(a); }
+@@ -2330,4 +2519,47 @@ static inline u128 spu_fsmh(u128 a) { return spu_fsmh_ref(a); }
  static inline u128 spu_fsmb(u128 a) { return spu_fsmb_ref(a); }
  #endif
  
++/* SPU_AXL(x): spu_float_inputs.py --ls-assumed marks an operand straight from an LS load with it ("assumed
++ * in range"). By default it is the clamp; SPU_AXL_NOCLAMP=1 drops it. */
++#ifndef SPU_AXL
++#if defined(SPU_AXL_NOCLAMP) && SPU_AXL_NOCLAMP
++#define SPU_AXL(x) (x)
++#else
++#define SPU_AXL(x) SPU_AXI(x)
++#endif
++#endif
 +/* Operand marks of tools/spu_float_inputs.py: a clamp in SPU_AX_CLAMP, nothing otherwise. */
 +#if !(defined(SPU_FLOAT_APPROX) && defined(SPU_AX_CLAMP) && SPU_AX_CLAMP && defined(__FMA__) && !defined(SPU_SCALAR_HELPERS))
 +#define SPU_AXI(x) (x)
@@ -3187,10 +3269,10 @@ index a657ba61..66c92621 100644
              # .got + 0x8000 (the ELFv1 TOC bias). Without the right TOC every
 diff --git a/tools/spu_float_inputs.py b/tools/spu_float_inputs.py
 new file mode 100644
-index 00000000..14787c87
+index 00000000..b2047997
 --- /dev/null
 +++ b/tools/spu_float_inputs.py
-@@ -0,0 +1,251 @@
+@@ -0,0 +1,302 @@
 +#!/usr/bin/env python3
 +"""Mark the float-op operands that need the extended-range clamp (spu_helpers.h SPU_AX_CLAMP).
 +
@@ -3258,7 +3340,7 @@ index 00000000..14787c87
 +
 +
 +_LOCAL = re.compile(r"\br_(\d+)\b")
-+_LOCAL_FLOAT = re.compile(rf"^(\s*)r_(\d+) = ({'|'.join(_FOPS)})\(((?:SPU_AXI\()?r_\d+\)?(?:, (?:SPU_AXI\()?r_\d+\)?)*)\);\s*$")
++_LOCAL_FLOAT = re.compile(rf"^(\s*)r_(\d+) = ({'|'.join(_FOPS)})\(((?:SPU_AX[IL]\()?r_\d+\)?(?:, (?:SPU_AX[IL]\()?r_\d+\)?)*)\);\s*$")
 +_LOCAL_ASSIGN = re.compile(r"^\s*r_(\d+) = [^;{}]*;\s*$")
 +_GOTO = re.compile(r"^goto (\w+);$")
 +_IFGOTO_L = re.compile(r"^if \(([^{};]*)\) goto (\w+);$")
@@ -3341,7 +3423,29 @@ index 00000000..14787c87
 +_NOFALL = re.compile(r"^(?:goto \w+;|SPU_RET(?:_REG)?\(.*\);|\{ SPU_DIRECT\(.*\); \}|SPU_DIRECT\(.*\);|return;)$")
 +
 +
-+def mark_body_flow(lines: list[str]) -> tuple[list[str], int]:
++_CONST = re.compile(r"^\s*r_(\d+) = spu_(il|ilh|ilhu|fsmbi)\((-?(?:0x)?[0-9A-Fa-f]+)\);\s*$")
++_CLEARS = re.compile(r"^\s*r_(\d+) = spu_(and|andc)\(r_(\d+), r_(\d+)\);\s*$")
++_MOVES = re.compile(r"^\s*r_(\d+) = spu_(shufb|selb|rotqbyi|shlqbyi|rotqby|shlqby|rotqbybi|shlqbybi)\(r_(\d+(?:, r_\d+)*)(?:, -?\d+)?\);\s*$")
++
++
++def _const_in_range(op: str, v: str) -> bool:
++    """The constant's words have a biased exponent below 255 (in range for the float ops)."""
++    x = int(v, 0)
++    if op == "il":
++        w = x & 0xFFFFFFFF
++    elif op == "ilh":
++        w = ((x & 0xFFFF) << 16) | (x & 0xFFFF)
++    elif op == "ilhu":
++        w = (x & 0xFFFF) << 16
++    else:   # fsmbi: a byte of 0xFF per mask bit; a word is out of range only with its two high bytes 0xFF
++        return all(((x >> (14 - 4 * k)) & 3) != 3 for k in range(4))
++    return ((w >> 23) & 0xFF) != 0xFF
++
++
++_LSLOAD = re.compile(r"^\s*r_(\d+) = SPU_LSR\(ctx, _ls, [^;]*\);\s*$")
++
++
++def mark_body_flow(lines: list[str], ls_assumed: bool = False) -> tuple[list[str], int]:
 +    """mark_body for a function on register locals (spu_reg_locals.py), across labels and copies: a register
 +    is in range at a line when it is on every path from the entry (forward dataflow, meet = intersection).
 +    A local only changes where the C source assigns it, so a call, store-back or block line only forgets the
@@ -3364,6 +3468,21 @@ index 00000000..14787c87
 +        m = _SANE_ASSIGN.match(raw)
 +        if m and m.group(1).startswith("r_"):
 +            info.append(("f", int(m.group(1)[2:]), None)); continue
++        m = _LSLOAD.match(raw)
++        if m and ls_assumed:
++            info.append(("l", int(m.group(1)), None)); continue
++        m = _CONST.match(raw)
++        if m:
++            info.append(("f" if _const_in_range(m.group(2), m.group(3)) else "k",
++                         int(m.group(1)) if _const_in_range(m.group(2), m.group(3)) else (int(m.group(1)),), None)); continue
++        m = _CLEARS.match(raw)
++        if m:   # and / andc only clear bits of their first operand (and also of the second): exact
++            d, op, a, b = int(m.group(1)), m.group(2), int(m.group(3)), int(m.group(4))
++            info.append(("a", d, (a, b) if op == "and" else (a,))); continue
++        m = _MOVES.match(raw)
++        if m and ls_assumed:   # moves words of in-range inputs around: assumed (the control is not known)
++            d = int(m.group(1)); srcs = tuple(int(x) for x in m.group(3).split(", r_"))
++            info.append(("m", d, srcs[:2] if m.group(2) in ("shufb", "selb") else srcs[:1])); continue
 +        info.append(("k", tuple(int(x) for x in _ASSIGNED.findall(s)), None))
 +    succ = []
 +    for k, raw in enumerate(lines):
@@ -3371,27 +3490,39 @@ index 00000000..14787c87
 +        tg = [labels[g] for g in _GOTO_ANY.findall(s) if g in labels]
 +        fall = not _NOFALL.match(s) and k + 1 < n
 +        succ.append(tg + ([k + 1] if fall else []))
++    # The state is a pair: (in range on every path, in range or straight from an LS load on every path).
++    # The second set only matters with ls_assumed: an operand in it but not in the first gets SPU_AXL(), the
++    # mark of "a value loaded from LS, assumed in range" (spu_helpers.h decides what it does).
 +    full = None                                   # "top" (not reached yet)
 +    state_in = [full] * n
-+    state_in[0] = frozenset()
++    state_in[0] = (frozenset(), frozenset())
 +    work = [0]
 +
-+    def transfer(k, st):
-+        kind, d, src = info[k]
++    def one(st, kind, d, src, ls):
 +        if kind == "f":
 +            return st | {d}
++        if kind == "l":
++            return (st | {d}) if ls else (st - {d})
++        if kind == "a":
++            return (st | {d}) if any(x in st for x in src) else (st - {d})
++        if kind == "m":
++            return (st | {d}) if ls and all(x in st for x in src) else (st - {d})
 +        if kind == "c":
 +            return (st | {d}) if src in st else (st - {d})
 +        return st - set(d) if d else st
++
++    def transfer(k, st):
++        kind, d, src = info[k]
++        return (one(st[0], kind, d, src, False), one(st[1], kind, d, src, True))
 +
 +    while work:
 +        k = work.pop()
 +        out = transfer(k, state_in[k])
 +        for j in succ[k]:
 +            old = state_in[j]
-+            new = out if old is None else (old & out)
++            new = out if old is None else (old[0] & out[0], old[1] & out[1])
 +            if old is None or new != old:
-+                state_in[j] = frozenset(new)
++                state_in[j] = (frozenset(new[0]), frozenset(new[1]))
 +                work.append(j)
 +    res, wrapped = [], 0
 +    for k, raw in enumerate(lines):
@@ -3399,18 +3530,20 @@ index 00000000..14787c87
 +        if not m:
 +            res.append(raw); continue
 +        ind, dst, op, args = m.groups()
-+        st = state_in[k] or frozenset()
++        st, stl = state_in[k] or (frozenset(), frozenset())
 +        new = []
 +        for a in args.split(", "):
 +            if a.startswith("r_") and int(a[2:]) in st:
 +                new.append(a)
++            elif a.startswith("r_") and int(a[2:]) in stl:
++                new.append(f"SPU_AXL({a})")
 +            else:
 +                new.append(f"SPU_AXI({a})"); wrapped += 1
 +        res.append(f"{ind}{dst} = {op}({', '.join(new)});")
 +    return res, wrapped
 +
 +
-+def mark_float_inputs(src: str, chains: bool = False, flow: bool = False) -> tuple[str, int]:
++def mark_float_inputs(src: str, chains: bool = False, flow: bool = False, ls_assumed: bool = False) -> tuple[str, int]:
 +    """Whole translation unit: returns the rewritten source and how many operands were wrapped.
 +    chains=True also applies unclamp_chains to every function. (Leaving every result unclamped, only the
 +    SPU_AXI operands clamped, was measured slower in God of War III: 44.7 us per EDGE job against 42.3.)"""
@@ -3424,7 +3557,7 @@ index 00000000..14787c87
 +                j += 1
 +            body = lines[i + 1:j]
 +            if flow and body and "u128 r_" in body[0]:
-+                body, n = mark_body_flow(body)
++                body, n = mark_body_flow(body, ls_assumed)
 +            else:
 +                body, n = mark_body(body)
 +            if chains:
