@@ -836,7 +836,7 @@ index 07a3d2e4..42cb7c8d 100644
                                        const char* name);
  
 diff --git a/libs/video/cellGcmSys.c b/libs/video/cellGcmSys.c
-index 298ee7de..31e25b87 100644
+index 298ee7de..5044c224 100644
 --- a/libs/video/cellGcmSys.c
 +++ b/libs/video/cellGcmSys.c
 @@ -409,6 +409,23 @@ static int s_gcm_syscall_mode = 0;
@@ -921,7 +921,7 @@ index 298ee7de..31e25b87 100644
      /* GCM_CTXDBG=1: which context the title is actually driving. Ours is written
       * once at init; if the title repoints gCellGcmCurrentContext at a buffer of
       * its own, every field below moves with it and the FIFO the runtime walks
-@@ -2183,8 +2230,25 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2183,8 +2230,39 @@ static void gcm_rsx_process_fifo_unlocked(void)
       * short of `put` every tick is the signature of a FIFO that can never
       * catch up, and the reason is the whole diagnosis. */
      const char* why = "caught-up";
@@ -935,6 +935,17 @@ index 298ee7de..31e25b87 100644
 +    static int s_flip_sync_tail = -1;
 +    if (s_flip_sync_tail < 0) { const char* e = getenv("GCM_FLIP_SYNC_TAIL"); s_flip_sync_tail = e ? atoi(e) : 0; }
 +    int after_flip = 0;
++    /* GCM_SYNC_LINGER_MS=<ms> (with GCM_FLIP_SYNC_TAIL): `get` stays where the post-flip sync tail ended for
++     * that long before the walker goes on. A real RSX takes time between there and the next frame, and a
++     * guest polling every 30 us for `get` EQUAL to that point sees it; this walker, done in microseconds,
++     * moves `get` past before such a poller looks. */
++    static int s_linger_ms = -1;
++    if (s_linger_ms < 0) { const char* e = getenv("GCM_SYNC_LINGER_MS"); s_linger_ms = e ? atoi(e) : 0; }
++    static u32 s_linger_off = 0xFFFFFFFFu; static unsigned long long s_linger_until = 0;
++    extern unsigned long long ps3_ms_now(void);
++    if (s_linger_ms > 0 && s_fifo_getoff == s_linger_off && ps3_ms_now() < s_linger_until) {
++        why = "linger"; budget = 0;                    /* hold `get` this pass */
++    }
      while (s_fifo_getoff != put && budget-- > 0) {
          u32 ea = gcm_io2ea(s_fifo_getoff);
 +        if (after_flip && ea) {
@@ -942,12 +953,15 @@ index 298ee7de..31e25b87 100644
 +            const u32 hm = hw & 0x1FFCu, hsub = (hw >> 13) & 7u;
 +            const int sync = hw == 0 || ((hw & 0xE0030003u) == 0 && hsub == 0 &&
 +                                         (hm == 0x64u || hm == 0x68u || hm == 0x6Cu || hm == 0x50u));
-+            if (!sync) { why = "flip"; break; }
++            if (!sync) {
++                if (s_linger_ms > 0) { s_linger_off = s_fifo_getoff; s_linger_until = ps3_ms_now() + (unsigned)s_linger_ms; }
++                why = "flip"; break;
++            }
 +        }
          if (!ea) {
              /* get is sitting on an IO offset with no mapping -- the title
               * branched into a region and then unmapped it, or the offset was
-@@ -2328,8 +2392,10 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2328,8 +2406,10 @@ static void gcm_rsx_process_fifo_unlocked(void)
               * 3 MB ring at boot, wraps, and a walker stopping at every flip
               * then crawled ~1 KB a tick while the title wrote over the
               * commands ahead of it. */
@@ -960,7 +974,7 @@ index 298ee7de..31e25b87 100644
              continue;
          }
  
-@@ -2757,6 +2823,36 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2757,6 +2837,36 @@ static void gcm_rsx_process_fifo_unlocked(void)
       * ring start, and the resync dropped them: inFAMOUS 2 stopped presenting
       * for good that way in about one New Marais run in five ("stuck-get" at a
       * self-jump with no "jump-park" before it). */
@@ -997,10 +1011,14 @@ index 298ee7de..31e25b87 100644
      { static u32 last = 0xFFFFFFFFu; static int stuck = 0;
        if (s_sema_blocked_pass || s_park_pass) {
            stuck = 0; last = s_fifo_getoff; s_sema_blocked_pass = 0; s_park_pass = 0; }
-@@ -2870,6 +2966,18 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2870,6 +2980,22 @@ static void gcm_rsx_process_fifo_unlocked(void)
      }
  
      g_gcm_fifo_drained_ea = gcm_io2ea(s_fifo_getoff);
++    /* the post-flip sync tail ran out at `put`: hold `get` there too (GCM_SYNC_LINGER_MS) */
++    if (s_linger_ms > 0 && after_flip && s_fifo_getoff == put && s_linger_off != s_fifo_getoff) {
++        s_linger_off = s_fifo_getoff; s_linger_until = ps3_ms_now() + (unsigned)s_linger_ms;
++    }
 +    /* GCM_STOPWHY=1: a pass that ends short of `put` says why (park, semaphore, other) and the words
 +     * where it stopped, at most once per distinct stop position, 64 lines in all. */
 +    { static int sw = -1; static u32 last_at = 0xFFFFFFFFu; static int nsw = 0;
@@ -1016,7 +1034,7 @@ index 298ee7de..31e25b87 100644
      /* GCM_GET_EQ_PUT=1: publish `get` as having reached `put` rather than where
       * the walker actually is. A probe, not a fix -- it removes the back-pressure
       * a title uses to avoid overwriting commands the GPU has not read. It exists
-@@ -3303,6 +3411,7 @@ static void gcm_publish_offset_tables(void)
+@@ -3303,6 +3429,7 @@ static void gcm_publish_offset_tables(void)
          vm_write16(GCM_OFFSET_TABLE_IO_ADDR + i * 2, s_io_address_table[i]);
          vm_write16(GCM_OFFSET_TABLE_EA_ADDR + i * 2, s_ea_address_table[i]);
      }
@@ -1024,7 +1042,7 @@ index 298ee7de..31e25b87 100644
  }
  
  s32 cellGcmGetOffsetTable(CellGcmOffsetTable* table)
-@@ -4433,6 +4542,9 @@ void cellGcm_syscall_iounmap(u32 io, u32 size)
+@@ -4433,6 +4560,9 @@ void cellGcm_syscall_iounmap(u32 io, u32 size)
   * from a stale offset through whatever the driver has since overwritten. */
  void cellGcm_syscall_set_fifo(u32 put, u32 get)
  {

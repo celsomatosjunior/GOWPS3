@@ -811,6 +811,11 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
      GET no próprio comando. Mas o label 0x10 estava em 0 nas espiadas: falta pegar quem grava esse label.
   7. Build padrão atual (v20 + dcbz coerente + limites exatos de and/constantes): **50 inicializações, 0 travadas**
      (somadas às 100 do dcbz: 0 em 150; antes ~1 em 50-70). A trava ainda existe nos builds com tempo alterado.
+  8. `GCM_SYNC_LINGER_MS=<ms>` (novo, desligado; com `GCM_FLIP_SYNC_TAIL=1`): o GET fica parado N ms no fim da
+     cauda de sincronização depois do flip. Com 2 ms o build de teste ainda trava (3 de 3). **Correção do passo 3**:
+     como a sondagem da 0x1E5894 também roda a abertura inteira no build normal, ela não é o que segura o "ocupado"
+     de 0x588E51; a tid 11 o zera por outro caminho (0x1E65C8, lr 0x1E69AC). Próximo passo: seguir a 0x1E65C8 no
+     build normal (o que acontece antes do `stb 0` em 0x1E69AC) e ver qual desses passos não chega no que trava.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
