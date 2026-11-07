@@ -153,7 +153,7 @@ index 7e222c92..33b21296 100644
  }
  
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
-index 82ea66c6..04c1205f 100644
+index 82ea66c6..0efbae8f 100644
 --- a/libs/spurs/cellSpurs.c
 +++ b/libs/spurs/cellSpurs.c
 @@ -16,6 +16,7 @@
@@ -182,7 +182,7 @@ index 82ea66c6..04c1205f 100644
  };
  static struct SpursInst {
      u32 ea, nspus;
-@@ -492,6 +497,39 @@ static void spurs_commit_hook(uint32_t line)
+@@ -492,6 +497,50 @@ static void spurs_commit_hook(uint32_t line)
  }
  static SRWLOCK s_workload_registry_lock = SRWLOCK_INIT;
  
@@ -195,6 +195,17 @@ index 82ea66c6..04c1205f 100644
 +    static volatile long n = 0;
 +    if (InterlockedIncrement(&n) > 3) return;
 +    fprintf(stderr, "[spurs-dump] #%ld t=%llu ms\n", n, (unsigned long long)GetTickCount64());
++    /* PS3_PEEK=<hexEA>[,<hexEA>...]: 16 guest bytes at each, read without touching the watch hooks --
++     * the state a stall is waiting on, without the timing change a read/write watch brings. */
++    { const char* e = getenv("PS3_PEEK");
++      while (e && *e) {
++          char* end; const u32 a = (u32)strtoul(e, &end, 16);
++          if (end == e) break;
++          fprintf(stderr, "[spurs-dump] peek 0x%08X:", a);
++          for (u32 k = 0; k < 16; k++) fprintf(stderr, " %02X", vm_base[(u32)(a + k)]);
++          fprintf(stderr, "\n");
++          e = (*end == ',') ? end + 1 : end;
++      } }
 +    for (int i = 0; i < MAX_SPURS_INST; i++) {
 +        struct SpursInst* si = &s_inst[i];
 +        if (!si->ea || !si->kernel_live) continue;
@@ -222,7 +233,7 @@ index 82ea66c6..04c1205f 100644
  static s32 spurs_scheduler_start(struct SpursInst* si);
  static s32 spurs_scheduler_stop(struct SpursInst* si, u32 ea);
  static void spurs_scheduler_retire(u32 ea);
-@@ -560,6 +598,8 @@ static s32 spurs_initialize_common(u32 spurs_ea, u32 nspus, const char* prefix)
+@@ -560,6 +609,8 @@ static s32 spurs_initialize_common(u32 spurs_ea, u32 nspus, const char* prefix)
      memset(vm_base + spurs_ea, 0, SPURS_INST_SIZE);
      *(vm_base + spurs_ea + SPURS_NSPUS) = (u8)si->nspus;
      vm_write64(spurs_ea + SPURS_WKL_FLAG, 0xFFFFFFFFFFFFFFFFull); /* no receiver */
@@ -231,7 +242,7 @@ index 82ea66c6..04c1205f 100644
  
      s32 start_rc = spurs_scheduler_start(si);
      AcquireSRWLockExclusive(&si->lock);
-@@ -874,6 +914,40 @@ static int spurs_guest_range_valid(u32 ea, u32 bytes)
+@@ -874,6 +925,40 @@ static int spurs_guest_range_valid(u32 ea, u32 bytes)
   * Taskset
   * =====================================================================*/
  
@@ -272,7 +283,7 @@ index 82ea66c6..04c1205f 100644
  static s32 spurs_create_taskset(CellSpurs* spurs, CellSpursTaskset* taskset,
                                  u64 args, const u8* priority, u32 maxContention,
                                  u32 taskset_size)
-@@ -910,6 +984,7 @@ static s32 spurs_create_taskset(CellSpurs* spurs, CellSpursTaskset* taskset,
+@@ -910,6 +995,7 @@ static s32 spurs_create_taskset(CellSpurs* spurs, CellSpursTaskset* taskset,
      spurs_taskset_init(taskset_ea, spurs_ea, args, /*wid*/0,
                         taskset_size, /*evf1*/0, /*evf2*/0);
      g_ydkj_real_taskset_ea = taskset_ea;
@@ -280,7 +291,7 @@ index 82ea66c6..04c1205f 100644
  
      g_ydkj_real_spurs_ea = spurs_ea;   /* capture for the taskset-policy handoff (LS[0x1C0]) */
      printf("[cellSpurs] CreateTaskset() ea=0x%08X spurs=0x%08X (real BE layout)\n", taskset_ea, spurs_ea);
-@@ -937,6 +1012,84 @@ s32 cellSpursCreateTasksetWithAttribute(CellSpurs* spurs,
+@@ -937,6 +1023,84 @@ s32 cellSpursCreateTasksetWithAttribute(CellSpurs* spurs,
      return spurs_create_taskset(spurs, taskset, 0, NULL, 0, size);
  }
  
@@ -365,7 +376,7 @@ index 82ea66c6..04c1205f 100644
  s32 cellSpursDestroyTaskset(CellSpursTaskset* taskset)
  {
      taskset = GUEST_PTR(taskset, CellSpursTaskset*);
-@@ -1000,6 +1153,81 @@ s32 cellSpursTasksetAttributeSetName(CellSpursTasksetAttribute* attr,
+@@ -1000,6 +1164,81 @@ s32 cellSpursTasksetAttributeSetName(CellSpursTasksetAttribute* attr,
   * from an EA computed out of r3 = that argument (spu_0003 task main @0x17e70:
   * `wrch $ch18, f(r3.word3)`), so a zero argument makes it GET from EA 0 and
   * stall. lsPattern/argument arrive as guest EAs (generic adapter forwards r3..r10). */
@@ -447,7 +458,7 @@ index 82ea66c6..04c1205f 100644
  s32 cellSpursCreateTask(CellSpursTaskset* taskset, CellSpursTaskId* taskId,
                          void* elf, void* context, u32 sizeContext,
                          u32 lsPattern_ea, u32 argument_ea)
-@@ -1714,6 +1942,126 @@ static WklPm* spurs_resolve_pm(u32 wid)
+@@ -1714,6 +1953,126 @@ static WklPm* spurs_resolve_pm(u32 wid)
   * occupies only its own slot; a later runnable producer can use another slot.
   * Admission and lifecycle state are serialized per instance. Guest execution
   * never runs under that lock, and only a genuine return releases contention. */
@@ -574,7 +585,7 @@ index 82ea66c6..04c1205f 100644
  static DWORD WINAPI spurs_pm_worker(LPVOID p)
  {
      struct SpursPmSlot* slot = (struct SpursPmSlot*)p;
-@@ -1723,16 +2071,88 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
+@@ -1723,16 +2082,88 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
      { ULONG g = 256 * 1024; SetThreadStackGuarantee(&g); }
  #endif
      ps3_tprof_thread('S', (uint32_t)slot->spu_num);
@@ -667,7 +678,7 @@ index 82ea66c6..04c1205f 100644
          AcquireSRWLockExclusive(&si->lock);
          u32 wid = slot->wid;
          if (si->active[wid]) si->active[wid]--;
-@@ -1740,7 +2160,7 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
+@@ -1740,7 +2171,7 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
          vm_base[slot->ea + SPURS_WKL_CURCONT + wid] = si->active[wid];
          ef_line_end(slot->ea);
          if (polls) si->idle[wid] = 0;
@@ -676,7 +687,7 @@ index 82ea66c6..04c1205f 100644
          slot->busy = 0;
          WakeAllConditionVariable(&si->wake);
      }
-@@ -1767,7 +2187,23 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1767,7 +2198,23 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
          if (__atomic_exchange_n(&si->kick, 0, __ATOMIC_ACQ_REL)) {
              kick_pass = ++kick_run < 16;
          } else {
@@ -701,7 +712,7 @@ index 82ea66c6..04c1205f 100644
              /* This full pass reads the line after any commit that woke it. */
              (void)__atomic_exchange_n(&si->kick, 0, __ATOMIC_ACQ_REL);
          }
-@@ -1779,8 +2215,52 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1779,8 +2226,52 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
          if (!kick_pass) si->pass_no++;
          u32 enabled = vm_read32(ea + SPURS_WKL_ENABLED);
          for (u32 sn = 0; sn < si->nspus; sn++) {
@@ -754,7 +765,7 @@ index 82ea66c6..04c1205f 100644
              for (u32 checked = 0; checked < 16; checked++) {
                  u32 wid = si->cursor;
                  si->cursor = (wid + 1) & 15;
-@@ -1790,13 +2270,17 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1790,13 +2281,17 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                      continue;
                  if (!vm_read8(ea + SPURS_WKL_INFO1 + wid * SPURS_WKL_INFO_SZ + 0x18 + sn))
                      continue; /* priority zero makes this physical lane ineligible */
@@ -774,7 +785,7 @@ index 82ea66c6..04c1205f 100644
                  if (kicked) si->idle[wid] = 0;
                  if (!kicked && (kick_pass || (si->pass_no & ((1u << si->idle[wid]) - 1))))
                      continue;
-@@ -1806,7 +2290,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1806,7 +2301,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                  if (ready) vm_base[ea + SPURS_WKL_READY1 + wid] = (u8)(ready - 1);
                  if (signal & (0x8000u >> wid))
                      ef_w16(ea + SPURS_WKL_SIGNAL1, (u16)(signal & ~(0x8000u >> wid)));
@@ -794,7 +805,7 @@ index 82ea66c6..04c1205f 100644
                  slot->fn = pm->fn; slot->image_id = pm->image_id;
                  slot->pm = vm_base + (u32)(uintptr_t)s_workloads[wid].pm;
                  slot->pm_size = s_workloads[wid].sizePm;
-@@ -1833,6 +2329,8 @@ static s32 spurs_scheduler_start(struct SpursInst* si)
+@@ -1833,6 +2340,8 @@ static s32 spurs_scheduler_start(struct SpursInst* si)
      __atomic_store_n(&si->kick, 0, __ATOMIC_RELAXED);
      { extern void (*g_spu_line_commit_hook)(uint32_t);
        g_spu_line_commit_hook = spurs_commit_hook; }
@@ -825,7 +836,7 @@ index 07a3d2e4..42cb7c8d 100644
                                        const char* name);
  
 diff --git a/libs/video/cellGcmSys.c b/libs/video/cellGcmSys.c
-index 298ee7de..b676f525 100644
+index 298ee7de..31e25b87 100644
 --- a/libs/video/cellGcmSys.c
 +++ b/libs/video/cellGcmSys.c
 @@ -409,6 +409,23 @@ static int s_gcm_syscall_mode = 0;
@@ -910,7 +921,46 @@ index 298ee7de..b676f525 100644
      /* GCM_CTXDBG=1: which context the title is actually driving. Ours is written
       * once at init; if the title repoints gCellGcmCurrentContext at a buffer of
       * its own, every field below moves with it and the FIFO the runtime walks
-@@ -2757,6 +2804,36 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2183,8 +2230,25 @@ static void gcm_rsx_process_fifo_unlocked(void)
+      * short of `put` every tick is the signature of a FIFO that can never
+      * catch up, and the reason is the whole diagnosis. */
+     const char* why = "caught-up";
++    /* GCM_FLIP_SYNC_TAIL=1: after a flip stops the pass (one flip per drain, so the present shows exactly
++     * the finished frame), keep consuming the synchronisation methods that follow it -- NV406E semaphore
++     * offset/acquire/release (0x64/0x68/0x6C), SET_REFERENCE (0x50) and NOPs -- and stop at the first
++     * other word. They draw nothing, so the frame does not mix; without them `get` sits short of `put`
++     * after every flip. God of War III's loader ends each upload chunk with FLIP + SEMAPHORE_OFFSET 0x10 +
++     * ACQUIRE 0 and polls for `get` EQUAL to its `put`: with `get` parked 0x10 short it can miss the one
++     * moment they match, wait for ever, and hold the boot's load request busy (the rare opening stall). */
++    static int s_flip_sync_tail = -1;
++    if (s_flip_sync_tail < 0) { const char* e = getenv("GCM_FLIP_SYNC_TAIL"); s_flip_sync_tail = e ? atoi(e) : 0; }
++    int after_flip = 0;
+     while (s_fifo_getoff != put && budget-- > 0) {
+         u32 ea = gcm_io2ea(s_fifo_getoff);
++        if (after_flip && ea) {
++            const u32 hw = vm_read32(ea);
++            const u32 hm = hw & 0x1FFCu, hsub = (hw >> 13) & 7u;
++            const int sync = hw == 0 || ((hw & 0xE0030003u) == 0 && hsub == 0 &&
++                                         (hm == 0x64u || hm == 0x68u || hm == 0x6Cu || hm == 0x50u));
++            if (!sync) { why = "flip"; break; }
++        }
+         if (!ea) {
+             /* get is sitting on an IO offset with no mapping -- the title
+              * branched into a region and then unmapped it, or the offset was
+@@ -2328,8 +2392,10 @@ static void gcm_rsx_process_fifo_unlocked(void)
+              * 3 MB ring at boot, wraps, and a walker stopping at every flip
+              * then crawled ~1 KB a tick while the title wrote over the
+              * commands ahead of it. */
+-            if (gcm_fifo_backlog(put, s_fifo_getoff) < GCM_FIFO_CATCHUP_BYTES)
+-                { why = "flip"; break; }
++            if (gcm_fifo_backlog(put, s_fifo_getoff) < GCM_FIFO_CATCHUP_BYTES) {
++                if (s_flip_sync_tail) { after_flip = 1; continue; }
++                why = "flip"; break;
++            }
+             continue;
+         }
+ 
+@@ -2757,6 +2823,36 @@ static void gcm_rsx_process_fifo_unlocked(void)
       * ring start, and the resync dropped them: inFAMOUS 2 stopped presenting
       * for good that way in about one New Marais run in five ("stuck-get" at a
       * self-jump with no "jump-park" before it). */
@@ -947,7 +997,26 @@ index 298ee7de..b676f525 100644
      { static u32 last = 0xFFFFFFFFu; static int stuck = 0;
        if (s_sema_blocked_pass || s_park_pass) {
            stuck = 0; last = s_fifo_getoff; s_sema_blocked_pass = 0; s_park_pass = 0; }
-@@ -3303,6 +3380,7 @@ static void gcm_publish_offset_tables(void)
+@@ -2870,6 +2966,18 @@ static void gcm_rsx_process_fifo_unlocked(void)
+     }
+ 
+     g_gcm_fifo_drained_ea = gcm_io2ea(s_fifo_getoff);
++    /* GCM_STOPWHY=1: a pass that ends short of `put` says why (park, semaphore, other) and the words
++     * where it stopped, at most once per distinct stop position, 64 lines in all. */
++    { static int sw = -1; static u32 last_at = 0xFFFFFFFFu; static int nsw = 0;
++      if (sw < 0) sw = getenv("GCM_STOPWHY") ? 1 : 0;
++      if (sw && s_fifo_getoff != put && s_fifo_getoff != last_at && nsw < 64) {
++          last_at = s_fifo_getoff; nsw++;
++          const u32 ea = gcm_io2ea(s_fifo_getoff);
++          fprintf(stderr, "[stopwhy] why=%s get=0x%08X put=0x%08X park=%d sema=%d words: %08X %08X %08X %08X\n",
++                  why, s_fifo_getoff, put, s_park_pass, s_sema_blocked_pass,
++                  ea ? vm_read32(ea) : 0, ea ? vm_read32(ea + 4) : 0, ea ? vm_read32(ea + 8) : 0,
++                  ea ? vm_read32(ea + 12) : 0);
++      } }
+     /* GCM_GET_EQ_PUT=1: publish `get` as having reached `put` rather than where
+      * the walker actually is. A probe, not a fix -- it removes the back-pressure
+      * a title uses to avoid overwriting commands the GPU has not read. It exists
+@@ -3303,6 +3411,7 @@ static void gcm_publish_offset_tables(void)
          vm_write16(GCM_OFFSET_TABLE_IO_ADDR + i * 2, s_io_address_table[i]);
          vm_write16(GCM_OFFSET_TABLE_EA_ADDR + i * 2, s_ea_address_table[i]);
      }
@@ -955,7 +1024,7 @@ index 298ee7de..b676f525 100644
  }
  
  s32 cellGcmGetOffsetTable(CellGcmOffsetTable* table)
-@@ -4433,6 +4511,9 @@ void cellGcm_syscall_iounmap(u32 io, u32 size)
+@@ -4433,6 +4542,9 @@ void cellGcm_syscall_iounmap(u32 io, u32 size)
   * from a stale offset through whatever the driver has since overwritten. */
  void cellGcm_syscall_set_fifo(u32 put, u32 get)
  {
@@ -3041,6 +3110,27 @@ index 195c75e3..95b4c5b8 100644
          }
          u128 x = spu_shufb(a, b, c), y = spu_shufb_ref(a, b, c);
          if (memcmp(&x, &y, 16)) {
+diff --git a/runtime/syscalls/sys_timer.c b/runtime/syscalls/sys_timer.c
+index 3a022815..6cc72dfa 100644
+--- a/runtime/syscalls/sys_timer.c
++++ b/runtime/syscalls/sys_timer.c
+@@ -182,6 +182,16 @@ int64_t sys_timer_usleep(ppu_context* ctx)
+           if (!pt_win) pt_win = now;
+           else if (now - pt_win >= (unsigned long long)s_pt * 1000000ull) {
+             fprintf(stderr, "--- usleep poll sites (last %lds) ---\n", s_pt);
++            /* PS3_PEEK=<hexEA>[,...]: 16 guest bytes at each, every report (what the pollers wait on) */
++            { const char* pe = getenv("PS3_PEEK");
++              while (pe && *pe) {
++                  char* end; const uint32_t a = (uint32_t)strtoul(pe, &end, 16);
++                  if (end == pe) break;
++                  fprintf(stderr, "  peek 0x%08X:", a);
++                  for (uint32_t k = 0; k < 16; k++) fprintf(stderr, " %02X", vm_base[(uint32_t)(a + k)]);
++                  fprintf(stderr, "\n");
++                  pe = (*end == ',') ? end + 1 : end;
++              } }
+             for (int k = 0; k < 8; k++) {
+               int best = -1;
+               for (int j = 0; j < pt_used; j++)
 diff --git a/templates/project/main.cpp b/templates/project/main.cpp
 index f1f3243b..f83fe023 100644
 --- a/templates/project/main.cpp

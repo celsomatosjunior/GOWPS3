@@ -784,6 +784,31 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
     38,4); fica no padrão. `--float-ls` (estudo, desligado): leituras da LS e movimentos de palavras
     (`shufb/selb/rot*`) marcados `SPU_AXL` (assumidos na faixa; `-DSPU_AXL_NOCLAMP=1` tira o limite): 1.560 a
     menos e nenhum ganho (37,7/37,9). Conclusão: os limites não são o gargalo.
+- **Travada rara: a cadeia, com um build que trava sempre (07/11).** Os builds com `-DSPU_AX_TESTE_CONTA=1`
+  travam a abertura aos ~13 s em toda execução (ferramentas novas: `PS3_PEEK=<ea>[,...]` imprime 16 bytes de cada
+  endereço no relatório do `PS3_POLLTOP` e no `[spurs-dump]`, sem mexer no tempo como os vigias de leitura/escrita).
+  1. As SPUs do PM Wws relêem a linha da lista do workload Wws_Job/ModelServerPrep (dados em 0x70A74400), toda em
+     zero: quem a preenche é a thread principal do PPU (0x2E91FC chamada de 0x2EA494; vigia `PPU_WWATCH`). Reler
+     5 s também acontece em aberturas normais: sozinho não é a trava.
+  2. A thread principal (tid 1) fica no laço 0x1E5264 (`usleep(1000)` enquanto o byte 0x588E51 != 0; o `lr` 0x1E53B0
+     do POLLTOP é velho). Esse byte é o "ocupado" de um pedido de carga (`/INTRO/...`), que a thread de carga (tid 11)
+     zera em 0x1E65C8 ao terminar (~12,8 s numa abertura normal).
+  3. A tid 11 fica na sondagem de 30 us da 0x1E5894: espera o GET do RSX (`[0x20002004]`, registrador de controle)
+     ser **igual** ao fim do pedaço de comandos que ela escreveu (dois buffers alternados, `r31` 0xD005DDB8/DDC8,
+     alvo = PUT). O GET fica sempre 0x10 antes do PUT, parado no fim do pedaço: `0x00040064 0x10` (SEMAPHORE_OFFSET)
+     `0x00040068 0` (SEMAPHORE_ACQUIRE do label 0x10 == 0).
+  4. Mas o label 0x10 (0x20000010) já vale 0, e com `GCM_SEMA_ACQUIRE_MS=100` o acquire nunca desiste: o andador
+     do FIFO não está bloqueado no semáforo por tempo. Falta saber por que ele para 16 bytes antes do PUT (park,
+     buraco do Edge ou outra regra do `gcm_rsx_process_fifo_unlocked`).
+  5. `GCM_STOPWHY=1` (cellGcmSys.c, novo): toda passada para com `why=flip` -- a regra "um flip por passada" deixa o
+     OFFSET/ACQUIRE depois do flip para a passada seguinte. Isso acontece igual no build normal (a thread de carga
+     também sonda ali a abertura inteira, 420 mil voltas), então não é o que distingue a trava.
+  6. `GCM_FLIP_SYNC_TAIL=1` (novo, desligado): depois do flip, consome os métodos de sincronização (0x64/0x68/0x6C/
+     0x50/NOP) e para no primeiro de desenho. O GET passa a chegar ao PUT, mas ao PUT do pedaço seguinte, e a trava
+     continua (3 de 3): a thread de carga espera o GET **igual** a uma posição já ultrapassada. Hipótese para a
+     próxima: no RSX real o GET aponta para depois do ACQUIRE enquanto ele espera (o comando já foi buscado), e o
+     protocolo da carga é "o RSX parou no meu marcador -> eu libero o label"; aqui um ACQUIRE bloqueado publica o
+     GET no próprio comando. Mas o label 0x10 estava em 0 nas espiadas: falta pegar quem grava esse label.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
