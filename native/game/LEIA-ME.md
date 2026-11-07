@@ -809,6 +809,8 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
      próxima: no RSX real o GET aponta para depois do ACQUIRE enquanto ele espera (o comando já foi buscado), e o
      protocolo da carga é "o RSX parou no meu marcador -> eu libero o label"; aqui um ACQUIRE bloqueado publica o
      GET no próprio comando. Mas o label 0x10 estava em 0 nas espiadas: falta pegar quem grava esse label.
+  7. Build padrão atual (v20 + dcbz coerente + limites exatos de and/constantes): **50 inicializações, 0 travadas**
+     (somadas às 100 do dcbz: 0 em 150; antes ~1 em 50-70). A trava ainda existe nos builds com tempo alterado.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
