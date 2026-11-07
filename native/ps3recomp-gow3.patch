@@ -3155,10 +3155,26 @@ index f8783799..fd81c869 100644
      register_c = args.register or os.path.join(OUTDIR, "jobmods_register.c")
  
 diff --git a/tools/ppu_lifter.py b/tools/ppu_lifter.py
-index a657ba61..6c1bc03f 100644
+index a657ba61..66c92621 100644
 --- a/tools/ppu_lifter.py
 +++ b/tools/ppu_lifter.py
-@@ -5324,6 +5324,10 @@ def main() -> None:
+@@ -2872,8 +2872,14 @@ class PPULifter:
+         if mn == "dcbz":
+             ra = _reg_idx(ops[0])
+             rb = _reg_idx(ops[1])
++            # Sixteen coherent stores, not a raw memset: a dcbz is a guest
++            # store like any other, and on a line an SPU holds a reservation
++            # on it must take the lock-line lock and raise the SPU's
++            # reservation-lost event (vm_write64's slow path), or a PUTLLC in
++            # flight commits its stale copy over the zeros. On a line no SPU
++            # reserved, each is the inline fast-path store.
+             return (f"{{ uint64_t ea = ({_xea(ra,rb)}) & ~0x7FULL; "
+-                    f"memset(vm_base + (uint32_t)ea, 0, 128); }}")
++                    f"for (int _z = 0; _z < 128; _z += 8) vm_write64(ea + _z, 0); }}")
+ 
+         if mn in ("dcbt", "dcbtst", "dcbf", "dcbst", "dcba", "icbi"):
+             return f"/* {mn}: cache hint, no-op */;"
+@@ -5324,6 +5330,10 @@ def main() -> None:
              if args.code_end is not None:
                  text_hi = min(text_hi, args.code_end)
              toc = _read_u32((elf.elf_header.e_entry + 4) & 0xFFFFFFFF) or 0

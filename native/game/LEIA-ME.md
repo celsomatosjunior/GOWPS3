@@ -764,6 +764,12 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
   - Na mesma série, uma travada rara na v20 (`rodar_06nov_sl_vivseguro_2`): mesma assinatura (img 278921217 pc
     0x2554, wids 5 e 7 em lsa 0x00D00), e a linha de 128 bytes relida está **toda em zero**: o PM espera a lista
     que o PPU ainda não escreveu. Sem `PS3_POLLTOP` nessa execução, não se sabe onde o PPU estava.
+- **`dcbz` do PPU coerente** (ps3recomp `tools/ppu_lifter.py`): era traduzido como `memset(vm_base+ea, 0, 128)`,
+  por fora do `VM_WRITE_COH`. Numa linha que uma SPU reservou (GETLLAR), não tomava a trava de linha nem avisava a
+  SPU (evento LR), e um PUTLLC em andamento podia gravar sua cópia velha por cima: uma escrita perdida, compatível com
+  a lista toda em zero da travada rara. Agora são 16 `vm_write64(ea + k, 0)` (caminho rápido em linha sem reserva).
+  O jogo tem 4 (`ppu_recomp_073.cpp`, 0x2E9290/0x2E98A0/0x2E98E0). 100 inicializações de 55 s: **0 travadas** (antes
+  ~1 em 50-70; 100 limpas por acaso teriam ~19% de chance). Não prova, mas fica no padrão.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
