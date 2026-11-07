@@ -813,9 +813,12 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
      (somadas às 100 do dcbz: 0 em 150; antes ~1 em 50-70). A trava ainda existe nos builds com tempo alterado.
   8. `GCM_SYNC_LINGER_MS=<ms>` (novo, desligado; com `GCM_FLIP_SYNC_TAIL=1`): o GET fica parado N ms no fim da
      cauda de sincronização depois do flip. Com 2 ms o build de teste ainda trava (3 de 3). **Correção do passo 3**:
-     como a sondagem da 0x1E5894 também roda a abertura inteira no build normal, ela não é o que segura o "ocupado"
-     de 0x588E51; a tid 11 o zera por outro caminho (0x1E65C8, lr 0x1E69AC). Próximo passo: seguir a 0x1E65C8 no
-     build normal (o que acontece antes do `stb 0` em 0x1E69AC) e ver qual desses passos não chega no que trava.
+     a 0x1E5894 é chamada de dentro da própria 0x1E65C8 (retornos 0x1E6794 e 0x1E68D8), antes do `stb 0` que zera
+     o "ocupado" de 0x588E51 (perto de 0x1E69AC): a sondagem do GET **é** o bloqueio na trava; no build normal ela
+     também gira muito e acaba acertando a igualdade. Hipótese para a próxima rodada: o jogo grava os pedaços dos
+     dois fluxos (r31 0xD005DDB8/DDC8) antes de esperar o primeiro, e o GET já passou do alvo quando a espera
+     começa; no RSX real algo o segura ali (o ACQUIRE do label 0x10 com outro valor inicial do label, ou o GET
+     publicado depois do ACQUIRE enquanto ele espera). Testar: label 0x10 inicial != 0 e quem o libera.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
