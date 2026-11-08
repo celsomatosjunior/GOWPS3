@@ -834,6 +834,15 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
      haver dois fluxos de comando (o anel principal e os pedaços da carga, cada um com seu PUT) dividindo um
      registrador de controle no nosso HLE. Próximo passo: `GCM_PUTLOG` com a função que grava o PUT (anel
      principal x carga) e como o libgcm do jogo troca de contexto (`cellGcmSetCurrentBuffer`/contexto próprio).
+  11. (08/11) A sequência do PUT na abertura: só a thread de carga, dois pedaços alternados, cada um
+     `FLIP` + `SEMAPHORE_OFFSET 0x10` + `ACQUIRE 0` -- a espera de flip do driver do libgcm. `GCM_FLIP_LABEL=1`
+     (cellGcmSys.c, novo, desligado): ao executar o flip do FIFO arma o label X do OFFSET/ACQUIRE seguinte com um
+     valor != V, solta no próximo vblank (`cellGcmTickVBlank`) e, enquanto o ACQUIRE espera, publica o GET já
+     depois dele. Funciona como mecanismo (a carga passa da sondagem do GET e o andador anda um pedaço por
+     vblank), mas o build de teste **ainda trava** (3 de 3), agora com a carga noutro ponto (0x1E69AC / buffer
+     cheio 0x2AB778 -> 0x2A4BA8). `FC_WATCH=1` (main.cpp do modelo, novo): o laço do `frame_clock` não fica preso.
+     O modelo agora liga o amostrador (`PS3_SAMPLE=<ms>`, `PS3_SAMPLE_DRAIN=1`). Sem um depurador com pilha, esta
+     linha custa muito; a travada não aparece no build padrão (0 em 150).
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
