@@ -847,6 +847,8 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
   do dia 7: us/job(60s) 37,2/36,3 contra 38,4/39,3 (ruído). 0 travadas em 160 inicializações somadas. Teste de
   15 min na fase (`logs\rodar_08nov_15min.log`): sem queda, mediana 19,0 q/s, us/job(60s) 37,6, `identical=0`.
   Cópia em `Projetos\versoes\gow3-fase-v21` (exe trocado sobre a v20).
+  Mais 50 inicializações da v21: 0 travadas (0 em 210 desde o dcbz). No build de teste que trava sempre,
+  `GCM_FLIP_LABEL=1 GCM_FLIP_SYNC_TAIL=1 GCM_SYNC_LINGER_MS=2` juntos: ainda trava (3 de 3).
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
