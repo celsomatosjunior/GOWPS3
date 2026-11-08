@@ -857,6 +857,7 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
   (não há prova de que evite a travada no build normal).
   Teste de 30 min da v21 na fase (`logs\rodar_08nov_30min.log`): sem queda (quadros até 1.799 s), mediana
   19,9 q/s, us/job(60s) 37,0, `identical=0`.
+  Mais 100 inicializações da v21: 0 travadas (0 em 310 desde o dcbz; antes ~1 em 50-70).
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
