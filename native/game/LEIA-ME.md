@@ -819,6 +819,15 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
      dois fluxos (r31 0xD005DDB8/DDC8) antes de esperar o primeiro, e o GET já passou do alvo quando a espera
      começa; no RSX real algo o segura ali (o ACQUIRE do label 0x10 com outro valor inicial do label, ou o GET
      publicado depois do ACQUIRE enquanto ele espera). Testar: label 0x10 inicial != 0 e quem o libera.
+  9. **O ciclo (08/11)**, com `GCM_FLIP_SYNC_TAIL=1`, `GCM_STOPWHY=1` e a impressão da espera: uma só thread (a de
+     carga) grava os pedaços e espera; o alvo é sempre o PUT atual, e o GET fica no fim do pedaço anterior. No fim
+     de cada pedaço há um JUMP para o seguinte (0x25802B00), mas o andador está noutro lugar: no anel principal
+     (IO 0x1BCxxx, PUT 0xA4E800), `why=parked` em JUMPs para si mesmo, um após o outro -- os buracos do Edge que
+     um job de SPU remenda depois de escrever a geometria. Ciclo provável: RSX espera o buraco (SPU) -> o job
+     (Wws ModelServerPrep) espera a lista da thread principal -> a thread principal espera o "ocupado" da carga
+     -> a carga espera o GET chegar ao pedaço dela, que está atrás dos buracos. No hardware a ordem do tempo
+     evita isso; aqui um atraso da SPU (os builds de teste mudam o tempo do job 732253) basta. Próximo passo:
+     qual job deveria remendar o buraco em 0x1BCxxx e por que ele ainda não rodou (lista vazia ou job atrasado).
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
