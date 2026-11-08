@@ -845,8 +845,7 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
      linha custa muito; a travada não aparece no build padrão (0 em 150).
 - **v21 (`gow3-fase-v21`, 08/11): v20 + `dcbz` coerente + limites exatos de and/constantes.** A/B contra o build
   do dia 7: us/job(60s) 37,2/36,3 contra 38,4/39,3 (ruído). 0 travadas em 160 inicializações somadas. Teste de
-  15 min na fase (`logs
-odar_08nov_15min.log`): sem queda, mediana 19,0 q/s, us/job(60s) 37,6, `identical=0`.
+  15 min na fase (`logs\rodar_08nov_15min.log`): sem queda, mediana 19,0 q/s, us/job(60s) 37,6, `identical=0`.
   Cópia em `Projetos\versoes\gow3-fase-v21` (exe trocado sobre a v20).
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
