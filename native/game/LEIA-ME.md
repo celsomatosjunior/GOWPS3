@@ -828,6 +828,12 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
      -> a carga espera o GET chegar ao pedaço dela, que está atrás dos buracos. No hardware a ordem do tempo
      evita isso; aqui um atraso da SPU (os builds de teste mudam o tempo do job 732253) basta. Próximo passo:
      qual job deveria remendar o buraco em 0x1BCxxx e por que ele ainda não rodou (lista vazia ou job atrasado).
+  10. `GCM_PARK_GRACE_MS=2000` (o padrão do `rodar` é 1 h) também trava (3 de 3): o buraco não é o elo fixo, o
+     andador sai dele. Contradição a resolver: o GET que a thread de carga lê (0x20002004) fica no fim do pedaço
+     anterior (0x058xxxxx) enquanto o andador (`STOPWHY`) está no anel principal (0x1BCxxx, PUT 0xA4E800). Parece
+     haver dois fluxos de comando (o anel principal e os pedaços da carga, cada um com seu PUT) dividindo um
+     registrador de controle no nosso HLE. Próximo passo: `GCM_PUTLOG` com a função que grava o PUT (anel
+     principal x carga) e como o libgcm do jogo troca de contexto (`cellGcmSetCurrentBuffer`/contexto próprio).
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
