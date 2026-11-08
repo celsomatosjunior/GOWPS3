@@ -850,6 +850,9 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
   Mais 50 inicializações da v21: 0 travadas (0 em 210 desde o dcbz). No build de teste que trava sempre,
   `GCM_FLIP_LABEL=1 GCM_FLIP_SYNC_TAIL=1 GCM_SYNC_LINGER_MS=2` juntos: ainda trava (3 de 3).
   Nas fontes SPU da v21, `-mtune=znver3` e `-O3` (com o list-burr): neutros (us/job(60s) 38,1/37,7 e 37,8/38,0 contra 38,2/37,8).
+  `GCM_FLIP_LABEL=1` no build normal da v21 (`scripts_locais/ab_env.sh`): us/job(60s) 36,3/37,3 contra 37,9/37,7,
+  0 travadas em 20 inicializações, mas numa rodada a fase começou tarde (20 janelas "fora"): a espera de vblank
+  em cada flip pode atrasar a abertura. Fica desligado; candidato a padrão se uma série maior não mostrar atraso.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
