@@ -855,6 +855,8 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
   em cada flip pode atrasar a abertura. Fica desligado; candidato a padrão se uma série maior não mostrar atraso.
   Mais 3 rodadas: 38,1/38,2/37,6 contra 36,7/37,5/37,9, "fora" 0/3/0 (sem atraso): neutro. Continua desligado
   (não há prova de que evite a travada no build normal).
+  Teste de 30 min da v21 na fase (`logs\rodar_08nov_30min.log`): sem queda (quadros até 1.799 s), mediana
+  19,9 q/s, us/job(60s) 37,0, `identical=0`.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
