@@ -861,9 +861,9 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
   Teste de 60 min da v21 (`logs\rodar_08nov_60min.log`): sem queda (quadros até 3.599 s), mediana 19,2 q/s,
   us/job(60s) 38,1, `identical=0`.
 - **09/11 (dois experimentos neutros, nada mudou no build padrão):**
-  - **Viés de ordem no A/B:** hoje a primeira execução de cada par saiu ~1,5 us/job mais lenta nas duas séries
-    (o mesmo exe, só a variável trocada). Um A/B só vale com a ordem invertida também
-    (`GOW3_X=0 bash ab_env.sh N pre exe "GOW3_X=1"`) e a média das duas ordens.
+  - **Ruído do A/B:** A/A da v21 (o mesmo exe dos dois lados, 3 rodadas): 38,3/37,0/37,0 contra 37,7/37,6/37,6.
+    Sem viés de ordem, mas ~±0,7 us/job por execução: diferença menor que ~1 us/job entre médias de 3 é ruído.
+    Para um efeito pequeno, repetir com a ordem invertida (`GOW3_X=0 bash ab_env.sh N pre exe "GOW3_X=1"`).
   - Cache dos trechos `lqd/stqd` do micro-interpretador (`spu_smc_microstep`, os stubs de salvar/restaurar
     registradores que a interrupção do WWS gera em 0x3FEC0; é a parte quente do `spu_indirect_branch` no perfil):
     decodificar uma vez por thread e repetir enquanto as palavras da LS forem iguais. Sem ganho (38,7/38,7/38,4
@@ -880,6 +880,9 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
     A/B nas duas ordens: genérico (as mesmas operações SPU) ~2% **pior**; com as máscaras conhecidas (SoA com
     transposta, verificadas a cada chamada) 37,05 contra 37,28 (4 execuções cada): neutro. As chamadas são curtas
     (muitas com 1 grupo) e o custo fixo come o ganho, como na 0x9C48. Fora do ganchos.json.
+    Perfil com o núcleo (`logs\rodar_09nov_prof_tri2.log`, mapa `logs\tri2.map`): 1,4% da thread contra 1,5% da
+    função traduzida, sem ponto quente (clamps, compares, extrações espalhados). As duas versões parecem presas às
+    mesmas 12 leituras de vértices espalhados por grupo, não às contas.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
