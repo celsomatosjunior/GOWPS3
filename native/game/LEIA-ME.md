@@ -860,6 +860,26 @@ ascension_publico_notas.md`; nada de código do ps3kit copiado):
   Mais 100 inicializações da v21: 0 travadas (0 em 310 desde o dcbz; antes ~1 em 50-70).
   Teste de 60 min da v21 (`logs\rodar_08nov_60min.log`): sem queda (quadros até 3.599 s), mediana 19,2 q/s,
   us/job(60s) 38,1, `identical=0`.
+- **09/11 (dois experimentos neutros, nada mudou no build padrão):**
+  - **Viés de ordem no A/B:** hoje a primeira execução de cada par saiu ~1,5 us/job mais lenta nas duas séries
+    (o mesmo exe, só a variável trocada). Um A/B só vale com a ordem invertida também
+    (`GOW3_X=0 bash ab_env.sh N pre exe "GOW3_X=1"`) e a média das duas ordens.
+  - Cache dos trechos `lqd/stqd` do micro-interpretador (`spu_smc_microstep`, os stubs de salvar/restaurar
+    registradores que a interrupção do WWS gera em 0x3FEC0; é a parte quente do `spu_indirect_branch` no perfil):
+    decodificar uma vez por thread e repetir enquanto as palavras da LS forem iguais. Sem ganho (38,7/38,7/38,4
+    contra 36,7/36,6/38,2, só na ordem direta); código desfeito. O laço é ~1% da thread.
+  - Núcleo nativo da **0xFA78** (descarte de triângulos; local: `edge_nativo\gow3_edge_tri.h`, referência
+    `ref_fa78.inc` de `gera_ref_fa78.py`, sonda `gow3_edge_tri_sonda.h`). O laço trata 4 triângulos por volta em
+    pipeline de 3 estágios + 2 voltas de aquecimento: índices (no lugar: a saída r35 é o próprio buffer r11),
+    12 vértices, arestas, produto vetorial 2D, face (sinal por r53), área zero, códigos z (or/and) e w (ceqh),
+    máscara por `gb`, compactação por tabela e 3 quadwords mesclados no ponteiro, com desvio para a área de
+    sobra r63 (0x3F630) quando passa do fim (r61 = fim-0x11/fim-0x21; acontece no fim de quase toda chamada).
+    Depois do laço só r43 é lido (0xFD78 e 0xD620 leem r43, r81, r1, r0, r3, r4). O núcleo calcula as máscaras
+    sem o pipeline, grava só os bytes mantidos e refaz exatamente a janela de enchimento de trás para frente
+    (gravações desviadas deixam o enchimento de gravações anteriores). Modo sombra: 262 mil chamadas, 0 diferenças.
+    A/B nas duas ordens: genérico (as mesmas operações SPU) ~2% **pior**; com as máscaras conhecidas (SoA com
+    transposta, verificadas a cada chamada) 37,05 contra 37,28 (4 execuções cada): neutro. As chamadas são curtas
+    (muitas com 1 grupo) e o custo fixo come o ganho, como na 0x9C48. Fora do ganchos.json.
 
 **Próxima ação exata (05/11):** o fps depende do tempo de SPU das listas EDGE por quadro (`edge_ms.py`,
 `us/job(60s)`); o RPCS3 faz ~22 q/s na mesma luta e o nativo ~18 (v15). Caminho que está rendendo: núcleos nativos
