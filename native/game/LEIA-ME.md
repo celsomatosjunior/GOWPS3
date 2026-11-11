@@ -930,6 +930,13 @@ v14+) fica para o Celso.
     bytes diferentes em 11, 8 bytes num), 14-77 us por job (mediana ~19 us; no jogo a média é ~37 us). Resta: 2
     DMAs a mais no fim (do gerenciador, depois do fechamento da gravação), ~750 bytes na LS baixa do gerenciador,
     registradores voláteis e 4-5 entradas curtas no interpretador por job (0x8768, 0xE5A4, 0x5458, 0xA68).
+  - **Variabilidade e cobertura (11/11, 14h):** as entradas (GETs gravados) são restauradas antes de cada
+    repetição (os PUTs de uma execução, no alocador do anel de saída, mudavam a seguinte e a levavam a esperar um
+    label do RSX para sempre) e um job com mais que 2x+16 DMAs da gravação é interrompido (`STALL`). Os 64 jobs
+    gravados, 50 repetições, duas execuções: 0 STALL; todos os DMAs iguais à gravação em 55 de 64 (9 com alguns
+    bytes de PUT diferentes, a investigar); média 39,6 us por job (o us/job do jogo é ~37); soma das medianas
+    2.538 contra 2.527 us (0,4%), diferença por job mediana 1,3%, p90 4,1%. Uso:
+    `SPU_JOBREPLAY=<pasta>,50,0,64 SPU_JOBREPLAY_CODE=444600:4000:D97C` (exe com `build_var.sh jobcap`).
 
 ## LLE seletivo da libsre (LFQueue)
 

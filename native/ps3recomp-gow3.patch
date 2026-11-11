@@ -3387,10 +3387,10 @@ index 00000000..42b46926
 +}
 diff --git a/runtime/spu/spu_jobreplay.c b/runtime/spu/spu_jobreplay.c
 new file mode 100644
-index 00000000..8add2b7c
+index 00000000..f9be897f
 --- /dev/null
 +++ b/runtime/spu/spu_jobreplay.c
-@@ -0,0 +1,241 @@
+@@ -0,0 +1,250 @@
 +/* SPU job replay: run jobs recorded by SPU_JOBCAP (spu_jobcap.c) outside the game, time them and compare
 + * them with what they did in the game.
 + *
@@ -3429,10 +3429,14 @@ index 00000000..8add2b7c
 +extern volatile int g_spu_jobcap_live;
 +extern void (*g_spu_jobreplay_dma)(int put, uint32_t lsa, uint32_t ea, const uint8_t* ls_ptr, uint32_t size);
 +typedef struct { int put; uint32_t lsa, ea, size; uint8_t* data; } jr_dma;
-+static jr_dma s_dma[512]; static int s_ndma;
++static jr_dma s_dma[512]; static int s_ndma, s_dma_limit, s_stalled, s_keep;
 +static void jr_on_dma(int put, uint32_t lsa, uint32_t ea, const uint8_t* ls_ptr, uint32_t size)
 +{
-+    if (s_ndma >= 512) return;
++    if (s_dma_limit && s_ndma >= s_dma_limit) {   /* far past the record: a wait the game never had */
++        extern void spu_halt(spu_context* ctx);
++        s_stalled = 1; spu_halt(g_spu_jobreplay_ctx); return;
++    }
++    if (s_ndma >= 512 || !s_keep) { s_ndma++; return; }
 +    jr_dma* d = &s_dma[s_ndma++];
 +    d->put = put; d->lsa = lsa; d->ea = ea; d->size = size;
 +    d->data = (uint8_t*)malloc(size); memcpy(d->data, ls_ptr, size);
@@ -3502,8 +3506,6 @@ index 00000000..8add2b7c
 +    int rc = 0;
 +    if (!start || start->size != st_size) { fprintf(stderr, "[jobreplay] %s: no start state\n", path); rc = 2; goto out; }
 +    /* the job's inputs, where it reads them */
-+    for (int i = n - 1; i >= 0; i--)            /* the earliest GET of a range wins */
-+        if (ch[i].tag == 2) memcpy(vm_base + ch[i].b, ch[i].data, ch[i].size);
 +    const uint32_t* cs = cst ? (const uint32_t*)cst->data : NULL;
 +    const int ctx_image = cs ? (int)cs[0] : (int)start->a;
 +    double* t = (double*)malloc(sizeof(double) * (reps > 0 ? reps : 1));
@@ -3512,6 +3514,10 @@ index 00000000..8add2b7c
 +    int ls_diff = 0, reg_diff = 0, put_diff = 0, first_ranges = 0;
 +    char ranges[256] = "";
 +    for (int r = 0; r < reps; r++) {
++        /* the job's inputs, where it reads them, before every run: a run's own PUTs (its output ring's
++         * allocator line, for one) would otherwise change what the next run finds */
++        for (int i = n - 1; i >= 0; i--)            /* the earliest GET of a range wins */
++            if (ch[i].tag == 2) memcpy(vm_base + ch[i].b, ch[i].data, ch[i].size);
 +        spu_context_init(ctx, 0);
 +        ctx->image_id = ctx_image;
 +        ctx->resident_ovl = cs ? (int)cs[1] : 0;
@@ -3536,9 +3542,10 @@ index 00000000..8add2b7c
 +        spu_lifted_fn fn = spu_lookup(entry, image);
 +        s_replay_fn = fn; s_replay_ret = start->b;             /* the recorded link (r0 at entry) */
 +        if (!fn) { fprintf(stderr, "[jobreplay] %s: no lifted code at 0x%05X (image %d)\n", path, entry, image); rc = 2; break; }
-+        for (int i = 0; i < s_ndma; i++) free(s_dma[i].data);
++        for (int i = 0; i < 512; i++) { free(s_dma[i].data); s_dma[i].data = NULL; }
 +        s_ndma = 0;
-+        if (r == 0) { g_spu_jobreplay_dma = jr_on_dma; g_spu_jobreplay_ctx = ctx; g_spu_jobcap_live = 1; }
++        g_spu_jobreplay_dma = jr_on_dma; g_spu_jobreplay_ctx = ctx; g_spu_jobcap_live = 1;
++        s_dma_limit = 2 * (gets + puts) + 16; s_stalled = 0; s_keep = (r == 0);
 +        if (cs) {   /* the decrementer counts on from the recorded value, from now */
 +            extern uint64_t spu_host_ns_pub(void);
 +            ctx->decrementer = cs[3]; ctx->dec_base_ns = spu_host_ns_pub();
@@ -3549,6 +3556,8 @@ index 00000000..8add2b7c
 +        spu_run_with_halt(jr_entry, ctx);
 +        t[r] = jr_now_us() - t0;
 +        g_spu_jobreplay_ctx = 0;
++        if (s_stalled) { fprintf(stderr, "[jobreplay] %s: STALL (more than %d DMAs; not repeated)%c", path, s_dma_limit, 10);
++                                   reps = 1; }
 +        if (r == 0 && g_spu_interp_calls != ic0)
 +            fprintf(stderr, "[jobreplay]   interpreter entered %llu times\n", (unsigned long long)(g_spu_interp_calls - ic0));
 +        if (r == 0) {   /* the job's DMAs against the record's, in order */
@@ -3597,9 +3606,9 @@ index 00000000..8add2b7c
 +        qsort(t, reps, sizeof(double), jr_cmp_d);
 +        const double med = t[reps / 2];
 +        const int diff = end && (ls_diff || reg_diff || put_diff);
-+        fprintf(stderr, "[jobreplay] %s: %s%s gets=%d puts=%d ls_diff=%d%s regs=%d put_bytes=%d  %.2f us (min %.2f)\n",
++        fprintf(stderr, "[jobreplay] %s: %s%s gets=%d puts=%d ls_diff=%d%s regs=%d put_bytes=%d  %.2f us (min %.2f p90 %.2f max %.2f)\n",
 +                path, !end ? "NOEND" : diff ? "DIFF" : "ok", incomplete ? " (incomplete)" : "",
-+                gets, puts, ls_diff, ranges, reg_diff, put_diff, med, t[0]);
++                gets, puts, ls_diff, ranges, reg_diff, put_diff, med, t[0], t[(reps * 9) / 10], t[reps - 1]);
 +        if (diff) (*ndiff)++;
 +        *tsum += med; (*njobs)++;
 +        rc = diff;
