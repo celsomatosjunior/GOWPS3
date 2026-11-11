@@ -253,6 +253,42 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
 
 ## Ponto de retomada (atualizado a cada pausa)
 
+**11/11/2026 (noite, 2): contadores de quadros, validação do reprodutor de jobs e onde vai o tempo do EDGE.**
+- **O que cada contador mede** (fase, roteiro de X dos A/B, 330 s):
+  - `[fps] N (frames a..b over Ts)` do live draw: `g_ld_frames` sobe em cada `rsx_live_draw_present`. Ele roda duas
+    vezes por flip do jogo: no método de flip da FIFO (`sink_flip`) e pelo relógio de quadros do main.cpp
+    (`present_guest_frame` -> `gow3_rsx_present`, uma vez por flip pedido). Mede **apresentações, o dobro dos
+    quadros**. Foi a base dos "~17-19 q/s" desde 04/11.
+  - `[flip] N at T ms` (`gcm_flip_request`, cellGcmSys.c): um por flip pedido pelo jogo. `fps_real.py` usa este.
+  - contador de quadros do próprio jogo: a palavra 0x649ED8 (+1 por volta do laço principal, func_0028DA14);
+    medido com `PPU_WWATCH=0x00649ED8 PPU_WWATCH_MAX=0`: igual ao `[flip]` e metade do `[fps]` em todas as janelas.
+  - `[fps]` com a ponte do RSX do RPCS3: os flips que o RSX dele fez (eventos FLIP), quadros reais.
+  - RPCS3: "FPS" do título da janela (flips por segundo do RSX dele), lido pelo `rpcs3_medir.ps1` (40 s a partir de
+    280 s, mesmo roteiro de X): 20,7-23,4 em 05/11. Refazer com o PC livre (ele toma o foco).
+  - Estimativa (não medida): se o RPCS3 tivesse os mesmos ~2.700 jobs EDGE por quadro e o EDGE fosse todo o quadro
+    como aqui, os seus ~22 q/s dariam ~16 us por job. Não há medida direta do us/job do RPCS3.
+- **Reprodutor de jobs (amostra representativa):** `SPU_JOBCAP=<pasta>,206,D200,512,3000000` com
+  `SPU_JOBCAP_STRIDE=11` grava 1 job em 11 ao longo de ~2 quadros da fase (`GOW3_trabalho\jobcap206s`, 266 MB).
+  Reprodução de 512 jobs, 30-200 repetições: 0 interrompidos; 477 com todos os DMAs iguais à gravação; a
+  reprodução é determinística (duas execuções, as mesmas diferenças byte a byte). As diferenças que restam:
+  (1) ~40 registradores voláteis e a LS baixa do gerenciador (0x00-0xC0), estado do gerenciador depois do fim do
+  job; (2) 2 DMAs do gerenciador depois do fim do job (fora da gravação); (3) em ~35 jobs, 1-8 palavras de PUT
+  diferentes (valores de ponto flutuante e palavras de comando do RSX no anel de saída) -- deterministas na
+  reprodução, iguais com e sem os núcleos nativos: no jogo o job viu uma entrada diferente da gravada (a hipótese
+  é atividade assíncrona do gerenciador durante o job: listas paradas e retomadas, interrupções); a gravação é do
+  nosso próprio código, não do PS3. `SPU_JOBREPLAY_PUTDIFF=1` lista cada byte.
+- **Onde vai o tempo** (`SPU_JOBTIME=206,D200`, no jogo, fase): ciclo entrada->entrada 41 us/job (~2 us da própria
+  medida), **28,5 us dentro do job** (código, DMAs e canais; ~70%), ~12,5 us fora (gerenciador Wws, kernel do
+  SPURS, passagens e espera da próxima lista). Reprodução da amostra: 32-33 us/job (média das medianas). Perfil da
+  reprodução (tempo medido): código traduzido ~55%, skinning nativo ~12%, despacho (desvio indireto, busca,
+  drenagem) ~11%, canais/MFC ~4%. No jogo, a thread mais ocupada do SPURS: código dos jobs 47%, espera no kernel
+  22%, despacho ~7%, coerência/lock-line ~3%.
+
+- **Fusão maior de trechos SPU** (`--fundir-linhas 1500 --fundir-trechos 12`, padrão 500/4): reprodução -3,3%
+  (33,28 -> 32,20 us/job, duas rodadas alternadas, saídas idênticas à base); 4000/40 piora. No jogo (2 rodadas
+  alternadas, 330 s): us/job(60s) 37,8/38,7 (base) x 37,8/37,9; quadros reais 9,70/9,27 x 9,21/9,21: dentro do
+  ruído, sem ganho confirmado -- fica desligada.
+
 **11/11/2026 (noite): ponte do RSX do RPCS3 e correção da métrica de quadros.**
 - **Métrica:** o `[fps]` do live draw conta 2 por quadro do jogo (`rsx_live_draw_present` roda no flip da FIFO e
   de novo pelo relógio de quadros). O contador de quadros do próprio jogo (0x649ED8, +1 por volta do laço
