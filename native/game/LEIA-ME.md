@@ -943,6 +943,15 @@ v14+) fica para o Celso.
     base; 64 jobs, 30 repetições): pn/base 0,995 e 0,993 (~0,6%); a primeira medida em ordem fixa dava 0,948 --
     viés de ordem (a primeira execução sai mais lenta): na reprodução também vale alternar. Neutro; fica desligado.
 
+**11/11 (tarde): ponte do RSX do RPCS3 (do ps3kit), em andamento.** O Arnaldo autorizou usar e publicar todo o
+código dele (créditos e licenças preservados; a ponte é GPL-2.0, como o RPCS3). Ramos: ps3recomp `gow3-v21`
+(501ea679, retrato local da v21 sobre a v0.18.0 4e8f3ca8) e `gow3-rsx` (a ponte); GOWPS3 `rsx-rpcs3`. Com o
+ps3recomp em ramo, o patch passa a ser exportado contra a base: `git -C ps3recomp diff 4e8f3ca8`.
+- `gpu/` copiada do ps3kit 2e972569 (RSX do RPCS3 1b336f41f recortado, shim, bridge/ps3rsx.h, ps3rsx.cmake),
+  submódulos glslang f0bd0257 e asmjit 416f7356. Compila com MSVC + Ninja + Vulkan SDK (instalação pelo winget
+  `KhronosGroup.VulkanSDK` precisa da aprovação do UAC pelo Celso). Seleção em tempo de execução: `PS3_RSX=rpcs3`;
+  o live draw continua o padrão. No ps3kit a ligação com o runtime fica no main do port (boot_main.cpp).
+
 ## LLE seletivo da libsre (LFQueue)
 
 O ps3recomp não tem `_cellSpursLFQueuePushBody`, e o caminho ANY2ANY do CellSyncLFQueue
