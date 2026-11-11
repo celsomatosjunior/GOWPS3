@@ -596,3 +596,67 @@ extern "C" void gow3_dbg_ret(unsigned fn, unsigned long long r3, double f1, unsi
         fprintf(stderr, "[GOW3-DBG] #%ld func_%08X -> r3=0x%llX f1=%g arg=0x%llX tb=%llu\n", k, fn, r3, f1, arg,
                 (unsigned long long)ppu_timebase_now());
 }
+
+
+/* GOW3_PIN=1: as threads quentes, cada uma num núcleo físico só dela (os dois irmãos SMT), na ordem PPU principal e
+ * depois as threads do SPURS ("spurs pm"), o núcleo 0 (onde o Windows atende interrupções) por último; o processo sai
+ * do EcoQoS. Ideia e topologia do PS3_HOST_PIN do ps3kit de Arnaldo Lima (perf_threads.c, 463d832b, que credita o port
+ * do Ascension de BilalReloaded); aqui sem mexer no runtime: uma thread acha as threads pelo nome (SetThreadDescription
+ * do runtime) a cada segundo e fixa as novas. GOW3_PIN_HARD=1: só o primeiro processador lógico de cada núcleo. */
+static DWORD WINAPI pin_thread(LPVOID)
+{
+    KAFFINITY core_mask[64]; int n_cores = 0;
+    DWORD len = 0;
+    GetLogicalProcessorInformationEx(RelationProcessorCore, NULL, &len);
+    BYTE* buf = len ? (BYTE*)HeapAlloc(GetProcessHeap(), 0, len) : NULL;
+    if (buf && GetLogicalProcessorInformationEx(RelationProcessorCore, (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX)buf, &len))
+        for (DWORD off = 0; off < len; ) {
+            PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX e = (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX)(buf + off);
+            if (e->Relationship == RelationProcessorCore && e->Processor.GroupMask[0].Group == 0 && n_cores < 64)
+                core_mask[n_cores++] = e->Processor.GroupMask[0].Mask;
+            off += e->Size;
+        }
+    if (buf) HeapFree(GetProcessHeap(), 0, buf);
+    if (n_cores < 4) return 0;
+    const char* hd = getenv("GOW3_PIN_HARD"); const int hard = hd && *hd == '1';
+    { struct { ULONG Version, ControlMask, StateMask; } pt = { 1, 0x1u, 0 };   /* EcoQoS desligado */
+      SetProcessInformation(GetCurrentProcess(), (PROCESS_INFORMATION_CLASS)4, &pt, sizeof pt); }
+    typedef HRESULT (WINAPI *desc_fn)(HANDLE, PWSTR*);
+    desc_fn gtd = (desc_fn)(void*)GetProcAddress(GetModuleHandleA("kernel32.dll"), "GetThreadDescription");
+    if (!gtd) return 0;
+    DWORD done[64]; int ndone = 0, next = 1;   /* núcleo 1 em diante; o 0 por último */
+    const DWORD pid = GetCurrentProcessId();
+    for (int pass = 0; pass < 600 && next <= n_cores; pass++) {
+        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+        THREADENTRY32 te; te.dwSize = sizeof te;
+        for (int want = 0; want < 2; want++)   /* primeiro o PPU principal, depois as do SPURS */
+            for (BOOL ok = Thread32First(snap, &te); ok && next <= n_cores; ok = Thread32Next(snap, &te)) {
+                if (te.th32OwnerProcessID != pid) continue;
+                int seen = 0; for (int i = 0; i < ndone; i++) seen |= done[i] == te.th32ThreadID;
+                if (seen || ndone >= 64) continue;
+                HANDLE th = OpenThread(THREAD_QUERY_LIMITED_INFORMATION | THREAD_SET_LIMITED_INFORMATION, FALSE, te.th32ThreadID);
+                if (!th) continue;
+                PWSTR w = NULL;
+                if (SUCCEEDED(gtd(th, &w)) && w && wcscmp(w, want ? L"spurs pm" : L"ppu main") == 0) {
+                    const int core = next < n_cores ? next : 0; next++;
+                    KAFFINITY m = core_mask[core];
+                    if (hard) m &= (KAFFINITY)0 - m;
+                    SetThreadAffinityMask(th, (DWORD_PTR)m);
+                    done[ndone++] = te.th32ThreadID;
+                    fprintf(stderr, "[gow3-pin] %ls tid %lu -> núcleo %d (máscara 0x%llX)\n", w, te.th32ThreadID, core, (unsigned long long)m);
+                }
+                if (w) LocalFree(w);
+                CloseHandle(th);
+            }
+        CloseHandle(snap);
+        Sleep(1000);
+    }
+    return 0;
+}
+static int start_pin(void)
+{
+    const char* e = getenv("GOW3_PIN");
+    if (e && *e == '1') CreateThread(NULL, 0, pin_thread, NULL, 0, NULL);
+    return 0;
+}
+static int s_pin_started = start_pin();
