@@ -962,6 +962,21 @@ ps3recomp em ramo, o patch passa a ser exportado contra a base: `git -C ps3recom
   3. CMake do projeto: `include(gpu/ps3rsx.cmake)` + `ps3rsx_link(GOW3Native <gpu-build> SOURCES main.cpp ...)`
      por uma opção do gow3_build (`--rsx-rpcs3 <pasta do build de gpu/>`).
   4. Compilar gpu/ (MSVC x64, `ninja ps3rsx_flip_smoke`) depois do Vulkan SDK; então os marcos.
+  - Feito (11/11, 15h20; ps3recomp `gow3-rsx` affda8fe): passo 1 completo -- `CellGcmRsxHooks` no cellGcmSys.h;
+    no cellGcmSys.c `s_rsx`, labels/controle no contexto do RSX, `gcm_rsx_report_ea`, iomap/iounmap, partida no
+    cellGcmInit, `g_spu_put_hook` nulo com RSX externo, tick de flip desligado, `cellGcm_rsx_event` (o flip também
+    iguala `s_flip_tick_seq`, que o nosso pump exige), andador de FIFO desligado, reciclagem do anel pelo get do RSX,
+    buffers de exibição, flip direto e flip na FIFO pelo método 0xE920, 7 funções de relatório. Build normal
+    (sem a ponte) compila. glslang/asmjit como submódulos (falta o `.gitmodules`).
+  - Passo 2 (a fazer): `GOWPS3/native/game/gow3_rsx_rpcs3.cpp` adaptado do `boot_main.cpp` do ps3kit
+    (`ps3rsx_select`: VEH com `ps3rsx_handle_fault`, `vm_base = ps3rsx_init_memory()` NO LUGAR do `alloc_guest_vm()`
+    do main.cpp, RSX_LIVE_DRAW=0, `cellGcm_set_rsx_hooks(&hooks)`; `rpcs3_rsx_start`: janela do
+    `rsx_null_backend_get_hwnd()` (a mesma do live draw), `ps3rsx_params` com renderer Vulkan, context_addr,
+    local_size, `on_event = cellGcm_rsx_event`; flip por `ps3rsx_flip`). Ganchos do runtime dele que o nosso não
+    tem e ficam de fora no começo: `g_rsx_hold_kick`, `g_spu_dma_put_copy_hook` (PUTs de SPU com as travas da
+    FIFO do RSX), `g_vm_protected_page_hook` (DMA de SPU em página protegida: o VEH cobre). O gow3_build, com
+    `--rsx-rpcs3 <build de gpu/>`, põe o arquivo no exe, troca `alloc_guest_vm()` por `ps3rsx_select()` no main.cpp
+    gerado e liga por `ps3rsx_link`.
 
 ## LLE seletivo da libsre (LFQueue)
 
