@@ -951,6 +951,17 @@ ps3recomp em ramo, o patch passa a ser exportado contra a base: `git -C ps3recom
   submódulos glslang f0bd0257 e asmjit 416f7356. Compila com MSVC + Ninja + Vulkan SDK (instalação pelo winget
   `KhronosGroup.VulkanSDK` precisa da aprovação do UAC pelo Celso). Seleção em tempo de execução: `PS3_RSX=rpcs3`;
   o live draw continua o padrão. No ps3kit a ligação com o runtime fica no main do port (boot_main.cpp).
+- Plano do porte (do ps3kit 2e972569 para o nosso ps3recomp, ramo gow3-rsx):
+  1. `libs/video/cellGcmSys.c/.h`: o "RSX externo" -- `CellGcmRsxHooks`/`cellGcm_set_rsx_hooks`, `s_rsx` (~31
+     pontos: labels em `GCM_RSX_REPORTS` e controle em `CELL_GCM_RSX_CONTEXT+0x40` com a ponte, iomap/iounmap,
+     partida no cellGcmInit, o andador de FIFO do runtime desligado, flips por `cellGcm_rsx_event`, buffers de
+     exibição, relatórios por `gcm_rsx_report_ea`, `g_spu_put_hook = spu_put_hold_check`); cópia do arquivo dele em
+     `scratchpad\ps3kit_cellGcmSys.c`; comparar trecho a trecho com o nosso (o nosso tem os ajustes do GOW3).
+  2. `templates/project/main.cpp`: o `ps3rsx_select` do `boot_main.cpp` dele (memória do RPCS3 antes do ELF,
+     tratador de falhas `ps3rsx_handle_fault`, `ps3rsx_start` com os callbacks e a janela).
+  3. CMake do projeto: `include(gpu/ps3rsx.cmake)` + `ps3rsx_link(GOW3Native <gpu-build> SOURCES main.cpp ...)`
+     por uma opção do gow3_build (`--rsx-rpcs3 <pasta do build de gpu/>`).
+  4. Compilar gpu/ (MSVC x64, `ninja ps3rsx_flip_smoke`) depois do Vulkan SDK; então os marcos.
 
 ## LLE seletivo da libsre (LFQueue)
 
