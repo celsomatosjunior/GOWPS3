@@ -2049,7 +2049,7 @@ index 35052c67..b059c9ef 100644
  #define VMX_FUN(name, expr, flush_in, nanmode) \
  VMX_INL void name(VMX_D, VMX_B, uint32_t vscr) { const uint8_t* b = (const uint8_t*)b_; uint8_t r[16]; \
 diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
-index 5fc50208..34195037 100644
+index 5fc50208..9f859ad8 100644
 --- a/runtime/spu/spu_channels.c
 +++ b/runtime/spu/spu_channels.c
 @@ -91,6 +91,8 @@ static uint64_t spu_host_ns(void)
@@ -2372,7 +2372,7 @@ index 5fc50208..34195037 100644
          ctx->pc = pc;
          /* Stop at the drain's return point too: it sits mid-function, so it is
           * no lifted entry, and a job's return would otherwise run on through
-@@ -2658,6 +2863,38 @@ void spu_indirect_branch(spu_context* ctx)
+@@ -2658,6 +2863,39 @@ void spu_indirect_branch(spu_context* ctx)
              return;
          }
      }
@@ -2396,6 +2396,7 @@ index 5fc50208..34195037 100644
 +                    pc - ctx->resident_code[s].lsa < ctx->resident_code[s].size) {
 +                    spu_fn fn = spu_lifted_lookup(ctx, pc);
 +                    if (fn) {
++                        if (g_spu_jobcap_live) spu_jobcap_dispatch(ctx, (void (*)(spu_context*))fn);   /* SPU_JOBCAP */
 +                        spu_check_stack_reset(ctx, fn);
 +#if defined(__clang__)
 +                        __attribute__((musttail)) return fn(ctx);
@@ -2411,6 +2412,47 @@ index 5fc50208..34195037 100644
      /* Synthetic HLE tasks have no resident taskset policy at 0xA70. Real
       * tasksets use the SAME syscall address, so the API table alone is not
       * evidence that this is an HLE context. LLE tasks must enter Sony's policy
+@@ -2722,6 +2960,32 @@ void spu_indirect_branch(spu_context* ctx)
+             for (int i = 0; i < 64; i++) if (pages[i]) p += snprintf(line+p, sizeof(line)-p, " 0x%X", i<<12);
+             fprintf(stderr, "%s\n", line); }
+       } }
++    /* SPU_IB_HIST=1: indirect branches counted by (image, target pc), the top 15 printed every 2^22 --
++     * which module's computed jumps the dispatcher spends its time on (counts are approximate: no lock). */
++    { static int s_h = -1; if (s_h < 0) s_h = getenv("SPU_IB_HIST") ? 1 : 0;
++      if (s_h) {
++          static struct { uint32_t key; uint32_t lr; uint64_t n; } tab[4096];
++          static uint64_t tot = 0;
++          const uint32_t key = (((uint32_t)ctx->image_id & 0x7FFu) << 20) | (ctx->pc & 0x3FFFFu) | 0x80000000u;
++          uint32_t h = (key * 2654435761u) >> 20;
++          for (int k = 0; k < 4096; k++, h = (h + 1) & 4095u) {
++              if (!tab[h].key) { tab[h].key = key; tab[h].lr = ctx->gpr[0]._u32[0]; }
++              if (tab[h].key == key) { tab[h].n++; break; }
++          }
++          if ((++tot & ((1u << 22) - 1)) == 0) {
++              fprintf(stderr, "[ib-hist] %llu indirect branches; top of the last 2^22:\n", (unsigned long long)tot);
++              for (int r = 0; r < 15; r++) {
++                  int best = -1;
++                  for (int i = 0; i < 4096; i++) if (tab[i].key && tab[i].n && (best < 0 || tab[i].n > tab[best].n)) best = i;
++                  if (best < 0) break;
++                  const uint32_t k2 = tab[best].key & 0x7FFFFFFFu;
++                  fprintf(stderr, "[ib-hist]   %6.2f%% img=%u pc=0x%05X (lr 0x%05X)\n",
++                          100.0 * (double)tab[best].n / (double)(1u << 22), k2 >> 20, k2 & 0x3FFFFu, tab[best].lr);
++                  tab[best].n = 0;
++              }
++              for (int i = 0; i < 4096; i++) tab[i].n = 0;
++          }
++      } }
+     { static int s_t = -1; if (s_t < 0) s_t = getenv("SPU_POLLTRACE") ? 1 : 0;
+       if (s_t) { static uint64_t s_n = 0; static uint32_t s_last = 0; static uint64_t s_run = 0;
+         if (ctx->pc == s_last) s_run++; else { s_last = ctx->pc; s_run = 1; }
+@@ -3049,6 +3313,7 @@ void spu_indirect_branch(spu_context* ctx)
+                       fprintf(stderr, "[jobexec] dumped LS at job entry -> %s\n", dp); }
+                   s_dumped = 1; } } }
+     }
++    if (fn && g_spu_jobcap_live) spu_jobcap_dispatch(ctx, (void (*)(spu_context*))fn);   /* SPU_JOBCAP: a job entry opens its record */
+     if (fn) {
+         spu_check_stack_reset(ctx, fn);
+         /* MUSTTAIL: a guest loop that iterates through an indirect branch (the
 diff --git a/runtime/spu/spu_coherency.c b/runtime/spu/spu_coherency.c
 index ed2bcf58..54bca2f6 100644
 --- a/runtime/spu/spu_coherency.c
@@ -2459,7 +2501,7 @@ index ed2bcf58..54bca2f6 100644
 +#endif
 +}
 diff --git a/runtime/spu/spu_context.h b/runtime/spu/spu_context.h
-index c5ccbec7..b1615e48 100644
+index c5ccbec7..38b15a51 100644
 --- a/runtime/spu/spu_context.h
 +++ b/runtime/spu/spu_context.h
 @@ -619,15 +619,30 @@ static SPU_NOINLINE_COLD void spu_ls_read_diag(const spu_context* ctx, uint32_t
@@ -2559,7 +2601,7 @@ index c5ccbec7..b1615e48 100644
  /* ---------------------------------------------------------------------------
   * Preferred slot extraction
   *
-@@ -923,6 +966,18 @@ void spu_irqwait_diag(spu_context* ctx);
+@@ -923,6 +966,24 @@ void spu_irqwait_diag(spu_context* ctx);
  
  /* Drain a translated call up to its explicit architectural return PC. */
  void spu_drain_call(spu_context* ctx, uint32_t return_pc);
@@ -2567,9 +2609,15 @@ index c5ccbec7..b1615e48 100644
 + * where spu_drain_call's loop runs no step and returns as it entered (no interrupt frame armed, the
 + * enclosing drain's return pc untouched). The lifted code calls it after every brsl/bisl -- God of War
 + * III's EDGE jobs ~1.3% of their SPU in the call alone. spu_drain.c itself keeps the real function. */
++/* SPU_JOBCAP (spu_jobcap.c): job capture hooks; g_spu_jobcap_live > 0 only while armed. */
++extern volatile int g_spu_jobcap_live;
++void spu_jobcap_dispatch(spu_context* ctx, void (*fn)(spu_context*));
++void spu_jobcap_ret(spu_context* ctx, uint32_t return_pc);
++void spu_jobcap_dma(spu_context* ctx, int put, uint32_t lsa, uint64_t ea, const uint8_t* ls_ptr, uint32_t size);
 +#ifndef SPU_DRAIN_IMPL
 +static inline void spu_drain_call_inline(spu_context* ctx, uint32_t return_pc)
 +{
++    if (__builtin_expect(g_spu_jobcap_live > 0, 0)) spu_jobcap_ret(ctx, return_pc);
 +    if (__builtin_expect(!g_spu_trampoline_fn && !((ctx->pc ^ return_pc) & SPU_LS_MASK), 1)) return;
 +    spu_drain_call(ctx, return_pc);
 +}
@@ -2578,7 +2626,7 @@ index c5ccbec7..b1615e48 100644
  /* SPU_PCHIST=1: bucket SPU execution by the GPU module's own symbols.
   *
   * SPU_VRAMPC showed 3.7M VRAM writes from Host2Local_Body and ZERO from
-@@ -1044,6 +1099,21 @@ void spu_direct_init(void);
+@@ -1044,6 +1105,21 @@ void spu_direct_init(void);
      } while (0)
  #endif
  
@@ -2600,11 +2648,23 @@ index c5ccbec7..b1615e48 100644
  /* Depth-aware SPU link return (`bi $r0`): host `return` while a matched
   * brsl/bisl frame is live (host_depth>0); at 0 the frame was destroyed (task
   * resume / restack unwind) so dispatch to the link register instead -- faithful
+diff --git a/runtime/spu/spu_dispatch_mt.c b/runtime/spu/spu_dispatch_mt.c
+index d9f86bb4..b9ded356 100644
+--- a/runtime/spu/spu_dispatch_mt.c
++++ b/runtime/spu/spu_dispatch_mt.c
+@@ -62,6 +62,7 @@ void spu_indirect_branch_mt(spu_context* ctx)
+         if (!fn) fn = spu_lookup(pc, ctx->image_id);
+         if (fn) {
+             ctx->pc = pc;
++            if (__builtin_expect(g_spu_jobcap_live != 0, 0)) spu_jobcap_dispatch(ctx, fn);   /* SPU_JOBCAP */
+             __attribute__((musttail)) return fn(ctx);
+         }
+     }
 diff --git a/runtime/spu/spu_dma.h b/runtime/spu/spu_dma.h
-index 8c4ccaa8..870cce2e 100644
+index 8c4ccaa8..8cfaa5bb 100644
 --- a/runtime/spu/spu_dma.h
 +++ b/runtime/spu/spu_dma.h
-@@ -595,8 +595,11 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
+@@ -595,8 +595,12 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
                                lsa, (uint32_t)ea, size, (uint32_t)spu->pc, spu->image_id, "\n");
                }
            } }
@@ -2615,10 +2675,11 @@ index 8c4ccaa8..870cce2e 100644
 +        extern int spu_overlay_get_unchanged(spu_context*, uint32_t, const uint8_t*, const uint8_t*, uint32_t);
 +        const int get_same = spu_overlay_get_unchanged(spu, (uint32_t)ea, (const uint8_t*)ls_ptr, (const uint8_t*)ea_ptr, size);
 +        if (!get_same) memcpy(ls_ptr, ea_ptr, size);
++        if (__builtin_expect(g_spu_jobcap_live > 0, 0)) spu_jobcap_dma(spu, 0, lsa, ea, (const uint8_t*)ls_ptr, size);
          /* SPU_STACKEA_WATCH (b): scan the just-loaded payload for a 0xD00Cxxxx
           * dword = the completion-word EA arriving in a job buffer. */
          { static int s_se = -1; if (s_se < 0) s_se = getenv("SPU_STACKEA_WATCH") ? 1 : 0;
-@@ -626,7 +629,7 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
+@@ -626,7 +630,7 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
          /* Swappable-overlay tracking: a GET from a registered overlay source
           * (by EA or by content signature) marks that overlay's lifted
           * functions resident for this context. */
@@ -2627,7 +2688,15 @@ index 8c4ccaa8..870cce2e 100644
            spu_overlay_note_get(spu, (uint32_t)ea, (const uint8_t*)ls_ptr, size); }
          /* SPU_LS_WATCH: a DMA GET landing on a watched LS line is how the PPU
           * delivers commands into the SPU's queue (bypasses spu_ls_write128). */
-@@ -956,6 +959,52 @@ static inline int mfc_enqueue(mfc_engine* mfc, spu_context* spu)
+@@ -643,6 +647,7 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
+               }
+           } }
+     } else if (mfc_is_put(cmd)) {
++        if (__builtin_expect(g_spu_jobcap_live > 0, 0)) spu_jobcap_dma(spu, 1, lsa, ea, (const uint8_t*)ls_ptr, size);
+         /* PUT: local store -> main memory.
+          *
+          * A plain PUT is a store by another processor as far as every SPU
+@@ -956,6 +961,52 @@ static inline int mfc_enqueue(mfc_engine* mfc, spu_context* spu)
      return 0;
  }
  
@@ -2680,7 +2749,7 @@ index 8c4ccaa8..870cce2e 100644
  /*
   * Submit and immediately execute an MFC command.
   * This is the main entry point called when the SPU writes to MFC_Cmd.
-@@ -1024,6 +1073,8 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
+@@ -1024,6 +1075,8 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
      uint32_t size = spu->mfc_size;
      uint32_t tag  = spu->mfc_tag & 0x1F;
      int rc = 0;
@@ -2689,7 +2758,7 @@ index 8c4ccaa8..870cce2e 100644
  
      /* SPU_WATCHEA=<hex guest addr>: report every DMA whose destination range
       * covers one word, with the SPU id, its pc and the value the word holds
-@@ -1347,6 +1398,12 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
+@@ -1347,6 +1400,12 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
         * only when such episodes are. Unset: no cost beyond the existing test. */
        static int64_t s_log = -1;
        if (s_log < 0) { const char* e = getenv("SPU_DMA_REPEAT_LOG"); s_log = e ? atoll(e) : 0; }
@@ -2702,7 +2771,7 @@ index 8c4ccaa8..870cce2e 100644
        if ((uint32_t)ea == s_last_ea && lsa == s_last_lsa) {
            if (++s_rep >= s_limit) {
                unsigned long long now = ps3_ms_now();
-@@ -1354,6 +1411,25 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
+@@ -1354,6 +1413,25 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
                    s_since = now;
                    if (s_log) spu_dma_repeat_log_start(spu);
                }
@@ -2728,7 +2797,7 @@ index 8c4ccaa8..870cce2e 100644
                if (now - s_since >= s_secs * 1000u) {
                    s_rep = 0; s_since = 0;   /* re-arm: the chain may run this job again */
                    extern void spu_halt(spu_context*);
-@@ -1573,6 +1649,24 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
+@@ -1573,6 +1651,24 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
          }
      }
  
@@ -2754,7 +2823,7 @@ index 8c4ccaa8..870cce2e 100644
       * List commands (GETL/PUTL...): per CBEA the LIST's local-store address is
       * carried in MFC_EAL (the PM writes EAL=list, LSA=dest) and each element
 diff --git a/runtime/spu/spu_drain.c b/runtime/spu/spu_drain.c
-index 49bc2b94..53fb66b4 100644
+index 49bc2b94..a83aac38 100644
 --- a/runtime/spu/spu_drain.c
 +++ b/runtime/spu/spu_drain.c
 @@ -5,6 +5,7 @@
@@ -2765,6 +2834,22 @@ index 49bc2b94..53fb66b4 100644
  #include "spu_context.h"
  #include "spu_lockstep.h"
  #include <setjmp.h>
+@@ -568,6 +569,7 @@ void spu_drain_call(spu_context* ctx, uint32_t return_pc)
+             if (*tramp == spu_indirect_branch &&
+                 (ctx->pc & SPU_LS_MASK) == (return_pc & SPU_LS_MASK)) {
+                 *tramp = 0;
++                if (__builtin_expect(g_spu_jobcap_live > 0, 0)) spu_jobcap_ret(ctx, return_pc);
+                 SPU_DRAIN_POP_IRQ();
+                 return;
+             }
+@@ -603,6 +605,7 @@ void spu_drain_call(spu_context* ctx, uint32_t return_pc)
+             fn(ctx);
+         }
+         if ((ctx->pc & SPU_LS_MASK) == (return_pc & SPU_LS_MASK)) {
++            if (__builtin_expect(g_spu_jobcap_live > 0, 0)) spu_jobcap_ret(ctx, return_pc);
+             SPU_DRAIN_POP_IRQ();
+             return;
+         }
 diff --git a/runtime/spu/spu_helpers.h b/runtime/spu/spu_helpers.h
 index f04fda63..adfd39ea 100644
 --- a/runtime/spu/spu_helpers.h
@@ -3078,6 +3163,377 @@ index f04fda63..adfd39ea 100644
 +#endif
 +
  #endif /* SPU_HELPERS_H */
+diff --git a/runtime/spu/spu_jobcap.c b/runtime/spu/spu_jobcap.c
+new file mode 100644
+index 00000000..6b908f80
+--- /dev/null
++++ b/runtime/spu/spu_jobcap.c
+@@ -0,0 +1,152 @@
++/* SPU job capture: the state a real SPU job starts from, every DMA it does and the state it ends in,
++ * written to files so the job can be replayed and timed outside the game (tools/spu_job_replay).
++ *
++ * SPU_JOBCAP=<dir>,<image id>,<entry LSA hex>[,<max jobs>[,<skip jobs>]]
++ *   A job starts when a dispatch to <entry> runs the function the registry has for (<image id>, <entry>)
++ *   (a WWS job-code module's image, e.g. 206 for God of War III's EDGE geometry module); its record opens
++ *   as <dir>/job_<n>.gjc. It ends when the call that entered it drains back to the link address it
++ *   was entered with (r0 at entry); a new job start on the same thread closes an unfinished record as
++ *   incomplete. Default 64 jobs, none skipped.
++ *
++ * Record format (host byte order, u32 words):
++ *   "GJC1" u32 version(1) u32 image u32 entry
++ *   chunks: u32 tag, u32 a, u32 b, u32 size, then size bytes
++ *     1 start: a = the context's own image (the job manager's), b = link (r0); data = 128 registers (u128, host layout) + the 256 KB LS
++ *     2 GET:   a = lsa, b = ea; data = the bytes the GET put in the LS
++ *     3 PUT:   a = lsa, b = ea; data = the bytes the PUT wrote to main memory
++ *     7 context: data = image_id, resident_ovl, resident_task, 0 (after tag 1)
++ *     8 event/interrupt/MFC tag/parked list state (gjc_state, after tag 7)
++ *     5 end:   a = image, b = pc; data = registers + LS, as tag 1
++ *     6 incomplete (no end seen), size 0
++ *     4 eof, size 0
++ * Atomic transfers (GETLLAR/PUTLLC) are not recorded. */
++#include "spu_context.h"
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++volatile int g_spu_jobcap_live = -1;          /* -1 not parsed, 0 off, 1 armed */
++static char s_dir[400];
++static int s_image;
++static uint32_t s_entry;
++static long s_max = 64, s_skip = 0;
++static volatile long s_seen = 0, s_done = 0;
++static SPU_THREAD_LOCAL FILE* t_rec;
++static SPU_THREAD_LOCAL const spu_context* t_ctx;
++static SPU_THREAD_LOCAL uint32_t t_link;
++
++static void jc_parse(void)
++{
++    const char* e = getenv("SPU_JOBCAP");
++    if (!e || !*e) { g_spu_jobcap_live = 0; return; }
++    char tmp[600]; strncpy(tmp, e, sizeof tmp - 1); tmp[sizeof tmp - 1] = 0;
++    char* f[5] = {0}; int n = 0;
++    for (char* p = tmp; n < 5 && p; ) { f[n++] = p; p = strchr(p, ','); if (p) *p++ = 0; }
++    if (n < 3) { fprintf(stderr, "[jobcap] SPU_JOBCAP=<dir>,<image>,<entry hex>[,max[,skip]]\n"); g_spu_jobcap_live = 0; return; }
++    strncpy(s_dir, f[0], sizeof s_dir - 1);
++    s_image = atoi(f[1]);
++    s_entry = (uint32_t)strtoul(f[2], 0, 16);
++    if (n > 3 && *f[3]) s_max = atol(f[3]);
++    if (n > 4 && *f[4]) s_skip = atol(f[4]);
++    fprintf(stderr, "[jobcap] image %d entry 0x%05X -> %s (max %ld, skip %ld)\n", s_image, s_entry, s_dir, s_max, s_skip);
++    g_spu_jobcap_live = 1;
++}
++
++
++/* tag 8 (the event/interrupt/MFC tag/parked list state a job starts with) comes from an optional local
++ * file, spu_jobcap_state_ps3kit.c, which fills these in from a constructor; without it no tag 8. */
++void   (*g_spu_jobcap_state_save)(void* s, const spu_context* c) = 0;
++void   (*g_spu_jobcap_state_load)(spu_context* c, const void* s) = 0;
++size_t g_spu_jobcap_state_size = 0;
++
++static void jc_chunk(FILE* f, uint32_t tag, uint32_t a, uint32_t b, const void* d1, uint32_t n1, const void* d2, uint32_t n2)
++{
++    const uint32_t h[4] = { tag, a, b, n1 + n2 };
++    fwrite(h, 4, 4, f);
++    if (n1) fwrite(d1, 1, n1, f);
++    if (n2) fwrite(d2, 1, n2, f);
++}
++
++static void jc_close(int complete, const spu_context* ctx)
++{
++    if (!t_rec) return;
++    if (complete) jc_chunk(t_rec, 5, (uint32_t)s_image, ctx->pc, ctx->gpr, sizeof ctx->gpr, ctx->ls, SPU_LS_SIZE);
++    else jc_chunk(t_rec, 6, 0, 0, 0, 0, 0, 0);
++    jc_chunk(t_rec, 4, 0, 0, 0, 0, 0, 0);
++    fclose(t_rec); t_rec = NULL; t_ctx = NULL;
++    const long d = __atomic_add_fetch(&s_done, 1, __ATOMIC_RELAXED);
++    if (d >= s_max) g_spu_jobcap_live = 0;
++}
++
++/* From spu_indirect_branch, before the resolved function runs. */
++typedef void (*jc_fn)(spu_context*);
++extern jc_fn spu_lookup(uint32_t addr, int image_id);
++static jc_fn s_entry_fn;
++void spu_jobcap_dispatch(spu_context* ctx, void (*fn)(spu_context*))
++{
++    if (g_spu_jobcap_live < 0) jc_parse();
++    if (g_spu_jobcap_live <= 0) return;
++    /* the job went back to its link by a computed branch (the manager's own dispatch loop takes it there) */
++    if (t_rec && ctx == t_ctx && (ctx->pc & SPU_LS_MASK) == t_link) { jc_close(1, ctx); return; }
++    { static int dbg = -1, nd = 0;   /* SPU_JOBCAP_DEBUG=1: the first dispatches into the job code buffer */
++      if (dbg < 0) dbg = getenv("SPU_JOBCAP_DEBUG") ? 1 : 0;
++      const uint32_t pc = ctx->pc & SPU_LS_MASK;
++      if (dbg && pc >= 0x4000u && pc < 0x20000u && nd < 40) { nd++;
++          fprintf(stderr, "[jobcap-dbg] pc=0x%05X image=%d resident_ovl=%d task=%d r0=0x%05X\n",
++                  pc, ctx->image_id, ctx->resident_ovl, ctx->resident_task, ctx->gpr[0]._u32[0] & SPU_LS_MASK); } }
++    { static int dbg2 = -1;   /* SPU_JOBCAP_DEBUG: job entries (link back in the manager, below 0x4000), counted */
++      if (dbg2 < 0) dbg2 = getenv("SPU_JOBCAP_DEBUG") ? 1 : 0;
++      const uint32_t pc = ctx->pc & SPU_LS_MASK, lr = ctx->gpr[0]._u32[0] & SPU_LS_MASK;
++      if (dbg2 && pc >= 0x4000u && lr < 0x4000u) {
++          static uint32_t epc[64]; static unsigned long long en[64], tot;
++          int k = 0; while (k < 64 && epc[k] && epc[k] != pc) k++;
++          if (k < 64) { if (!epc[k]) epc[k] = pc; en[k]++; }
++          if ((++tot % 200000) == 0) {
++              fprintf(stderr, "[jobcap-dbg] %llu job entries:", tot);
++              for (int i = 0; i < 64 && epc[i]; i++) if (en[i] * 100 >= tot) fprintf(stderr, " %05X=%llu", epc[i], en[i]);
++              fprintf(stderr, "%c", 10);
++          } } }
++    if ((ctx->pc & SPU_LS_MASK) != s_entry) return;
++    /* the module's entry, by the function about to run (image ids at dispatch are not the module's) */
++    if (!s_entry_fn) s_entry_fn = spu_lookup(s_entry, s_image);
++    { static int nm = 0; if (getenv("SPU_JOBCAP_DEBUG") && nm < 10 && fn != s_entry_fn) { nm++;
++        fprintf(stderr, "[jobcap-dbg] entry 0x%05X: dispatched fn=%p, registry (%d)=%p, image=%d ovl=%d"
++                "%c", s_entry, (void*)fn, s_image, (void*)s_entry_fn, ctx->image_id, ctx->resident_ovl, 10); } }
++    if (!fn || fn != s_entry_fn) return;
++    if (t_rec) jc_close(0, ctx);                       /* a job that never drained back */
++    const long k = __atomic_fetch_add(&s_seen, 1, __ATOMIC_RELAXED);
++    if (k < s_skip || k - s_skip >= s_max) return;
++    char path[512]; snprintf(path, sizeof path, "%s/job_%05ld.gjc", s_dir, k - s_skip);
++    FILE* f = fopen(path, "wb");
++    if (!f) { fprintf(stderr, "[jobcap] cannot open %s\n", path); g_spu_jobcap_live = 0; return; }
++    setvbuf(f, NULL, _IOFBF, 1 << 20);
++    const uint32_t hdr[4] = { 0x31434A47u /* "GJC1" */, 1u, (uint32_t)s_image, s_entry };
++    fwrite(hdr, 4, 4, f);
++    t_link = ctx->gpr[0]._u32[0] & SPU_LS_MASK;
++    jc_chunk(f, 1, (uint32_t)ctx->image_id, t_link, ctx->gpr, sizeof ctx->gpr, ctx->ls, SPU_LS_SIZE);
++    { const uint32_t st[4] = { (uint32_t)ctx->image_id, (uint32_t)ctx->resident_ovl, (uint32_t)ctx->resident_task, 0 };
++      jc_chunk(f, 7, 0, 0, st, sizeof st, 0, 0); }
++    if (g_spu_jobcap_state_save && g_spu_jobcap_state_size <= 4096) {
++        uint8_t gs[4096]; g_spu_jobcap_state_save(gs, ctx);
++        jc_chunk(f, 8, 0, 0, gs, (uint32_t)g_spu_jobcap_state_size, 0, 0); }
++    t_rec = f; t_ctx = ctx;
++}
++
++/* From spu_drain_call (inline and full): the call that entered the job is back at its link. */
++void spu_jobcap_ret(spu_context* ctx, uint32_t return_pc)
++{
++    if (t_rec && ctx == t_ctx && (return_pc & SPU_LS_MASK) == t_link && (ctx->pc & SPU_LS_MASK) == t_link)
++        jc_close(1, ctx);
++}
++
++/* From mfc_do_transfer, after a GET's copy / before a PUT's copy (the LS bytes are the data either way). */
++/* SPU_JOBREPLAY (spu_jobreplay.c): the context being replayed and a callback for its DMAs. */
++spu_context* volatile g_spu_jobreplay_ctx = 0;
++void (*g_spu_jobreplay_dma)(int put, uint32_t lsa, uint32_t ea, const uint8_t* ls_ptr, uint32_t size) = 0;
++
++void spu_jobcap_dma(spu_context* ctx, int put, uint32_t lsa, uint64_t ea, const uint8_t* ls_ptr, uint32_t size)
++{
++    if (ctx == g_spu_jobreplay_ctx && g_spu_jobreplay_dma) { g_spu_jobreplay_dma(put, lsa, (uint32_t)ea, ls_ptr, size); return; }
++    if (t_rec && ctx == t_ctx && size)
++        jc_chunk(t_rec, put ? 3u : 2u, lsa, (uint32_t)ea, ls_ptr, size, 0, 0);
++}
+diff --git a/runtime/spu/spu_jobreplay.c b/runtime/spu/spu_jobreplay.c
+new file mode 100644
+index 00000000..2ab5cef3
+--- /dev/null
++++ b/runtime/spu/spu_jobreplay.c
+@@ -0,0 +1,207 @@
++/* SPU job replay: run jobs recorded by SPU_JOBCAP (spu_jobcap.c) outside the game, time them and compare
++ * them with what they did in the game.
++ *
++ * SPU_JOBREPLAY=<dir>[,<reps>[,<first>[,<count>]]]   (the title's main calls spu_jobreplay_main once guest
++ * memory and the lifted code are registered, and exits with its result)
++ *
++ * Each <dir>/job_<n>.gjc: the GETs' bytes are written to guest memory at their EAs (in record order), a
++ * fresh context gets the recorded registers and local store, its link register becomes SPU_JOB_RETURN_LS
++ * so the job halts when it returns, and the job runs <reps> times (default 10) from its entry. The first
++ * run is compared with the record's end state: local store bytes, registers r1..r127 (r0, the link, was
++ * replaced) and every PUT's bytes in guest memory (a later PUT to the same bytes wins, as in the game).
++ * Printed per job: [jobreplay] job <n>: ok|DIFF, LS bytes differing (and the first ranges), registers
++ * differing, PUT bytes differing, median time of the runs in microseconds. A summary line ends it.
++ *
++ * Differences are expected where the job manager's interrupt handler wrote during the job in the game
++ * (it pipelines the next jobs' inputs): the replay has no interrupts. */
++#include "spu_context.h"
++#include "spu_interp.h"   /* spu_lifted_fn / spu_lifted_lookup */
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#ifdef _WIN32
++#include <windows.h>
++#endif
++
++extern uint8_t* vm_base;
++extern int spu_run_with_halt(void (*entry)(spu_context*), spu_context* ctx);
++extern spu_lifted_fn spu_lookup(uint32_t addr, int image_id);
++extern void   (*g_spu_jobcap_state_load)(spu_context* c, const void* s);   /* spu_jobcap.c (optional) */
++extern size_t g_spu_jobcap_state_size;
++
++typedef struct { uint32_t tag, a, b, size; uint8_t* data; } jr_chunk;
++
++/* the replayed job's own DMAs, in order (spu_jobcap_dma calls back while g_spu_jobreplay_ctx is it) */
++extern spu_context* volatile g_spu_jobreplay_ctx;
++extern volatile int g_spu_jobcap_live;
++extern void (*g_spu_jobreplay_dma)(int put, uint32_t lsa, uint32_t ea, const uint8_t* ls_ptr, uint32_t size);
++typedef struct { int put; uint32_t lsa, ea, size; uint8_t* data; } jr_dma;
++static jr_dma s_dma[512]; static int s_ndma;
++static void jr_on_dma(int put, uint32_t lsa, uint32_t ea, const uint8_t* ls_ptr, uint32_t size)
++{
++    if (s_ndma >= 512) return;
++    jr_dma* d = &s_dma[s_ndma++];
++    d->put = put; d->lsa = lsa; d->ea = ea; d->size = size;
++    d->data = (uint8_t*)malloc(size); memcpy(d->data, ls_ptr, size);
++}
++
++static double jr_now_us(void)
++{
++#ifdef _WIN32
++    static LARGE_INTEGER f; LARGE_INTEGER c;
++    if (!f.QuadPart) QueryPerformanceFrequency(&f);
++    QueryPerformanceCounter(&c);
++    return (double)c.QuadPart * 1e6 / (double)f.QuadPart;
++#else
++    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec * 1e6 + ts.tv_nsec / 1e3;
++#endif
++}
++
++static int jr_cmp_d(const void* a, const void* b)
++{
++    const double x = *(const double*)a, y = *(const double*)b; return x < y ? -1 : x > y;
++}
++
++/* Returns 0 on success (all compared jobs identical), 1 if any differed, 2 on an error. */
++static int jr_job(const char* path, int reps, int* ndiff, double* tsum, int* njobs)
++{
++    FILE* f = fopen(path, "rb");
++    if (!f) return -1;
++    uint32_t hdr[4];
++    if (fread(hdr, 4, 4, f) != 4 || hdr[0] != 0x31434A47u) { fclose(f); fprintf(stderr, "[jobreplay] %s: not a GJC1 record\n", path); return 2; }
++    const int image = (int)hdr[2]; const uint32_t entry = hdr[3];
++    jr_chunk* ch = NULL; int n = 0, cap = 0;
++    for (;;) {
++        jr_chunk c; uint32_t h[4];
++        if (fread(h, 4, 4, f) != 4) break;
++        c.tag = h[0]; c.a = h[1]; c.b = h[2]; c.size = h[3]; c.data = NULL;
++        if (c.size) { c.data = (uint8_t*)malloc(c.size); if (fread(c.data, 1, c.size, f) != c.size) { free(c.data); break; } }
++        if (n == cap) { cap = cap ? cap * 2 : 64; ch = (jr_chunk*)realloc(ch, cap * sizeof *ch); }
++        ch[n++] = c;
++        if (c.tag == 4) break;
++    }
++    fclose(f);
++    const jr_chunk *start = NULL, *end = NULL, *cst = NULL, *sst = NULL;
++    int gets = 0, puts = 0, incomplete = 0;
++    for (int i = 0; i < n; i++) {
++        if (ch[i].tag == 1) start = &ch[i];
++        else if (ch[i].tag == 5) end = &ch[i];
++        else if (ch[i].tag == 2) gets++;
++        else if (ch[i].tag == 3) puts++;
++        else if (ch[i].tag == 6) incomplete = 1;
++        else if (ch[i].tag == 7 && ch[i].size >= 12) cst = &ch[i];
++        else if (ch[i].tag == 8 && ch[i].size == g_spu_jobcap_state_size && g_spu_jobcap_state_load) sst = &ch[i];
++    }
++    const size_t st_size = sizeof(((spu_context*)0)->gpr) + SPU_LS_SIZE;
++    int rc = 0;
++    if (!start || start->size != st_size) { fprintf(stderr, "[jobreplay] %s: no start state\n", path); rc = 2; goto out; }
++    /* the job's inputs, where it reads them */
++    for (int i = 0; i < n; i++)
++        if (ch[i].tag == 2) memcpy(vm_base + ch[i].b, ch[i].data, ch[i].size);
++    const uint32_t* cs = cst ? (const uint32_t*)cst->data : NULL;
++    const int ctx_image = cs ? (int)cs[0] : (int)start->a;
++    double* t = (double*)malloc(sizeof(double) * (reps > 0 ? reps : 1));
++    spu_context* ctx = (spu_context*)calloc(1, sizeof(spu_context));
++    uint8_t* ls0 = NULL;
++    int ls_diff = 0, reg_diff = 0, put_diff = 0, first_ranges = 0;
++    char ranges[256] = "";
++    for (int r = 0; r < reps; r++) {
++        spu_context_init(ctx, 0);
++        ctx->image_id = ctx_image;
++        ctx->resident_ovl = cs ? (int)cs[1] : 0;
++        ctx->resident_task = cs ? (int)cs[2] : 0;
++        memcpy(ctx->gpr, start->data, sizeof ctx->gpr);
++        memcpy(ctx->ls, start->data + sizeof ctx->gpr, SPU_LS_SIZE);
++        if (sst) g_spu_jobcap_state_load(ctx, sst->data);
++        ctx->gpr[0]._u32[0] = 0x3FF00u;                       /* SPU_JOB_RETURN_LS: return halts */
++        ctx->pc = entry;
++        spu_lifted_fn fn = spu_lookup(entry, image);
++        if (!fn) { fprintf(stderr, "[jobreplay] %s: no lifted code at 0x%05X (image %d)\n", path, entry, image); rc = 2; break; }
++        for (int i = 0; i < s_ndma; i++) free(s_dma[i].data);
++        s_ndma = 0;
++        if (r == 0) { g_spu_jobreplay_dma = jr_on_dma; g_spu_jobreplay_ctx = ctx; g_spu_jobcap_live = 1; }
++        const double t0 = jr_now_us();
++        spu_run_with_halt((void (*)(spu_context*))fn, ctx);
++        t[r] = jr_now_us() - t0;
++        g_spu_jobreplay_ctx = 0;
++        if (r == 0) {   /* the job's DMAs against the record's, in order */
++            int k = 0, same = 0, first_bad = -1; char why[160] = "";
++            for (int i = 0; i < n; i++) if (ch[i].tag == 2 || ch[i].tag == 3) {
++                const int put = ch[i].tag == 3;
++                if (k < s_ndma && s_dma[k].put == put && s_dma[k].ea == ch[i].b && s_dma[k].size == ch[i].size &&
++                    (!put || !memcmp(s_dma[k].data, ch[i].data, ch[i].size))) same++;
++                else if (first_bad < 0) {
++                    first_bad = k;
++                    if (k < s_ndma) snprintf(why, sizeof why, " first: rec %s ea=%08X+%X, replay %s ea=%08X+%X",
++                        put ? "PUT" : "GET", ch[i].b, ch[i].size, s_dma[k].put ? "PUT" : "GET", s_dma[k].ea, s_dma[k].size);
++                    else snprintf(why, sizeof why, " first: rec %s ea=%08X+%X, replay none", put ? "PUT" : "GET", ch[i].b, ch[i].size);
++                }
++                k++;
++            }
++            fprintf(stderr, "[jobreplay]   dma: record %d, replay %d, same %d%s\n", gets + puts, s_ndma, same, why);
++        }
++        if (r == 0 && end && end->size == st_size) {
++            const uint8_t* els = end->data + sizeof ctx->gpr;
++            for (uint32_t o = 0; o < SPU_LS_SIZE; o++) {
++                if (ctx->ls[o] != els[o]) {
++                    ls_diff++;
++                    if (first_ranges < 6 && (o == 0 || ctx->ls[o - 1] == els[o - 1])) {
++                        uint32_t e2 = o; while (e2 < SPU_LS_SIZE && ctx->ls[e2] != els[e2]) e2++;
++                        const size_t l = strlen(ranges);
++                        snprintf(ranges + l, sizeof ranges - l, " %05X+%X", o, e2 - o);
++                        first_ranges++;
++                    }
++                }
++            }
++            const u128* eg = (const u128*)end->data;
++            for (int k = 1; k < 128; k++) if (memcmp(&ctx->gpr[k], &eg[k], 16)) reg_diff++;
++            /* PUTs: the last write to each byte, as left in guest memory */
++            for (int i = 0; i < n; i++) if (ch[i].tag == 3) {
++                for (uint32_t o = 0; o < ch[i].size; o++) {
++                    int later = 0;
++                    for (int j = i + 1; j < n && !later; j++)
++                        if (ch[j].tag == 3 && ch[i].b + o >= ch[j].b && ch[i].b + o < ch[j].b + ch[j].size) later = 1;
++                    if (!later && vm_base[ch[i].b + o] != ch[i].data[o]) put_diff++;
++                }
++            }
++        }
++    }
++    if (!rc) {
++        qsort(t, reps, sizeof(double), jr_cmp_d);
++        const double med = t[reps / 2];
++        const int diff = end && (ls_diff || reg_diff || put_diff);
++        fprintf(stderr, "[jobreplay] %s: %s%s gets=%d puts=%d ls_diff=%d%s regs=%d put_bytes=%d  %.2f us (min %.2f)\n",
++                path, !end ? "NOEND" : diff ? "DIFF" : "ok", incomplete ? " (incomplete)" : "",
++                gets, puts, ls_diff, ranges, reg_diff, put_diff, med, t[0]);
++        if (diff) (*ndiff)++;
++        *tsum += med; (*njobs)++;
++        rc = diff;
++    }
++    free(t); free(ctx); free(ls0);
++out:
++    for (int i = 0; i < n; i++) free(ch[i].data);
++    free(ch);
++    return rc;
++}
++
++int spu_jobreplay_main(void)
++{
++    const char* e = getenv("SPU_JOBREPLAY");
++    if (!e || !*e) return -1;
++    char dir[480]; int reps = 10, first = 0, count = 100000;
++    { char tmp[600]; strncpy(tmp, e, sizeof tmp - 1); tmp[sizeof tmp - 1] = 0;
++      char* p = strchr(tmp, ','); if (p) { *p++ = 0; reps = atoi(p);
++        char* q = strchr(p, ','); if (q) { *q++ = 0; first = atoi(q);
++          char* s = strchr(q, ','); if (s) count = atoi(s + 1); } }
++      strncpy(dir, tmp, sizeof dir - 1); dir[sizeof dir - 1] = 0; }
++    if (reps < 1) reps = 1;
++    int ndiff = 0, njobs = 0; double tsum = 0;
++    for (int k = first; k < first + count; k++) {
++        char path[600]; snprintf(path, sizeof path, "%s/job_%05d.gjc", dir, k);
++        const int r = jr_job(path, reps, &ndiff, &tsum, &njobs);
++        if (r < 0) break;
++    }
++    fprintf(stderr, "[jobreplay] %d jobs, %d differ, mean %.2f us a job\n", njobs, ndiff, njobs ? tsum / njobs : 0.0);
++    return ndiff ? 1 : 0;
++}
++
 diff --git a/runtime/spu/spu_workload.c b/runtime/spu/spu_workload.c
 index 3ce8d0d6..e0ce995c 100644
 --- a/runtime/spu/spu_workload.c
@@ -3244,7 +3700,7 @@ index 3a022815..6cc72dfa 100644
                int best = -1;
                for (int j = 0; j < pt_used; j++)
 diff --git a/templates/project/main.cpp b/templates/project/main.cpp
-index f1f3243b..274e3deb 100644
+index f1f3243b..e520fbe5 100644
 --- a/templates/project/main.cpp
 +++ b/templates/project/main.cpp
 @@ -110,6 +110,7 @@ void     cellGcmTickVBlank(void);
@@ -3371,7 +3827,26 @@ index f1f3243b..274e3deb 100644
              }
          }
      }
-@@ -437,6 +482,9 @@ int main(int argc, char** argv)
+@@ -394,6 +439,8 @@ static int run_guest(uint32_t entry, uint32_t stack_top)
+ static int run_guest(uint32_t entry, uint32_t stack_top) { return ppu_run(entry, stack_top); }
+ #endif
+ 
++extern "C" int spu_jobreplay_main(void);   /* runtime/spu/spu_jobreplay.c */
++
+ int main(int argc, char** argv)
+ {
+     if (argc < 2) {
+@@ -429,6 +476,9 @@ int main(int argc, char** argv)
+     ppu_recomp_register();   /* lifted function table -> address map */
+     ps3_load_prx_modules();  /* this game's lifted system PRX, if it has any */
+     ppu_hle_init();          /* firmware import NID -> HLE handlers */
++    /* SPU_JOBREPLAY=<dir>[,reps[,first[,count]]]: replay SPU jobs recorded by SPU_JOBCAP and exit
++     * (runtime/spu/spu_jobreplay.c). Guest memory and the lifted SPU code are ready by here. */
++    { const int jr = spu_jobreplay_main(); if (jr >= 0) return jr; }
+     ppu_sysprx_register();   /* boot-critical CRT */
+     ppu_fs_register();       /* cellFs over the game directory */
+     lv2_init_syscalls();     /* the lv2 syscall table */
+@@ -437,6 +487,9 @@ int main(int argc, char** argv)
       * until the title registers its vblank and flip handlers during init. */
      g_ps3_guest_caller = harness_guest_caller;
      CreateThread(NULL, 4u * 1024 * 1024, frame_clock, NULL, 0, NULL);

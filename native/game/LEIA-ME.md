@@ -895,6 +895,24 @@ teste), módulo 912f ~14% (testes de caixas, cheio de desvios). Os laços do por
 `alinha_edge.py` (cópias dos scripts de medição em `<trabalho>\scripts_locais`: ab.sh, boot.sh, prof_*.py, rpcs3_medir.ps1...). O teste do controle (Switch 2 Pro pelo Steam,
 v14+) fica para o Celso.
 
+**11/11: código do Arnaldo e gravação/reprodução de jobs (em andamento).**
+- Revisados: ps3kit `ascension-perf` (130 commits novos até 10/11, quase todos no motor Vulkan próprio dele), o
+  README novo do gow-ascension-pc dele (três módulos de geometria do EDGE inteiros em código nativo, conferidos
+  contra jobs gravados do jogo) e o otavix010. Desde 11/11 o código do ps3kit pode ser copiado (permissão do
+  Arnaldo, via Celso), mas fica só local até ele permitir publicar: arquivos `runtime/spu/*_ps3kit.c`, que o
+  `gow3_build.py` põe direto no exe quando existem e que não entram no `ps3recomp-gow3.patch`.
+- `SPU_IB_HIST=1` (spu_channels.c): desvios indiretos por (imagem, destino). Na fase ~2 milhões/s, quase todos do
+  gerenciador Wws (imagem 1: 0x3FEC0, 0xA2C/0xA60, 0x1Bxx-0x2Fxx), não dos módulos de job: o atalho local de
+  desvios indiretos do Ascension (`SPU_IBL`) não renderia aqui. Na thread do EDGE o código dos jobs é ~49%, o
+  despacho ~5% (com cache).
+- Gravação de jobs `SPU_JOBCAP=<dir>,<imagem>,<entrada>[,max[,pular]]` (`runtime/spu/spu_jobcap.c`, formato GJC1)
+  e reprodução `SPU_JOBREPLAY=<dir>[,reps[,primeiro[,quantos]]]` (`spu_jobreplay.c`, chamada pelo main.cpp do
+  modelo antes do jogo). Achados: no despacho o `image_id` é composto (406522816) e o `resident_ovl` é 0, então o
+  job é reconhecido pela função de entrada (`spu_lookup(0xD200, 206)` para o EDGE `jobmod_14561`); os jobs entram
+  pelo atalho `SPU_IB_RESIDENT_FAST` e voltam ao gerenciador por desvio indireto ao endereço de retorno. 64 jobs
+  gravados na fase (só 0-2 GETs cada: as entradas já estão na LS). A reprodução **ainda não é válida** (o job
+  não faz nenhum DMA e para cedo); em correção com o preparo do ps3kit (policy_mode, retorno pela drenagem).
+
 ## LLE seletivo da libsre (LFQueue)
 
 O ps3recomp não tem `_cellSpursLFQueuePushBody`, e o caminho ANY2ANY do CellSyncLFQueue

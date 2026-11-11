@@ -558,6 +558,12 @@ def step_projeto(args, work: Path, state: dict, progress):
                   f'target_sources(${{PROJECT_NAME}} PRIVATE "{(HERE / "gow3_diag.cpp").as_posix()}")\n'
                   "if(MSVC)\n    target_link_options(${PROJECT_NAME} PRIVATE /MAP)\nendif()\n", encoding="utf-8")
     use_gow3_rsx(proj, cm)
+    # Arquivos locais opcionais do runtime que só se registram por construtor (código do ps3kit usado com permissão
+    # do Arnaldo, fora do patch público): entram direto no exe, porque um objeto não referenciado da biblioteca
+    # estática do runtime seria descartado na ligação. Quem não os tem compila igual.
+    for extra in sorted((Path(args.ps3recomp) / "runtime" / "spu").glob("*_ps3kit.c")):
+        cm.write_text(cm.read_text(encoding="utf-8") + f'target_sources(${{PROJECT_NAME}} PRIVATE "{extra.as_posix()}")\n',
+                      encoding="utf-8")
     if args.spu_jobs:
         add_spu_jobs(args, proj, cm)
     spu_simd(args, cm)
