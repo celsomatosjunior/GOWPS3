@@ -253,6 +253,23 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
 
 ## Ponto de retomada (atualizado a cada pausa)
 
+**11/11/2026 (noite): ponte do RSX do RPCS3 e correção da métrica de quadros.**
+- **Métrica:** o `[fps]` do live draw conta 2 por quadro do jogo (`rsx_live_draw_present` roda no flip da FIFO e
+  de novo pelo relógio de quadros). O contador de quadros do próprio jogo (0x649ED8, +1 por volta do laço
+  principal) e o contador de flips do GCM (`[flip]`) dão exatamente a metade: os "~19 q/s" da v21 são ~10
+  quadros reais por segundo. O RPCS3 (título da janela, que conta flips) faz ~21-23 na mesma luta. A/B entre
+  builds do live draw continuam válidos (o fator é o mesmo); para quadros reais, `GOW3_trabalhops_real.py`.
+- **Ponte do RSX do RPCS3** (ramo `rsx-rpcs3` aqui, `gow3-rsx` no ps3recomp; código do ps3kit de Arnaldo Lima,
+  GPL-2.0): `gow3_build.py --rsx-rpcs3 <pasta do build de gpu/>` e rodar com `PS3_RSX=rpcs3`. Sem a variável o
+  exe é o de sempre (live draw). Marcos: compila, o RSX inicia (Vulkan), primeiro quadro, abertura e fase com
+  imagem completa (Kratos em combate, HUD, tela de morte). Correções que precisou: `vm_commit` aceita a memória
+  já mapeada do RPCS3 (do ps3kit; sem ela o malloc da libc gravava em 0xFFF18FFC), a ponte aloca as pilhas de
+  callback em 0xDF000000, a janela é a do backend nulo sem apresentar, restaurada do minimizado (a swapchain do
+  Vulkan não monta sem área).
+- Com a ponte: ~10 quadros reais/s, como a v21. O PPU espera o slot do anel de 3 quadros (0x649EC0) que a lista
+  EDGE zera por PUTLLC; o RSX fica ~81% ocioso (`RSX_FIFO_TIMELOG`). Os jobs EDGE por quadro e o us/job são os
+  mesmos nos dois renderizadores: o limite continua sendo a cadeia EDGE nos SPUs.
+
 Estado em 29/10/2026, 20h55: o Novo Jogo chega ao PSDNINT.M2V (fase do Poseidon) em 330 s, sem SPU parado.
 Pasta de trabalho principal: `Projetos\GOW3_trabalho`.
 
