@@ -937,6 +937,11 @@ v14+) fica para o Celso.
     bytes de PUT diferentes, a investigar); média 39,6 us por job (o us/job do jogo é ~37); soma das medianas
     2.538 contra 2.527 us (0,4%), diferença por job mediana 1,3%, p90 4,1%. Uso:
     `SPU_JOBREPLAY=<pasta>,50,0,64 SPU_JOBREPLAY_CODE=444600:4000:D97C` (exe com `build_var.sh jobcap`).
+  - **`--spu-pn` medido pela reprodução (11/11):** `tools/spu_cc_pn.py` (a partir do `spu_cc_interno.py` do
+    otavix010, MIT, e do `SPU_LIFT_PN` do Arnaldo): corpos preserve_none + invólucros; no módulo 206, 1.930 corpos.
+    Resultado idêntico ao da base (DMAs e PUTs) em todos os jobs comparados. Tempo, ordem alternada (pn, base, pn,
+    base; 64 jobs, 30 repetições): pn/base 0,995 e 0,993 (~0,6%); a primeira medida em ordem fixa dava 0,948 --
+    viés de ordem (a primeira execução sai mais lenta): na reprodução também vale alternar. Neutro; fica desligado.
 
 ## LLE seletivo da libsre (LFQueue)
 
