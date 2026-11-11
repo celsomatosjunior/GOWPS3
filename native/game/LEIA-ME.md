@@ -912,6 +912,16 @@ v14+) fica para o Celso.
   pelo atalho `SPU_IB_RESIDENT_FAST` e voltam ao gerenciador por desvio indireto ao endereço de retorno. 64 jobs
   gravados na fase (só 0-2 GETs cada: as entradas já estão na LS). A reprodução **ainda não é válida** (o job
   não faz nenhum DMA e para cedo); em correção com o preparo do ps3kit (policy_mode, retorno pela drenagem).
+  - Fim do job: no despacho para `pc == retorno` no mesmo contexto (o job volta por desvio indireto). Estado
+    inicial de eventos/interrupções/tags/listas (tag 8) copiado do ps3kit, só local (`spu_jobcap_state_ps3kit.c`).
+  - Reprodução com `policy_mode=1`, `status=RUNNING`, retorno original e entrada como o `bisl` do gerenciador
+    (`host_depth++`, chamada, `spu_drain_call(retorno)`), como no ps3kit: o job passa a fazer DMAs e o primeiro
+    bate com a gravação, mas depois diverge (GET de EA 0x6B00/0x3410; no 3º job sonda o EA 0 na rotina de DMA do
+    EDGE em 0x81A0, para a LS 0x3F5A0, sem fim). Comparação DMA a DMA: `[jobreplay]   dma: record N, replay M,
+    same K, first: ...`. Hipótese a testar: o decrementador (no ps3kit ele conta leituras na reprodução, para
+    duas execuções concordarem) ou o tratador de interrupção do gerenciador disparando com o estado gravado.
+  - Envio de 10/11 feito em 11/11 (origin 646f835, novo 39f0167), pelo Celso no terminal (o push automático foi
+    bloqueado pelo modo automático do Claude Code).
 
 ## LLE seletivo da libsre (LFQueue)
 

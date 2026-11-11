@@ -3323,10 +3323,10 @@ index 00000000..6b908f80
 +}
 diff --git a/runtime/spu/spu_jobreplay.c b/runtime/spu/spu_jobreplay.c
 new file mode 100644
-index 00000000..2ab5cef3
+index 00000000..188c427a
 --- /dev/null
 +++ b/runtime/spu/spu_jobreplay.c
-@@ -0,0 +1,207 @@
+@@ -0,0 +1,222 @@
 +/* SPU job replay: run jobs recorded by SPU_JOBCAP (spu_jobcap.c) outside the game, time them and compare
 + * them with what they did in the game.
 + *
@@ -3391,6 +3391,19 @@ index 00000000..2ab5cef3
 +    const double x = *(const double*)a, y = *(const double*)b; return x < y ? -1 : x > y;
 +}
 +
++/* What the manager's `bisl` into the job does: the job runs as a call that drains back to the recorded link
++ * (the call sequence the SPU lifter emits for every bisl). Entering the job this way, in policy mode and with
++ * its own link, follows the replay in Arnaldo Lima's ps3kit (spu_jobcap.c, replay_entry/replay_setup). */
++static void (*s_replay_fn)(spu_context*);
++static uint32_t s_replay_ret;
++static void jr_entry(spu_context* ctx)
++{
++    ctx->host_depth++;
++    s_replay_fn(ctx);
++    spu_drain_call(ctx, s_replay_ret);
++    ctx->host_depth--;
++}
++
 +/* Returns 0 on success (all compared jobs identical), 1 if any differed, 2 on an error. */
 +static int jr_job(const char* path, int reps, int* ndiff, double* tsum, int* njobs)
 +{
@@ -3425,7 +3438,7 @@ index 00000000..2ab5cef3
 +    int rc = 0;
 +    if (!start || start->size != st_size) { fprintf(stderr, "[jobreplay] %s: no start state\n", path); rc = 2; goto out; }
 +    /* the job's inputs, where it reads them */
-+    for (int i = 0; i < n; i++)
++    for (int i = n - 1; i >= 0; i--)            /* the earliest GET of a range wins */
 +        if (ch[i].tag == 2) memcpy(vm_base + ch[i].b, ch[i].data, ch[i].size);
 +    const uint32_t* cs = cst ? (const uint32_t*)cst->data : NULL;
 +    const int ctx_image = cs ? (int)cs[0] : (int)start->a;
@@ -3442,15 +3455,17 @@ index 00000000..2ab5cef3
 +        memcpy(ctx->gpr, start->data, sizeof ctx->gpr);
 +        memcpy(ctx->ls, start->data + sizeof ctx->gpr, SPU_LS_SIZE);
 +        if (sst) g_spu_jobcap_state_load(ctx, sst->data);
-+        ctx->gpr[0]._u32[0] = 0x3FF00u;                       /* SPU_JOB_RETURN_LS: return halts */
++        ctx->policy_mode = 1;                                  /* the job runs inside its manager's context */
++        ctx->status = SPU_STATUS_RUNNING;
 +        ctx->pc = entry;
 +        spu_lifted_fn fn = spu_lookup(entry, image);
++        s_replay_fn = fn; s_replay_ret = start->b;             /* the recorded link (r0 at entry) */
 +        if (!fn) { fprintf(stderr, "[jobreplay] %s: no lifted code at 0x%05X (image %d)\n", path, entry, image); rc = 2; break; }
 +        for (int i = 0; i < s_ndma; i++) free(s_dma[i].data);
 +        s_ndma = 0;
 +        if (r == 0) { g_spu_jobreplay_dma = jr_on_dma; g_spu_jobreplay_ctx = ctx; g_spu_jobcap_live = 1; }
 +        const double t0 = jr_now_us();
-+        spu_run_with_halt((void (*)(spu_context*))fn, ctx);
++        spu_run_with_halt(jr_entry, ctx);
 +        t[r] = jr_now_us() - t0;
 +        g_spu_jobreplay_ctx = 0;
 +        if (r == 0) {   /* the job's DMAs against the record's, in order */
@@ -3483,7 +3498,7 @@ index 00000000..2ab5cef3
 +                }
 +            }
 +            const u128* eg = (const u128*)end->data;
-+            for (int k = 1; k < 128; k++) if (memcmp(&ctx->gpr[k], &eg[k], 16)) reg_diff++;
++            for (int k = 0; k < 128; k++) if (memcmp(&ctx->gpr[k], &eg[k], 16)) reg_diff++;
 +            /* PUTs: the last write to each byte, as left in guest memory */
 +            for (int i = 0; i < n; i++) if (ch[i].tag == 3) {
 +                for (uint32_t o = 0; o < ch[i].size; o++) {
