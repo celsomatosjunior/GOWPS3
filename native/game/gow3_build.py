@@ -358,6 +358,9 @@ def add_spu_jobs(args, proj: Path, cm: Path):
             if args.spu_float == "aprox":   # operandos de float a limitar (SPU_AX_CLAMP, ver spu_simd)
                 texto = mark_float_inputs(texto, chains=not args.sem_cadeias, flow=args.fluxo_float, ls_assumed=args.float_ls)[0]
             texto = spu_vivos(args, texto, jobs=True, nome=c.parent.name)
+            if args.spu_pn:   # corpos preserve_none + invólucros (ps3recomp tools/spu_cc_pn.py)
+                from spu_cc_pn import apply_pn
+                texto = apply_pn(texto)[0]
             alvo = d / "spu_recomp.c"
             if not alvo.is_file() or alvo.read_text(encoding="utf-8") != texto:
                 alvo.write_text(texto, encoding="utf-8")
@@ -758,6 +761,9 @@ def main() -> int:
                     help="pasta com ganchos.json: chamadas nativas inseridas em funções SPU traduzidas (só local; "
                          "padrão: <trabalho>/edge_nativo, quando existe)")
     ap.add_argument("--sem-ganchos", action="store_true", help="não aplicar os ganchos nativos")
+    ap.add_argument("--spu-pn", action="store_true",
+                    help="módulos de job com corpos preserve_none e invólucros na convenção padrão (tools/spu_cc_pn.py): "
+                         "as chamadas e saltos diretos entre funções traduzidas não salvam rbx..r15/xmm6-15")
     ap.add_argument("--float-ls", action="store_true",
                     help="operando de float que vem direto de uma leitura da LS marcado SPU_AXL (em vez de SPU_AXI); "
                          "com -DSPU_AXL_NOCLAMP=1 nas fontes SPU ele fica sem o limite (estudo)")

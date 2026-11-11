@@ -2534,7 +2534,7 @@ index ed2bcf58..54bca2f6 100644
 +#endif
 +}
 diff --git a/runtime/spu/spu_context.h b/runtime/spu/spu_context.h
-index c5ccbec7..38b15a51 100644
+index c5ccbec7..268d2439 100644
 --- a/runtime/spu/spu_context.h
 +++ b/runtime/spu/spu_context.h
 @@ -619,15 +619,30 @@ static SPU_NOINLINE_COLD void spu_ls_read_diag(const spu_context* ctx, uint32_t
@@ -2659,10 +2659,32 @@ index c5ccbec7..38b15a51 100644
  /* SPU_PCHIST=1: bucket SPU execution by the GPU module's own symbols.
   *
   * SPU_VRAMPC showed 3.7M VRAM writes from Host2Local_Body and ZERO from
-@@ -1044,6 +1105,21 @@ void spu_direct_init(void);
+@@ -1044,6 +1105,43 @@ void spu_direct_init(void);
      } while (0)
  #endif
  
++/* SPU_PN / SPU_DIRECT_PN / SPU_DIRECT_TR (tools/spu_cc_pn.py): a lifted function F can be a preserve_none
++ * body F__b plus a wrapper F with the default convention for every pointer (trampoline, tables, registry).
++ * On Windows x64 a default-convention function saves what it uses of rbx, rbp, rsi, rdi, r12-r15 and
++ * xmm6-xmm15; the SPU state lives in ctx, so between bodies nothing needs saving. SPU_DIRECT_PN tail-calls a
++ * body of the same file (same convention); SPU_DIRECT_TR reaches a default-convention target through the
++ * trampoline, since musttail cannot change convention. The approach follows otavix010's spu_cc_interno.py
++ * (gow-ascension-pc, MIT) and the macro split of Arnaldo Lima's SPU_LIFT_PN. */
++#if defined(__clang__) && defined(__has_attribute)
++#  if __has_attribute(preserve_none)
++#    define SPU_PN __attribute__((preserve_none))
++#  endif
++#endif
++#ifndef SPU_PN
++#  define SPU_PN
++#endif
++#ifdef SPU_DIRECT_TAILCALLS
++#define SPU_DIRECT_PN(ctx, PC, FN) do {                                               const uint32_t _dpc = (uint32_t)(PC);                                         (ctx)->pc = _dpc;                                                             if (__builtin_expect(g_spu_direct > 0, 1) && (_dpc & SPU_LS_MASK) &&              (ctx)->steps && !g_spu_stack_reset_hint[(_dpc >> 2) & 1023u] &&                !((ctx)->int_enable && ((ctx)->event_status & (ctx)->event_mask)))             __attribute__((musttail)) return FN##__b(ctx);                            g_spu_trampoline_fn = FN;                                                     return;                                                                   } while (0)
++#else
++#define SPU_DIRECT_PN(ctx, PC, FN) SPU_DIRECT(ctx, PC, FN)
++#endif
++#define SPU_DIRECT_TR(ctx, PC, FN) do {                                               (ctx)->pc = (uint32_t)(PC);                                                   g_spu_trampoline_fn = FN;                                                     return;                                                                   } while (0)
++
 +/* True when SPU_DIRECT(ctx, PC, ...) would tail-call its target: the same
 + * checks. tools/spu_reg_locals.py turns a SPU_DIRECT whose target has a label
 + * in the same lifted function (a loop back to the function's own entry) into
@@ -4134,6 +4156,83 @@ index a657ba61..66c92621 100644
              # PSL1GHT/GCC ELFs: the entry descriptor's second word is NOT a TOC
              # (it repeats the code address); the real r2 the crt establishes is
              # .got + 0x8000 (the ELFv1 TOC bias). Without the right TOC every
+diff --git a/tools/spu_cc_pn.py b/tools/spu_cc_pn.py
+new file mode 100644
+index 00000000..bf0e16a1
+--- /dev/null
++++ b/tools/spu_cc_pn.py
+@@ -0,0 +1,71 @@
++#!/usr/bin/env python3
++"""Internal calling convention for lifted SPU functions (SPU_PN, runtime/spu/spu_context.h).
++
++Every lifted function F defined in a source becomes a preserve_none body `static SPU_PN void F__b(ctx)` plus a
++wrapper `void F(ctx) { F__b(ctx); }` with the default convention, which is what every pointer keeps naming (the
++trampoline, the function table, the registry). Direct calls `F(ctx)` inside the source go to `F__b`;
++`SPU_DIRECT(ctx, PC, F)` becomes `SPU_DIRECT_PN` when F is defined here (a tail call between bodies) and
++`SPU_DIRECT_TR` otherwise (the trampoline: musttail cannot change convention).
++
++Why: on Windows x64 a default-convention function saves what it uses of rbx, rbp, rsi, rdi, r12-r15 and
++xmm6-xmm15; the SPU state lives in ctx, so between translated functions nothing needs saving.
++
++After otavix010's scripts/spu_cc_interno.py (gow-ascension-pc, MIT) and the SPU_DIRECT_PN/_TR split of Arnaldo
++Lima's SPU_LIFT_PN; written for this tool chain (it runs on the final form, after spu_reg_locals.py and the
++other passes)."""
++from __future__ import annotations
++
++import re
++import sys
++
++_DEF = re.compile(r"^(static void |void )(\w+_spu_func_[0-9A-Fa-f]+)\(spu_context\* ctx\) \{$", re.M)
++_CALL = re.compile(r"\b(\w+_spu_func_[0-9A-Fa-f]+)\(ctx\)")
++_DIRECT = re.compile(r"\bSPU_DIRECT\(ctx, ([^,;]+), (\w+_spu_func_[0-9A-Fa-f]+)\)")
++MARK = "/* spu_cc_pn.py */"
++
++
++def apply_pn(src: str) -> tuple[str, int, int]:
++    """Returns the rewritten source, the number of bodies and of direct calls/jumps rewritten."""
++    if MARK in src:
++        return src, 0, 0
++    defs = _DEF.findall(src)
++    if not defs:
++        return src, 0, 0
++    own = {name for _, name in defs}
++    n = 0
++
++    def call(m):
++        nonlocal n
++        if m.group(1) in own:
++            n += 1
++            return m.group(1) + "__b(ctx)"
++        return m.group(0)
++
++    src = _CALL.sub(call, src)
++
++    def direct(m):
++        nonlocal n
++        n += 1
++        return f"SPU_DIRECT_{'PN' if m.group(2) in own else 'TR'}(ctx, {m.group(1)}, {m.group(2)})"
++
++    src = _DIRECT.sub(direct, src)
++    src = _DEF.sub(lambda m: f"static SPU_PN void {m.group(2)}__b(spu_context* ctx) {{", src)
++    first = _first_body(src)
++    protos = MARK + "\n" + "".join(f"static SPU_PN void {name}__b(spu_context* ctx);\n" for _, name in defs)
++    wrappers = "\n/* spu_cc_pn.py: default-convention wrappers (pointers, tables, registry) */\n" + \
++        "".join(f"{head}{name}(spu_context* ctx) {{ {name}__b(ctx); }}\n" for head, name in defs)
++    return src[:first] + protos + src[first:] + wrappers, len(defs), n
++
++
++def _first_body(src: str) -> int:
++    i = src.find("static SPU_PN void ")
++    return src.rfind("\n", 0, i) + 1 if i > 0 else 0
++
++
++if __name__ == "__main__":
++    for p in sys.argv[1:]:
++        with open(p, encoding="utf-8") as f:
++            text, nb, nc = apply_pn(f.read())
++        with open(p, "w", encoding="utf-8", newline="\n") as f:
++            f.write(text)
++        print(f"{p}: {nb} bodies, {nc} direct calls/jumps")
 diff --git a/tools/spu_float_inputs.py b/tools/spu_float_inputs.py
 new file mode 100644
 index 00000000..b2047997
