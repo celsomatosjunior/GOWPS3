@@ -922,6 +922,14 @@ v14+) fica para o Celso.
     duas execuções concordarem) ou o tratador de interrupção do gerenciador disparando com o estado gravado.
   - Envio de 10/11 feito em 11/11 (origin 646f835, novo 39f0167), pelo Celso no terminal (o push automático foi
     bloqueado pelo modo automático do Claude Code).
+  - **Reprodução válida nos DMAs (11/11, 13h):** faltavam (1) as transferências atômicas na gravação (o EDGE
+    reserva a saída num anel com GETLLAR/PUTLLC; agora gravadas como GET/PUT, como no ps3kit), (2) o decrementador
+    (gravado e restaurado) e (3) o código do job como residente: sem `SPU_JOBREPLAY_CODE=444600:4000:D97C` (a região
+    verificada do módulo 206) o código ia pelo micro-passo de SMC e pelo interpretador, 300-3.900 us por job. Com
+    isso, 12 jobs da fase: **todos os DMAs gravados se repetem na mesma ordem e com os mesmos dados** (PUTs com 0
+    bytes diferentes em 11, 8 bytes num), 14-77 us por job (mediana ~19 us; no jogo a média é ~37 us). Resta: 2
+    DMAs a mais no fim (do gerenciador, depois do fechamento da gravação), ~750 bytes na LS baixa do gerenciador,
+    registradores voláteis e 4-5 entradas curtas no interpretador por job (0x8768, 0xE5A4, 0x5458, 0xA68).
 
 ## LLE seletivo da libsre (LFQueue)
 
