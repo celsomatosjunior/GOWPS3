@@ -14,6 +14,8 @@
 #ifdef _WIN32
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <windows.h>
 
 extern "C" uint8_t* vm_base;
 
@@ -35,6 +37,10 @@ extern "C" unsigned cellGcmGetCurrentDisplayBufferId(void);
 
 static int s_live = 0;   /* live draw escolhido E inicializado */
 
+/* 1 quando o RSX do RPCS3 (gow3_rsx_rpcs3.cpp, PS3_RSX=rpcs3) assumiu: a janela fica com o backend nulo,
+ * sem apresentar nada, e o Vulkan do RPCS3 apresenta nela. */
+extern "C" { int g_gow3_rsx_external = 0; }
+
 /* (location, offset) -> memória do host. location 0 é a memória local do RSX, 1 a principal (pela
  * tabela de IO). O intervalo inteiro precisa ser válido. Igual ao boot_main. */
 static const uint8_t* live_guest_ptr(void*, uint32_t location, uint32_t offset, uint32_t min_bytes)
@@ -53,6 +59,20 @@ static const uint8_t* live_guest_ptr(void*, uint32_t location, uint32_t offset, 
 
 extern "C" int gow3_rsx_init(uint32_t w, uint32_t h, const char* title)
 {
+    if (g_gow3_rsx_external) {
+        if (rsx_null_backend_init(w, h, title) != 0) return -1;
+        rsx_null_backend_suppress_present(1);
+        /* PS3_JANELA_FUNDO abre a janela minimizada, e uma janela minimizada não tem área: a swapchain do
+         * Vulkan não se monta. Aqui ela volta ao tamanho normal, sem foco e atrás das outras janelas. */
+        if (getenv("PS3_JANELA_FUNDO")) {
+            HWND hw = (HWND)rsx_null_backend_get_hwnd();
+            ShowWindow(hw, SW_SHOWNOACTIVATE);
+            SetWindowPos(hw, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
+        s_live = 2;
+        fprintf(stderr, "[gow3-rsx] janela do backend nulo para o RSX do RPCS3\n");
+        return 0;
+    }
     if (rsx_live_draw_enabled()) {
         if (rsx_null_backend_init(w, h, title) == 0 &&
             rsx_live_draw_init(rsx_null_backend_get_hwnd(), w, h, live_guest_ptr, nullptr) == 0) {
@@ -69,6 +89,7 @@ extern "C" int gow3_rsx_init(uint32_t w, uint32_t h, const char* title)
 /* Apresenta o buffer para o qual o jogo virou (o live draw procura a superfície registrada nele). */
 extern "C" void gow3_rsx_present(void)
 {
+    if (s_live == 2) return;   /* o RSX do RPCS3 apresenta sozinho */
     if (s_live) rsx_live_draw_present(cellGcmGetCurrentDisplayBufferId());
     else        rsx_d3d12_backend_present();
 }

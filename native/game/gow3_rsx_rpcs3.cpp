@@ -24,6 +24,7 @@ extern "C" void cellGcm_rsx_event(unsigned events, unsigned user_arg);
 extern "C" void spu_lockline_lock(void);
 extern "C" void spu_lockline_unlock(void);
 extern "C" void spu_coh_notify_write(uint32_t ea);
+extern "C" int g_gow3_rsx_external;
 
 struct CellGcmRsxHooks {
     int  (*start)(uint32_t context_addr, uint32_t local_size);
@@ -81,7 +82,32 @@ static LONG WINAPI vm_rsx_veh(EXCEPTION_POINTERS* ep)
     if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION) return EXCEPTION_CONTINUE_SEARCH;
     const ULONG_PTR kind = ep->ExceptionRecord->ExceptionInformation[0];
     const void* addr = (const void*)ep->ExceptionRecord->ExceptionInformation[1];
-    return ps3rsx_handle_fault(addr, kind == 1) ? EXCEPTION_CONTINUE_EXECUTION : EXCEPTION_CONTINUE_SEARCH;
+    if (ps3rsx_handle_fault(addr, kind == 1)) return EXCEPTION_CONTINUE_EXECUTION;
+    // not the RSX's: name the first few (guest address, read/write, module, rva and callers for the .map)
+    static volatile long n = 0;
+    if (InterlockedIncrement(&n) <= 8) {
+        const uintptr_t a = (uintptr_t)addr, base = (uintptr_t)vm_base;
+        const uintptr_t rip = (uintptr_t)ep->ExceptionRecord->ExceptionAddress;
+        HMODULE m = nullptr;
+        GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           (LPCSTR)rip, &m);
+        char mod[260] = "?"; if (m) GetModuleFileNameA(m, mod, sizeof mod);
+        fprintf(stderr, "[ps3rsx] in %s\n", mod);
+        fprintf(stderr, "[ps3rsx] fault %s host %p (guest 0x%08llX) at rva 0x%llX tid %lu\n", kind == 1 ? "write" : "read",
+                addr, (unsigned long long)(a >= base && a - base < 0x100000000ull ? a - base : 0xFFFFFFFFull),
+                (unsigned long long)(m ? rip - (uintptr_t)m : rip), GetCurrentThreadId());
+        { // the callers (rvas in the exe, for the .map)
+          CONTEXT c = *ep->ContextRecord;
+          for (int f = 0; f < 12 && c.Rip; f++) {
+              DWORD64 ib = 0; PRUNTIME_FUNCTION rf = RtlLookupFunctionEntry(c.Rip, &ib, nullptr);
+              fprintf(stderr, "[ps3rsx]   #%d rva 0x%llX%s", f, (unsigned long long)(ib ? c.Rip - ib : c.Rip), "\n");
+              if (!rf) { c.Rip = *(DWORD64*)c.Rsp; c.Rsp += 8; continue; }
+              void* hd = nullptr; DWORD64 ef = 0;
+              RtlVirtualUnwind(UNW_FLAG_NHANDLER, ib, c.Rip, rf, &c, &hd, &ef, nullptr);
+          } }
+        fflush(stderr);
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
 }
 #endif
 
@@ -102,6 +128,7 @@ extern "C" int gow3_rsx_select(void)
 #ifdef _WIN32
     _putenv_s("RSX_LIVE_DRAW", "0");   // the live draw stays out; its window is the RSX's
 #endif
+    g_gow3_rsx_external = 1;           // gow3_rsx.cpp: the null backend's window, no present of its own
     cellGcm_set_rsx_hooks(&s_rpcs3_hooks);
     fprintf(stderr, "[ps3rsx] RPCS3's RSX selected (PS3_RSX=rpcs3)\n");
     return 1;
