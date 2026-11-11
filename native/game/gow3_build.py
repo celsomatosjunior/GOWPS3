@@ -561,6 +561,25 @@ def step_projeto(args, work: Path, state: dict, progress):
                   f'target_sources(${{PROJECT_NAME}} PRIVATE "{(HERE / "gow3_diag.cpp").as_posix()}")\n'
                   "if(MSVC)\n    target_link_options(${PROJECT_NAME} PRIVATE /MAP)\nendif()\n", encoding="utf-8")
     use_gow3_rsx(proj, cm)
+    if args.rsx_rpcs3:
+        # O RSX do RPCS3 (ponte gpu/ do ps3recomp, do ps3kit do Arnaldo; GPL-2.0) selecionável com PS3_RSX=rpcs3:
+        # gow3_rsx_rpcs3.cpp no exe, ligado à biblioteca da ponte já compilada em --rsx-rpcs3, e o main.cpp
+        # gerado dando a memória do jogo à ponte quando ela foi pedida.
+        main = proj / "main.cpp"
+        mt = main.read_text(encoding="utf-8")
+        if "if (!alloc_guest_vm()) {" not in mt:
+            raise StepError("main.cpp do modelo mudou: não achei o alloc_guest_vm()")
+        mt = mt.replace("if (!alloc_guest_vm()) {", "if (!gow3_rsx_select() && !alloc_guest_vm()) {", 1)
+        mt = mt.replace("int main(int argc, char** argv)", 'extern "C" int gow3_rsx_select(void);   /* gow3_rsx_rpcs3.cpp */\n\n'
+                        "int main(int argc, char** argv)", 1)
+        main.write_text(mt, encoding="utf-8")
+        gpu = (Path(args.ps3recomp).resolve() / "gpu").as_posix()
+        build = Path(args.rsx_rpcs3).resolve().as_posix()
+        cm.write_text(cm.read_text(encoding="utf-8") + "\n# GOW3: RSX do RPCS3 (PS3_RSX=rpcs3), GPL-2.0\n"
+                      f'include("{gpu}/ps3rsx.cmake")\n'
+                      f'target_sources(${{PROJECT_NAME}} PRIVATE "{(HERE / "gow3_rsx_rpcs3.cpp").as_posix()}")\n'
+                      f'ps3rsx_link(${{PROJECT_NAME}} "{build}" SOURCES "{(HERE / "gow3_rsx_rpcs3.cpp").as_posix()}")\n',
+                      encoding="utf-8")
     # Arquivos locais opcionais do runtime que só se registram por construtor (código do ps3kit usado com permissão
     # do Arnaldo, fora do patch público): entram direto no exe, porque um objeto não referenciado da biblioteca
     # estática do runtime seria descartado na ligação. Quem não os tem compila igual.
@@ -761,6 +780,9 @@ def main() -> int:
                     help="pasta com ganchos.json: chamadas nativas inseridas em funções SPU traduzidas (só local; "
                          "padrão: <trabalho>/edge_nativo, quando existe)")
     ap.add_argument("--sem-ganchos", action="store_true", help="não aplicar os ganchos nativos")
+    ap.add_argument("--rsx-rpcs3", metavar="PASTA",
+                    help="liga o RSX do RPCS3 (ps3recomp gpu/, compilado nessa pasta com MSVC: ninja ps3rsx_flip_smoke); "
+                         "em tempo de execução PS3_RSX=rpcs3 o usa no lugar do live draw. O exe fica sob GPL-2.0")
     ap.add_argument("--spu-pn", action="store_true",
                     help="módulos de job com corpos preserve_none e invólucros na convenção padrão (tools/spu_cc_pn.py): "
                          "as chamadas e saltos diretos entre funções traduzidas não salvam rbx..r15/xmm6-15")
