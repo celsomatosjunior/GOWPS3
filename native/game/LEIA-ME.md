@@ -297,6 +297,17 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   uma num núcleo físico próprio. A/B 3 rodadas: us/job(60s) 38,2/37,7/38,5 (sem) x 37,9/37,3/38,6 (com), -0,5%,
   ruído; quadros reais iguais. Fica desligado.
 
+- **Fora do job, por job EDGE (11/11 noite):** execução do policy module (pmstats) 39,4 us x 28,1 us dentro do job ->
+  ~11 us do gerenciador Wws dentro da execução, ~1,3 us entre execuções (kernel do SPURS, com SPURS_PM_STICKY).
+  Interrupções do gerenciador (`SPU_IRQTIME=1`): ~61 mil/s, 0,77 us cada, ~48 ms/s ao todo (~0,2 us por job EDGE).
+  Leituras de canal (`SPU_POLLTRACE`): ~2,6 milhões/s (estado de tags 33%, atômico 27%, máquina 23%, decrementador
+  10%). Nenhuma espera em canal >= 20 us dentro das execuções do EDGE (`PS3_FTRACE`). Desvios indiretos
+  (`SPU_IB_HIST`): ~1,75 milhão/s, quase todos do gerenciador (0x3FEC0/0xA2C/0xA60 das interrupções, a tabela
+  interna 0x1B4C/0x1B90/0x1C68, serviços chamados pelos jobs 0x1778/0x1B00/0x2F38). Perfil do jogo por instrução
+  (thread do SPURS mais ocupada): nenhum ponto passa de ~1%; os maiores são a carga da entrada do cache de despacho
+  (spu_lifted_lookup), o laço do spu_coh_notify_write por todos os contextos e o spu_lockline_lock; funções de job
+  ~1% cada. Conclusão: o tempo é processamento espalhado; não há uma espera ou custo isolado grande.
+
 **11/11/2026 (noite): ponte do RSX do RPCS3 e correção da métrica de quadros.**
 - **Métrica:** o `[fps]` do live draw conta 2 por quadro do jogo (`rsx_live_draw_present` roda no flip da FIFO e
   de novo pelo relógio de quadros). O contador de quadros do próprio jogo (0x649ED8, +1 por volta do laço
