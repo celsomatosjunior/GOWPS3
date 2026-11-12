@@ -330,7 +330,11 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   (driver_recovery_timeout) o label 0x51, que um job SPU escreve com um PUT de 4 bytes por quadro (pc 0x59A0; o
   PPU só o zera, 0029A430) -- candidato: o workload Wws_Job/RsxSync (wid 11). Hipótese: o ritmo de flips sem
   limite (no live draw os flips andam a 60 Hz pelo relógio de quadros) expõe uma corrida que o console não vê.
-  Teste em andamento: `PS3_FRAME_LIMIT=60` (limitador do RPCS3 na ponte).
+  Teste (12/11, 120 inicializações alternadas em blocos de 10, mais as anteriores): sem limite 1 travada em 100,
+  com `PS3_FRAME_LIMIT=60` 0 em 90. Diferença indistinguível do acaso (um único evento); a hipótese do ritmo de
+  flips não se confirmou nem se descartou. O padrão segue sem limite (o limitador fica como opção, não muda os
+  quadros reais da fase, ~10 q/s). Taxa da ponte ~1%, contra 0 em 180 na v21: se voltar, investigar o RsxSync
+  (wid 11) e quem deveria escrever 0xF no label 0x51 (`GCM_RSX_EVDBG`, `SPU_JOBCAP` no img do pc 0x59A0).
 
 **11/11/2026 (noite): ponte do RSX do RPCS3 e correção da métrica de quadros.**
 - **Métrica:** o `[fps]` do live draw conta 2 por quadro do jogo (`rsx_live_draw_present` roda no flip da FIFO e
