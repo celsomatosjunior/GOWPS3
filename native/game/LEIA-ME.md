@@ -319,6 +319,11 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   mediana 24,8 -> 23,2 e só 350 de 512 jobs com as mesmas saídas: sem os limites os jobs pesados fazem outro
   trabalho (o "ganho" de 07/11 de novo). O custo real dos limites fica perto de ~6%.
 
+- **Ponte do RSX do RPCS3, 30 min na fase** (`scripts_locaissx_longo.sh`, X a cada 15 s: o Kratos morre, volta pelo
+  checkpoint e luta de novo): flips até 1.798 s, nenhuma falha de página fora do RSX, nenhum erro fatal, 697 janelas
+  de 2 s com mediana de 9,93 quadros reais/s; capturas a cada 5 min com o combate e o HUD inteiros. Menu principal
+  também confirmado (captura dos 30 s). A luta do Poseidon em si não é alcançável só com X (precisa jogar ou save).
+
 **11/11/2026 (noite): ponte do RSX do RPCS3 e correção da métrica de quadros.**
 - **Métrica:** o `[fps]` do live draw conta 2 por quadro do jogo (`rsx_live_draw_present` roda no flip da FIFO e
   de novo pelo relógio de quadros). O contador de quadros do próprio jogo (0x649ED8, +1 por volta do laço
