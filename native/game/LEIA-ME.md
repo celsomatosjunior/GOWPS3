@@ -276,6 +276,17 @@ autorizado pelo Celso, desligado por padrão até validar).**
 - **O que o job lê do estado do gerenciador** (reprodução com `SPU_JOBREPLAY_POISON`/`REGKEEP`): a pilha do
   gerenciador (0x3F9A0-0x3FE80) não; registradores além de r0/r1/r3, a LS baixa (0-0xA00) e o cabeçalho (0xC00)
   sim (refinando).
+- **Executor feito (etapa 1, `gow3_wws_exec.c`, `GOW3_WWS_EXEC=1`; `_STATS=<s>`, `_DEBUG=<n>`):** as três listas.
+  Regras tiradas das gravações (`GOW3_trabalho\wws_exec\gera_const.py`, que gera o `gow3_wws_const.h` LOCAL com o
+  molde da região do gerenciador): LS na entrada do job e no fim idênticas ao gerenciador traduzido em 100% das
+  execuções estáveis (listas 8, 9 e 10: 389, 400, 600); execuções nativas gravadas: 884/884 com a LS igual às
+  regras e 591/591 com a mesma sequência de comandos MFC e canais. O job lê do gerenciador só r0/r1/r3/r4/r5/r8, LS
+  0-0x80, 0x100-0x200, 0xC40+, 0xD00 e 0xDF0-0x1700 (reprodução com `SPU_JOBREPLAY_POISON`/`REGKEEP`). r4 e 0x13F0 =
+  par de entradas >> 28 (0 quando a vizinha não foi publicada). Ganchos no ps3recomp: `g_spurs_pm_native` e
+  `g_spu_stop_pc` (sem ele o retorno do job seguia direto para o fim traduzido do gerenciador -- a reprodução de jobs
+  também faz isso: os "2 DMAs do gerenciador depois do job"). Um job que redefine a pilha volta pelo laço de cima do
+  `spu_run_with_halt`: a volta roda numa segunda chamada. Primeira medida (1 rodada): us/job(60s) 33,0 x ~37,6,
+  quadros reais 11,5 x ~9,5. A/B alternado em andamento (`ab_exec.sh`).
 - **Plano:** gancho nativo no `spu_run_policy_module` para os wids 8-10, que só toma uma execução cujo próximo item
   é um job tipo 1 de forma conhecida (o resto -- lista vazia, tipos 2/3/4, cabeçalho diferente -- roda o gerenciador
   traduzido); os mesmos comandos MFC pelo runtime (atômicas e coerência iguais), o estado que o job e os serviços
