@@ -397,6 +397,12 @@ def spu_dir_projeto(args, proj: Path) -> Path:
         if args.spu_float == "aprox":
             texto = mark_float_inputs(texto, chains=not args.sem_cadeias, flow=args.fluxo_float, ls_assumed=args.float_ls)[0]
         texto = spu_vivos(args, texto, nome=c.parent.name)
+        if args.spu_ibl and c.parent.name == "pm_wwsjob":
+            # desvios indiretos do gerenciador Wws para as próprias funções direto (ps3recomp tools/spu_ibl.py, do
+            # SPU_IBL do Arnaldo); a imagem dele fica em LS 0xA00..0xA00+12032; liga em tempo de execução com SPU_IBL=1
+            from spu_ibl import apply_ibl
+            texto, n = apply_ibl(texto, 0xA00, 0xA00 + 12032)
+            print(f"  --spu-ibl: {c.parent.name}: {n} desvios indiretos com atalho")
         c.write_text(texto, encoding="utf-8")
     return destino
 
@@ -794,6 +800,9 @@ def main() -> int:
                          "depois de rótulos e cópias, quando todo caminho o traz de outra operação de float; -2%% por job EDGE)")
     ap.add_argument("--sem-cadeias", action="store_true",
                     help="limitar a ±FLT_MAX também os resultados de float que só alimentam outra operação de float")
+    ap.add_argument("--spu-ibl", action="store_true",
+                    help="desvios indiretos do gerenciador Wws direto para as funções dele (tools/spu_ibl.py, do SPU_IBL do "
+                         "ps3kit); em tempo de execução só com SPU_IBL=1")
     ap.add_argument("--spu-vivos", choices=["nao", "seguro", "abi", "abi-jobs", "abi-auto"], default="seguro",
                     help="gravar de volta só os registradores SPU vivos nas saídas das funções (spu_live_flush.py)")
     ap.add_argument("--fundir-trechos", type=int, default=4, help="quantos trechos seguintes fundir no máximo")
