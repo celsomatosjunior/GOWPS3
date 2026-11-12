@@ -124,6 +124,7 @@ static void g3w_fix_init(void)
     uint8_t var[G3W_FIX_HI / 16] = { 0 };
     for (size_t i = 0; i < sizeof g3w_var / sizeof g3w_var[0]; i++)
         for (uint32_t o = g3w_var[i][0]; o < g3w_var[i][1] && o < G3W_FIX_HI; o += 16) var[o / 16] = 1;
+    for (size_t i = 0; i < sizeof g3w_por_ctx / sizeof g3w_por_ctx[0]; i++) var[g3w_por_ctx[i] / 16] = 1;
     for (uint32_t q = 0; q < G3W_FIX_HI / 16; q++) {
         if (var[q]) continue;
         if (s_nfix && s_fix[s_nfix - 1][1] == q * 16) s_fix[s_nfix - 1][1] += 16;
@@ -132,6 +133,17 @@ static void g3w_fix_init(void)
 }
 
 static int s_debug;
+/* os quadwords de cada contexto (lista, SPU) que não são do molde (EA da linha de estado, número da lista,
+ * máscaras): o gerenciador não os muda numa execução estável; guardados no começo, repostos no fim */
+enum { NCTX = sizeof g3w_por_ctx / sizeof g3w_por_ctx[0] };
+static SPU_THREAD_LOCAL uint8_t t_ctxq[NCTX][16];
+static void g3w_ctx(uint8_t* ls, int restore)
+{
+    for (int i = 0; i < NCTX; i++) {
+        if (restore) memcpy(ls + g3w_por_ctx[i], t_ctxq[i], 16);
+        else memcpy(t_ctxq[i], ls + g3w_por_ctx[i], 16);
+    }
+}
 static int g3w_no_molde(const uint8_t* ls, uint32_t spu)
 {
     int ok = 1; uint32_t at = 0;
@@ -140,7 +152,7 @@ static int g3w_no_molde(const uint8_t* ls, uint32_t spu)
             ok = 0;
             for (at = s_fix[i][0]; at < s_fix[i][1] && ls[at] == g3w_molde[at]; at++) {}
         }
-    if (ok && (be32(ls + 0x1330) != spu || memcmp(ls + 0x1334, g3w_molde + 0x1334, 12))) { ok = 0; at = 0x1330; }
+    if (ok && be32(ls + 0x1330) != spu) { ok = 0; at = 0x1330; }
     if (ok && memcmp(ls + G3W_TOP_LO, g3w_topo, sizeof g3w_topo)) {
         ok = 0;
         for (at = 0; at < sizeof g3w_topo && ls[G3W_TOP_LO + at] == g3w_topo[at]; at++) {}
@@ -221,7 +233,8 @@ static void g3w_body(spu_context* c)
     const uint32_t cb = r->cnt & 0xFF, idx = r->idx, le = r->line_ea;
     wq(ls + 0xEB0, 0x480F0000 | cb, MOD_EA, 0x08000B00 | cb, r->inl | 1);
     wq(ls + 0xEC0, 0x80000000, 1, 0x08000000 | cb, 2);
-    wq(ls + 0x1340, 0x00080000 | idx, 0, le | 0x08000003, 0x0008FFFF);
+    wq(ls + 0x1340, r->wid << 16 | idx, 0, le | 0x08000003, r->wid << 16 | 0xFFFF);
+    wq(ls + 0x1500, 0, le, 0, 0);
     wq(ls + 0x13A0, le | 3, 0xFFFF, idx, 0);
     wq(ls + 0x13B0, idx, 0, 0, 0);
     wq(ls + 0x1400, r->cnt, r->cnt, r->cnt, r->cnt);
@@ -267,6 +280,8 @@ static void g3w_tail(spu_context* c)
     g3w_run* r = &t_run;
     uint8_t* ls = c->ls;
     c->host_depth++;
+    c->pc = JOB_RET;
+    if (g_wwstrace_on) spu_wwstrace_branch(c);   /* SPU_WWSDUMP: o registro do retorno */
     tagwait(c, 2, 0x80);
     (void)RD(c, CH_DEC);
     tagwait(c, 0, 0x80); tagwait(c, 0, 0x20);
@@ -291,7 +306,7 @@ static void g3w_tail(spu_context* c)
     for (int i = 0; i < s_nfix; i++) memcpy(ls + s_fix[i][0], g3w_molde + s_fix[i][0], s_fix[i][1] - s_fix[i][0]);
     for (size_t i = 0; i < sizeof g3w_fim_molde / sizeof g3w_fim_molde[0]; i++)
         memcpy(ls + g3w_fim_molde[i], g3w_molde + g3w_fim_molde[i], 16);
-    wbe32(ls + 0x1330, r->spu);
+    g3w_ctx(ls, 1);
     wq(ls + 0xEB0, 0, MOD_EA, 0, r->inl | 1);
     g_spurs_pm_polls = 1;
     g_spurs_pm_exited = 1;
@@ -324,6 +339,7 @@ static int g3w_native(spu_context* c, uint32_t wid, uint32_t spu, uint32_t spurs
         const uint32_t idx = be32(L + 0x70) >> 16, base = be32(L + 0x3C);
         const uint8_t* e = vm_base + base + 8 * idx;
         if (be32(e) != 0x00900001) { __atomic_add_fetch(&s_rec[R_ENTRADA], 1, __ATOMIC_RELAXED); return -1; } }
+    g3w_ctx(ls, 0);
     u128 keep[6]; memcpy(keep, c->gpr, sizeof keep);
     const uint32_t keep_pc = (uint32_t)c->pc;
     r->recusa = R_CANAL;
