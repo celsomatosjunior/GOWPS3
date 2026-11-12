@@ -253,6 +253,30 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
 
 ## Ponto de retomada (atualizado a cada pausa)
 
+**12/11/2026: ascension-native do Arnaldo (acesso dado hoje) aplicado ao EDGE do GOW3.**
+- **Descompressão de índices nativa (no padrão, ganchos locais):** o módulo 206 do GOW3 usa o mesmo formato de
+  índices comprimidos do EDGE que o 218 do Ascension (decodificador em Python a partir do `indices.h` dele: índices
+  = PUT do job nas gravações). A 0x106E0 do GOW3 é a 0xE4D0 de lá (contexto r3, fluxo r4; prólogo r80/r81/r0/r1 na
+  pilha; contagem no u16 de +0x190; formato no nibble alto do byte 6; +0x50 = fluxo; a cauda 0xD620 grava o fim em
+  +0x58), achada com uma sonda em todas as funções do módulo (qual recebe o endereço do fluxo). O gancho chama o
+  `gowa_decode_indexes_ls` dele (`indices.c`, cópia com crédito em `GOW3_trabalho\edge_nativo\gow3_edge_idx*.h`).
+  Reprodução (jobcap206s, 512 jobs): PUTs e registradores idênticos à base em todos; a LS só difere num byte de
+  pilha que já oscila entre execuções da base (valor do decrementador). Velocidade: -2,3% us/job (3 rodadas
+  alternadas, 32,5 -> 31,8). No jogo, 6+6 rodadas alternadas: us/job(60s) 38,0 -> 37,6 (-1%, dentro do ruído; o
+  ganho esperado no jogo é ~1,6%). Quadros reais iguais no ruído. 0 travadas em 20 inicializações.
+  `GOW3_EDGE_IDX=0` desliga.
+- **Gerador de nativos dele (`gen_native_from_lift.py`): mais lento aqui.** Roda no nosso lift (adaptação em
+  `edge_nativo\gera_nativos.py`: mesmos limites de float do build, LS pelo ponteiro guardado), saídas idênticas,
+  mas 13 raízes quentes deram +20% a +40% us/job: o nosso build já põe os registradores em locais com vivacidade e
+  funde os trechos; o código gerado grava ~100 registradores num vetor a cada desvio de cauda. Descartado.
+- **Perfil da reprodução refeito com exe e .map do mesmo build** (o de antes usava um .map de outro build e
+  atribuía 16% a um módulo que nem roda): o tempo do job 206 é plano, a maior função 8% (0x9A68, luzes).
+- Não se aplicam direto: `vertices.c`/`lighting*.c` (regra de float deles: fator zero -> zero; a nossa limita a
+  +-FLT_MAX), e o executor Wws paralelo (as listas EDGE do GOW3 saem uma por vez). Inventário em
+  `GOW3_trabalho\ps3kit_integrado.md`.
+- Reprodutor: `SPU_JOBREPLAY_LSFROM=<hex>` lista as faixas da LS que diferem a partir de um endereço (ps3recomp
+  a14d01bb, ramo gow3-rsx).
+
 **11/11/2026 (noite, 2): contadores de quadros, validação do reprodutor de jobs e onde vai o tempo do EDGE.**
 - **O que cada contador mede** (fase, roteiro de X dos A/B, 330 s):
   - `[fps] N (frames a..b over Ts)` do live draw: `g_ld_frames` sobe em cada `rsx_live_draw_present`. Ele roda duas
