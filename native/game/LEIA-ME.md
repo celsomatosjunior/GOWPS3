@@ -274,6 +274,19 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
 - Não se aplicam direto: `vertices.c`/`lighting*.c` (regra de float deles: fator zero -> zero; a nossa limita a
   +-FLT_MAX), e o executor Wws paralelo (as listas EDGE do GOW3 saem uma por vez). Inventário em
   `GOW3_trabalho\ps3kit_integrado.md`.
+- **Empacotador de vértices de 54 bytes (0x66F0 -> epílogo 0x5DE8): exato, mas neutro, fora do padrão.** O mesmo
+  registro do `output_vertex_packer.c` do Ascension, com os tipos renumerados (1, 3, 4, 29, 30, 31, 32; lá 27-30
+  no lugar de 29-32) e as mesmas constantes; a contagem é r4 - 1. Achado com uma sonda que grava LS e registradores
+  na entrada do 0x66F0 e na chegada ao 0x5DE8 (6 casos, LS inteira igual à simulação em Python). Núcleo em
+  `edge_nativo\gow3_edge_pack.h` (ganchos em `GOW3_trabalho\edge_pack`): 0 recusas, PUTs e registradores
+  idênticos, mas a reprodução não muda (30,7-31,3 x 31,0-31,3 us/job no mesmo exe, `GOW3_EDGE_PACK=0/1`): o
+  traduzido já faz 2 vértices por volta com operações vetoriais.
+- **Coerência (ps3recomp, `spu_coherency.c`):** `SPU_COH_STATS=1` mostrou que cada aviso de escrita numa linha
+  reservada (todo PUTLLC bem-sucedido, sob a trava global) percorre **52 contextos** SPU e custava ~1.180 ciclos;
+  ~245 mil avisos/s no jogo. Agora o percurso usa um vetor de ponteiros que espelha a lista (reconstruído sob a
+  mesma trava a cada mudança; mesma ordem, mesmo teste): ~920 -> ~745 ciclos por aviso. Partes que ficam:
+  `ppu_resv_break_line` ~176, barreira ~104, vigílias ~72 ciclos. No jogo (3 rodadas alternadas, mesmo exe):
+  us/job(60s) 38,0 (lista, `SPU_COH_LIST=1`) -> 37,5 (vetor), -1,3%, no ruído; quadros reais iguais.
 - Reprodutor: `SPU_JOBREPLAY_LSFROM=<hex>` lista as faixas da LS que diferem a partir de um endereço (ps3recomp
   a14d01bb, ramo gow3-rsx).
 
