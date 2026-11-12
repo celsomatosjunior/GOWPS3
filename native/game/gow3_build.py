@@ -566,6 +566,14 @@ def step_projeto(args, work: Path, state: dict, progress):
     cm.write_text(cm.read_text(encoding="utf-8") + "\n# GOW3: watchdog e mapa do link\n"
                   f'target_sources(${{PROJECT_NAME}} PRIVATE "{(HERE / "gow3_diag.cpp").as_posix()}")\n'
                   "if(MSVC)\n    target_link_options(${PROJECT_NAME} PRIVATE /MAP)\nendif()\n", encoding="utf-8")
+    # Executor nativo das listas EDGE (GOW3_WWS_EXEC=1): as constantes do gerenciador ficam em
+    # <trabalho>\wws_exec\gow3_wws_const.h (local, dados do jogo); sem ele o arquivo compila vazio.
+    ps3r = Path(args.ps3recomp).resolve()
+    cm.write_text(cm.read_text(encoding="utf-8") + "\n# GOW3: executor das listas EDGE\n"
+                  f'target_sources(${{PROJECT_NAME}} PRIVATE "{(HERE / "gow3_wws_exec.c").as_posix()}")\n'
+                  f'set_source_files_properties("{(HERE / "gow3_wws_exec.c").as_posix()}" PROPERTIES INCLUDE_DIRECTORIES '
+                  f'"{(ps3r / "runtime" / "spu").as_posix()};{(ps3r / "include").as_posix()};'
+                  f'{(Path(args.trabalho).resolve() / "wws_exec").as_posix()}")\n', encoding="utf-8")
     use_gow3_rsx(proj, cm)
     if args.rsx_rpcs3:
         # O RSX do RPCS3 (ponte gpu/ do ps3recomp, do ps3kit do Arnaldo; GPL-2.0) selecionável com PS3_RSX=rpcs3:
