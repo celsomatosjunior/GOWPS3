@@ -263,8 +263,12 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   - contador de quadros do próprio jogo: a palavra 0x649ED8 (+1 por volta do laço principal, func_0028DA14);
     medido com `PPU_WWATCH=0x00649ED8 PPU_WWATCH_MAX=0`: igual ao `[flip]` e metade do `[fps]` em todas as janelas.
   - `[fps]` com a ponte do RSX do RPCS3: os flips que o RSX dele fez (eventos FLIP), quadros reais.
-  - RPCS3: "FPS" do título da janela (flips por segundo do RSX dele), lido pelo `rpcs3_medir.ps1` (40 s a partir de
-    280 s, mesmo roteiro de X): 20,7-23,4 em 05/11. Refazer com o PC livre (ele toma o foco).
+  - RPCS3: "FPS" do título da janela (flips por segundo do RSX dele), lido pelo `rpcs3_medir.ps1` (mesmo roteiro de
+    X, título lido a cada 5 s): 20,7-23,4 em 05/11 (8 leituras, 280-320 s); **refeito em 11/11 com o PC livre:
+    `-Medir 120 -Janela 200`, 40 leituras, mediana 22,06, média 21,82, faixa 17,8-24,3** (uma leitura de 60, tela de
+    morte, fora). As capturas aos 120 e 320 s mostram a tela de morte: com só X, o Kratos morre e reinicia pelo
+    checkpoint, então a linha do tempo não é a mesma do nativo; as leituras ~22 são do combate. Nativo nas mesmas
+    condições (A/Bs de 11/11): 9,2-10,8 quadros reais/s, ~2,3x abaixo.
   - Estimativa (não medida): se o RPCS3 tivesse os mesmos ~2.700 jobs EDGE por quadro e o EDGE fosse todo o quadro
     como aqui, os seus ~22 q/s dariam ~16 us por job. Não há medida direta do us/job do RPCS3.
 - **Reprodutor de jobs (amostra representativa):** `SPU_JOBCAP=<pasta>,206,D200,512,3000000` com
@@ -288,6 +292,10 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   (33,28 -> 32,20 us/job, duas rodadas alternadas, saídas idênticas à base); 4000/40 piora. No jogo (2 rodadas
   alternadas, 330 s): us/job(60s) 37,8/38,7 (base) x 37,8/37,9; quadros reais 9,70/9,27 x 9,21/9,21: dentro do
   ruído, sem ganho confirmado -- fica desligada.
+
+- **GOW3_PIN=1** (gow3_diag.cpp; ideia do PS3_HOST_PIN do Arnaldo): PPU principal e as 6 threads do SPURS, cada
+  uma num núcleo físico próprio. A/B 3 rodadas: us/job(60s) 38,2/37,7/38,5 (sem) x 37,9/37,3/38,6 (com), -0,5%,
+  ruído; quadros reais iguais. Fica desligado.
 
 **11/11/2026 (noite): ponte do RSX do RPCS3 e correção da métrica de quadros.**
 - **Métrica:** o `[fps]` do live draw conta 2 por quadro do jogo (`rsx_live_draw_present` roda no flip da FIFO e
