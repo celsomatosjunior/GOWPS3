@@ -324,6 +324,14 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   de 2 s com mediana de 9,93 quadros reais/s; capturas a cada 5 min com o combate e o HUD inteiros. Menu principal
   também confirmado (captura dos 30 s). A luta do Poseidon em si não é alcançável só com X (precisa jogar ou save).
 
+- **Inicializações com a ponte (boot.sh, 55 s):** 1 travada em 20 (aos 13 s, na rajada de ~5 mil flips/s do
+  carregamento); v21 nas mesmas condições: 0 em 20 (0 em 180 no total). Na travada, o RSX do RPCS3 registrou
+  `nv406e::semaphore_acquire has timed out. semaphore_address=0x2E200510 value=0xE expected=0xF`: esperou >1 s
+  (driver_recovery_timeout) o label 0x51, que um job SPU escreve com um PUT de 4 bytes por quadro (pc 0x59A0; o
+  PPU só o zera, 0029A430) -- candidato: o workload Wws_Job/RsxSync (wid 11). Hipótese: o ritmo de flips sem
+  limite (no live draw os flips andam a 60 Hz pelo relógio de quadros) expõe uma corrida que o console não vê.
+  Teste em andamento: `PS3_FRAME_LIMIT=60` (limitador do RPCS3 na ponte).
+
 **11/11/2026 (noite): ponte do RSX do RPCS3 e correção da métrica de quadros.**
 - **Métrica:** o `[fps]` do live draw conta 2 por quadro do jogo (`rsx_live_draw_present` roda no flip da FIFO e
   de novo pelo relógio de quadros). O contador de quadros do próprio jogo (0x649ED8, +1 por volta do laço
