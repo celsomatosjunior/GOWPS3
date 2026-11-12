@@ -308,6 +308,17 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   (spu_lifted_lookup), o laço do spu_coh_notify_write por todos os contextos e o spu_lockline_lock; funções de job
   ~1% cada. Conclusão: o tempo é processamento espalhado; não há uma espera ou custo isolado grande.
 
+- **SPU_IBL no gerenciador Wws** (`--spu-ibl` + `SPU_IBL=1`; tools/spu_ibl.py do ps3recomp, do SPU_IBL do Arnaldo):
+  desvios indiretos de cauda e chamadas do gerenciador às próprias funções direto. A regra copiada recusava tudo
+  com `irq_saved`, e o código quente do gerenciador roda dentro do tratador de interrupção: agora só o retorno da
+  interrupção (pc == irq_resume_pc) fica de fora. Desvios pelo caminho genérico -31% (281 -> 193 milhões no mesmo
+  tempo). No jogo, 3 rodadas: us/job(60s) 38,9/38,9/38,5 x 37,6/39,1/38,4 (-1,0%, ruído), quadros reais iguais.
+  Fica desligado: o caminho genérico de desvio é barato.
+- `-march=znver3` nas fontes SPU, na reprodução: 32,0/32,7 x 32,7/32,6 us/job, neutro (como em 08/11).
+- Custo dos limites de float (`-DSPU_AX_TESTE_SEMAXI=1`, só medida): reprodução média 33,2 -> 25,7 us/job, mas
+  mediana 24,8 -> 23,2 e só 350 de 512 jobs com as mesmas saídas: sem os limites os jobs pesados fazem outro
+  trabalho (o "ganho" de 07/11 de novo). O custo real dos limites fica perto de ~6%.
+
 **11/11/2026 (noite): ponte do RSX do RPCS3 e correção da métrica de quadros.**
 - **Métrica:** o `[fps]` do live draw conta 2 por quadro do jogo (`rsx_live_draw_present` roda no flip da FIFO e
   de novo pelo relógio de quadros). O contador de quadros do próprio jogo (0x649ED8, +1 por volta do laço
