@@ -253,6 +253,35 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
 
 ## Ponto de retomada (atualizado a cada pausa)
 
+**12/11/2026 noite: executor Wws próprio para as listas EDGE (ramo `wws-exec` aqui, `gow3-wws` no ps3recomp;
+autorizado pelo Celso, desligado por padrão até validar).**
+- **Medidas antes de começar:** índices nativos + coerência por vetor juntos contra a base (mesmo exe, 6+6 rodadas
+  alternadas, `ab_amb.sh`): us/job(60s) 37,90 -> 37,63 (-0,7%; nenhuma rodada pareada pior), quadros reais
+  9,34 -> 9,56 (ruído). Perfil da fase (`prof_wws.py`, thread do SPURS mais ocupada): job 67% do tempo ocupado
+  (traduzido 59 + núcleos 8), gerenciador traduzido 5-9%, despacho 11-13%, memcpy 5,5-8%, DMA 4,5%, coerência
+  3,5-5%, canais 2%. Com o tempo medido (41 us de ciclo por job, 28,5 dentro do job) o teto de tirar o gerenciador e
+  o kernel é -30% por job; estimativa realista -13 a -19% (~11,5-12 q/s reais).
+- **O gerenciador do GOW3 (pm_wwsjob, 12 KB em 0xA00; `SPU_WWSTRACE`/`SPU_WWSDUMP` do ps3recomp, leitor em
+  `GOW3_trabalho\wws_exec\dump.py`):** cada execução do policy module roda UM job e volta ao kernel. Passos: GETLLAR
+  da linha de estado (r4) em LS 0x80; GET de 0x80 bytes de entradas (lista em +0x3C, 8 bytes cada: `00900001 EA` =
+  job com cabeçalho de 0x90) em 0xD00; PUTLLC com +0x70 (dois u16) +1 e a lane +0x74+2*spu = índice; GET do
+  cabeçalho em 0xC00 (comandos de carga; parâmetros a partir de 0xC40); GETL de sinal (lista em 0x1540, elemento
+  de tamanho 0 com stall-notify); GET do módulo 0x444600 (0xF000 bytes) em 0x4000, em 4 pedaços; GET da lista de
+  22 entradas (0xB0) em 0x1EF50 e GETL dela em 0x13000; contexto em 0x1330 (spu, wid, 0, SPURS; `0x0008<<16|índice`,
+  0, linha|3...; 0xC40 x4; serviços 0x16B0 0x2F38 0x1720 0x1778 0x1780 0x17A0 0x1A98 0x1AB8 0x1A38); `bisl $0,$5`
+  em 0x32AC (r5 = cabeçalho do módulo D200/EB50/130/10, r3 = 0x1330, r1 = 0x3F990); retorno em 0x32B0; GETLLAR e
+  PUTLLC da linha com a lane de volta a 0xFFFF; GETL de sinal (tag 5); sai com r3 = 0xB00.
+- **A recópia do módulo a cada job é necessária:** em ~7% das execuções o job escreve na área do próprio módulo
+  (0x4000-0x4BFF e 0x12600-0x12C00), e a recópia a restaura.
+- **O que o job lê do estado do gerenciador** (reprodução com `SPU_JOBREPLAY_POISON`/`REGKEEP`): a pilha do
+  gerenciador (0x3F9A0-0x3FE80) não; registradores além de r0/r1/r3, a LS baixa (0-0xA00) e o cabeçalho (0xC00)
+  sim (refinando).
+- **Plano:** gancho nativo no `spu_run_policy_module` para os wids 8-10, que só toma uma execução cujo próximo item
+  é um job tipo 1 de forma conhecida (o resto -- lista vazia, tipos 2/3/4, cabeçalho diferente -- roda o gerenciador
+  traduzido); os mesmos comandos MFC pelo runtime (atômicas e coerência iguais), o estado que o job e os serviços
+  leem, o job chamado direto, a liberação. Validação: as execuções gravadas (fora do jogo) e um modo sombra no jogo
+  antes de ativar; depois A/B alternado e 20+ inicializações.
+
 **12/11/2026: ascension-native do Arnaldo (acesso dado hoje) aplicado ao EDGE do GOW3.**
 - **Descompressão de índices nativa (no padrão, ganchos locais):** o módulo 206 do GOW3 usa o mesmo formato de
   índices comprimidos do EDGE que o 218 do Ascension (decodificador em Python a partir do `indices.h` dele: índices
