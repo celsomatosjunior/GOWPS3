@@ -301,10 +301,13 @@ autorizado pelo Celso, desligado por padrão até validar).**
   também (até antes, aos ~5-6 min).** Os testes longos antigos não morriam porque o jogo andava mais devagar. Na tela
   de morte as listas mudam (0xDF1/0x12C0 diferentes do molde) e tudo vai para o gerenciador traduzido, como deve.
   Teste longo válido: ~7 min de luta + tela de morte, sem travar, 0 divergências.
-- **Estado (12/11 22h):** os critérios do Celso foram cumpridos (saída idêntica, ganho acima do ruído, 0/25
-  inicializações travadas, teste longo). O executor continua DESLIGADO por padrão (`GOW3_WWS_EXEC=1` liga): ligar por
-  padrão espera a decisão do Celso. Próximo passo exato: com o ok, trocar em `g3w_register` o teste para
-  `if (e && e[0] == '0') return;`, compilar, 10+ inicializações sem a variável e commit.
+- **12/11 23h: LIGADO POR PADRÃO (autorizado pelo Celso).** `GOW3_WWS_EXEC=0` volta ao gerenciador traduzido; os
+  estados não reconhecidos continuam indo sozinhos para ele. Conferência sem a variável (exe_exec3): 0 travadas em
+  12 inicializações, executor ativo (~155 mil nativas nos 55 s, 0 divergências).
+- **Módulo de 60 KB por job (analisado, não feito):** em 2.284 execuções (listas 8-10) a imagem em 0x444600 é sempre
+  a mesma (fica no segmento de texto do EBOOT, só leitura) e o job escreve na área do módulo só em 0x126B0-0x12C80
+  (dados). Com `SPU_OVL_INCREMENTAL=1` (padrão) cada GET já vira um memcmp e só a última parte é copiada: pular
+  também o memcmp de 48 KB daria ~1-1,5% e exigiria provar que o job nunca escreve fora dos dados -- adiado.
 - **Plano:** gancho nativo no `spu_run_policy_module` para os wids 8-10, que só toma uma execução cujo próximo item
   é um job tipo 1 de forma conhecida (o resto -- lista vazia, tipos 2/3/4, cabeçalho diferente -- roda o gerenciador
   traduzido); os mesmos comandos MFC pelo runtime (atômicas e coerência iguais), o estado que o job e os serviços

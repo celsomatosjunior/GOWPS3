@@ -1,7 +1,7 @@
 /* God of War III: executor nativo das listas EDGE (workloads 8-10 do SPURS) no lugar do gerenciador de jobs Wws
  * traduzido (o policy module pm_wwsjob), uma execução do policy module por vez.
  *
- * GOW3_WWS_EXEC=1 liga (o padrão é desligado); GOW3_WWS_EXEC_WIDS=<máscara hex> (padrão 700); GOW3_WWS_EXEC_STATS=<s>
+ * ligado por padrão; GOW3_WWS_EXEC=0 desliga; GOW3_WWS_EXEC_WIDS=<máscara hex> (padrão 700); GOW3_WWS_EXEC_STATS=<s>
  * imprime a cada <s> segundos quantas execuções foram nativas, recusadas (e por quê) e as divergências.
  *
  * Cada execução do gerenciador do GOW3 roda UM job da lista (LEIA-ME, "executor Wws próprio"). Esta faz a mesma
@@ -393,7 +393,7 @@ static int g3w_native(spu_context* c, uint32_t wid, uint32_t spu, uint32_t spurs
 __attribute__((constructor)) static void g3w_register(void)
 {
     const char* e = getenv("GOW3_WWS_EXEC");
-    if (!e || e[0] != '1') return;
+    if (e && e[0] == '0') return;   /* ligado por padrão desde 12/11 (validado); GOW3_WWS_EXEC=0 = gerenciador traduzido */
     const char* s = getenv("GOW3_WWS_EXEC_STATS");
     s_stats = s ? atoi(s) : 0;
     const char* d = getenv("GOW3_WWS_EXEC_DEBUG");
