@@ -133,6 +133,8 @@ static void g3w_fix_init(void)
 }
 
 static int s_debug;
+static LONG64 s_debug_desde;   /* GOW3_WWS_EXEC_DEBUG_DESDE=<s>: só conta/mostra recusas depois disso */
+static LONG64 s_t0;
 /* os quadwords de cada contexto (lista, SPU) que não são do molde (EA da linha de estado, número da lista,
  * máscaras): o gerenciador não os muda numa execução estável; guardados no começo, repostos no fim */
 enum { NCTX = sizeof g3w_por_ctx / sizeof g3w_por_ctx[0] };
@@ -158,7 +160,7 @@ static int g3w_no_molde(const uint8_t* ls, uint32_t spu)
         for (at = 0; at < sizeof g3w_topo && ls[G3W_TOP_LO + at] == g3w_topo[at]; at++) {}
         at += G3W_TOP_LO;
     }
-    if (!ok && s_debug) {
+    if (!ok && s_debug && (!s_debug_desde || (LONG64)GetTickCount64() / 1000 - s_t0 >= s_debug_desde)) {
         static volatile long s_n;
         if (__atomic_add_fetch(&s_n, 1, __ATOMIC_RELAXED) <= s_debug) {
             const uint32_t q = at & ~15u;
@@ -396,6 +398,9 @@ __attribute__((constructor)) static void g3w_register(void)
     s_stats = s ? atoi(s) : 0;
     const char* d = getenv("GOW3_WWS_EXEC_DEBUG");
     s_debug = d ? atoi(d) : 0;
+    const char* dd = getenv("GOW3_WWS_EXEC_DEBUG_DESDE");
+    s_debug_desde = dd ? atoi(dd) : 0;
+    s_t0 = (LONG64)GetTickCount64() / 1000;
     g_spurs_pm_native = g3w_native;
     fprintf(stderr, "[wws-exec] executor nativo das listas EDGE ligado%c", 10);
 }

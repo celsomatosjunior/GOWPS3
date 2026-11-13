@@ -286,7 +286,25 @@ autorizado pelo Celso, desligado por padrão até validar).**
   `g_spu_stop_pc` (sem ele o retorno do job seguia direto para o fim traduzido do gerenciador -- a reprodução de jobs
   também faz isso: os "2 DMAs do gerenciador depois do job"). Um job que redefine a pilha volta pelo laço de cima do
   `spu_run_with_halt`: a volta roda numa segunda chamada. Primeira medida (1 rodada): us/job(60s) 33,0 x ~37,6,
-  quadros reais 11,5 x ~9,5. A/B alternado em andamento (`ab_exec.sh`).
+  quadros reais 11,5 x ~9,5. **A/B alternado 6+6 (`ab_exec.sh 6`, mesmo exe, só a variável):** us/job(60s) base
+  38,8/37,9/37,9/39,0/38,3/38,7 (média 38,4) x executor 32,8/31,2/31,9/33,5/31,8/33,0 (média 32,4) = **-15,8%**,
+  executor na frente nos 6 pares (ruído ~+-0,7); q/s reais (mediana) base 10,0/9,9/9,7/9,2/9,1/9,1 x executor
+  10,2/11,2/10,7/11,4/11,4/10,2 (médias 9,5 x 10,8). Por rodada de 330 s: ~7,3 milhões de execuções nativas,
+  0 divergências; recusas ~140 mil "LS fora do molde" (~2%) e ~28 mil "entrada não é job" (tipos 2/3/4), que rodam
+  o gerenciador traduzido. Estabilidade: **0 travadas em 25 inicializações** com `GOW3_WWS_EXEC=1` (boot.sh, todas até
+  54 s). **Teste longo (960 s, `logs/rodar_exec1_longo.log`): rodou até o fim, 0 divergências, mas aos ~7 min (quadro
+  16.475 do live draw) o [fps] pulou para 141 fixo e daí em diante TODAS as execuções foram recusadas "fora do molde"
+  (~100 mil/min, 0 nativas).** Os testes longos anteriores sem executor (08/11 15 min, 30 min) passaram desse ponto
+  sem isso. Investigação: `GOW3_WWS_EXEC_DEBUG_DESDE=<s>` (só mostra recusas depois de s segundos) e capturas
+  `LD_FRAME_DUMP` em 10 min com e sem executor (`rodar_exec2_var/base.log`). **Resultado: é o jogo, não o executor
+  -- sem comando, o Kratos morre e fica na tela "Estás morto" (o [fps] 141 é o menu); a base sem executor chega lá
+  também (até antes, aos ~5-6 min).** Os testes longos antigos não morriam porque o jogo andava mais devagar. Na tela
+  de morte as listas mudam (0xDF1/0x12C0 diferentes do molde) e tudo vai para o gerenciador traduzido, como deve.
+  Teste longo válido: ~7 min de luta + tela de morte, sem travar, 0 divergências.
+- **Estado (12/11 22h):** os critérios do Celso foram cumpridos (saída idêntica, ganho acima do ruído, 0/25
+  inicializações travadas, teste longo). O executor continua DESLIGADO por padrão (`GOW3_WWS_EXEC=1` liga): ligar por
+  padrão espera a decisão do Celso. Próximo passo exato: com o ok, trocar em `g3w_register` o teste para
+  `if (e && e[0] == '0') return;`, compilar, 10+ inicializações sem a variável e commit.
 - **Plano:** gancho nativo no `spu_run_policy_module` para os wids 8-10, que só toma uma execução cujo próximo item
   é um job tipo 1 de forma conhecida (o resto -- lista vazia, tipos 2/3/4, cabeçalho diferente -- roda o gerenciador
   traduzido); os mesmos comandos MFC pelo runtime (atômicas e coerência iguais), o estado que o job e os serviços
