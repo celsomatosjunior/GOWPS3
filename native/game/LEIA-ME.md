@@ -35,6 +35,21 @@ O modelo do ps3recomp exige cobertura completa dos SPUs, e dois casos do God of 
 parte. Por isso a SPU_DIR é montada fora do CMake e passada com `--spu-dir`. Requer
 `native/ps3recomp-gow3.patch` aplicado ao ps3recomp, além do `ps3recomp-elfv1.patch`.
 
+**Patches do ps3recomp (base 4e8f3ca8, v0.18.0):** `ps3recomp-gow3.patch` (runtime, executor Wws, SPURS, GCM) e, para a
+ponte do RSX do RPCS3, `ps3recomp-gpu-1.patch` (`gpu/rsx/Emu`) e `ps3recomp-gpu-2.patch` (o resto de `gpu/`; código do
+ps3kit de Arnaldo Lima, **GPL-2.0**: um exe com a ponte fica sob GPL-2.0). Aplicar os três, nessa ordem, numa cópia
+limpa (`git checkout 4e8f3ca8`, `git apply ...`), clonar as duas dependências da ponte (o patch só registra os
+commits): `github.com/KhronosGroup/glslang` em `gpu/third_party/glslang`, commit f0bd0257c308, e
+`github.com/asmjit/asmjit` em `gpu/third_party/asmjit`, commit 416f7356967c; compilar `gpu/` com MSVC
+(veja `gpu/README.md`) e passar a pasta ao `gow3_build.py --rsx-rpcs3 <pasta>`.
+
+**Renderizador:** com a ponte no build, **o RSX do RPCS3 é o padrão desde 13/11** (imagem completa, ~12-16 quadros
+reais/s na luta). Para voltar ao renderizador anterior (live draw D3D12), rode com **`PS3_RSX=live`** (no
+`GOW3Native.env` ou no ambiente; qualquer valor diferente de `rpcs3` serve). Um build sem `--rsx-rpcs3` usa sempre o
+live draw. O executor Wws fica ligado nos dois (`GOW3_WWS_EXEC=0` o desliga). Validação da troca (13/11): sem variáveis, ponte
+ativa, título da janela com o FPS dos flips reais (igual ao `[fps]` do log), janela sem foco com `PS3_JANELA_FUNDO`,
+0 travadas em 12 inicializações de 55 s, executor com 0 divergências; `PS3_RSX=live` liga o live draw (testado).
+
 1. Programas SPU embutidos (8). O Edge Zlib (`spu_83b0bc05…`) tem texto de assert depois do código, a
    partir de LS 0xAA80, e por isso recebe `--code-end`:
    ```powershell
@@ -314,7 +329,7 @@ autorizado pelo Celso, desligado por padrão até validar).**
   us/job(60s) 33,0/32,6/31,3 x 29,1/30,7/29,5 -- a ponte na frente nos 3 pares (o live draw disputa CPU com as
   threads das SPUs). Teste prolongado ponte + executor (960 s, `rodar_integ_longo.log`): até o fim, 0 divergências,
   sem paradas nem timeouts do RSX; o Kratos morre aos ~5 min (daí em diante o fallback, como no live draw).
-  Configuração mais rápida hoje: `PS3_RSX=rpcs3` + executor (padrão). A ponte continua opcional pela variável; o build
+  Configuração mais rápida: ponte + executor, **os dois padrão desde 13/11** (`PS3_RSX=live` volta ao live draw); o build
   com ponte exige o ps3recomp no ramo `integra-rsx-wws` (ganchos `g_spurs_pm_native`/`g_spu_stop_pc`).
 - **Perfil ponte + executor (13/11, `logs/prof_integ.log`, `prof_integ2.log` com chamadores):** as listas 8, 9 e
   10 rodam em paralelo, cada uma numa SPU (threads 62-77% ocupadas, o resto esperando trabalho no

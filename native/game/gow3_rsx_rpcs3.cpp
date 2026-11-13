@@ -115,6 +115,16 @@ static LONG WINAPI vm_rsx_veh(EXCEPTION_POINTERS* ep)
 // 0 when PS3_RSX does not ask for it (main.cpp then allocates as always).
 extern "C" int gow3_rsx_select(void)
 {
+    /* Default since 13/11 (Celso's ok): RPCS3's RSX when PS3_RSX is unset; PS3_RSX=live (any value other
+     * than rpcs3) keeps the live draw. */
+    if (!getenv("PS3_RSX")) {
+#ifdef _WIN32
+        _putenv_s("PS3_RSX", "rpcs3");
+        SetEnvironmentVariableA("PS3_RSX", "rpcs3");
+#else
+        setenv("PS3_RSX", "rpcs3", 0);
+#endif
+    }
     if (!ps3rsx_requested()) return 0;
 #ifdef _WIN32
     AddVectoredExceptionHandler(1, vm_rsx_veh);

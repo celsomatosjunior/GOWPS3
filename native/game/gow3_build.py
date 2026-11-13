@@ -796,7 +796,7 @@ def main() -> int:
     ap.add_argument("--sem-ganchos", action="store_true", help="não aplicar os ganchos nativos")
     ap.add_argument("--rsx-rpcs3", metavar="PASTA",
                     help="liga o RSX do RPCS3 (ps3recomp gpu/, compilado nessa pasta com MSVC: ninja ps3rsx_flip_smoke); "
-                         "em tempo de execução PS3_RSX=rpcs3 o usa no lugar do live draw. O exe fica sob GPL-2.0")
+                         "o exe usa a ponte por padrão (PS3_RSX=live volta ao live draw). O exe fica sob GPL-2.0")
     ap.add_argument("--spu-pn", action="store_true",
                     help="módulos de job com corpos preserve_none e invólucros na convenção padrão (tools/spu_cc_pn.py): "
                          "as chamadas e saltos diretos entre funções traduzidas não salvam rbx..r15/xmm6-15")
