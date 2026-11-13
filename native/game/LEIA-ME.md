@@ -294,7 +294,10 @@ a versão funcional segue em `integra-rsx-wws`/`native-recomp`).**
   (média 30,25) x pacote 30,0/29,6/29,7/29,6/30,1/29,8 + 30,1/29,5/30,4/30,0/29,6/29,9 (média 29,86): **-1,3%**,
   ~2,9 erros-padrão, pacote à frente em 9 dos 12 pares. Executor Wws: 0 divergências nas 24. Quadros reais
   (mediana das medianas) 12,27 -> 12,72: dominados pela cena, não decidem. Ganho pequeno mas consistente; ligar
-  por padrão só depois das inicializações sem travamento (10+10 alternadas).
+  por padrão só depois das inicializações sem travamento: 10+10 alternadas (`boot.sh`, 55 s), 0 travadas em cada,
+  último quadro 52-54 s. **Ligado por padrão no ramo `tradutor-spu`** (`--spu-shufb-inv` padrão, `--no-spu-shufb-inv`
+  desliga; `-DSPU_CFLT_INT` nas opções SPU padrão); o build padrão sai igual ao exe testado (só o carimbo de tempo
+  do PE difere). `native-recomp` segue sem as duas até o Celso decidir fundir.
 - Reprodutor: o contexto de cada job ficava na lista da coerência depois do `free` (tombo intermitente em
   `spu_coh_notify_write`, rodadas cortadas); corrigido no ps3recomp d170fd53. Diferença de `ls_diff` (±1 byte em
   ~15-20 jobs) aparece até entre duas execuções do mesmo exe: não serve para comparar exatidão; PUTs e
@@ -520,7 +523,8 @@ autorizado pelo Celso, desligado por padrão até validar).**
   mediana 24,8 -> 23,2 e só 350 de 512 jobs com as mesmas saídas: sem os limites os jobs pesados fazem outro
   trabalho (o "ganho" de 07/11 de novo). O custo real dos limites fica perto de ~6%.
 
-- **Ponte do RSX do RPCS3, 30 min na fase** (`scripts_locaissx_longo.sh`, X a cada 15 s: o Kratos morre, volta pelo
+- **Ponte do RSX do RPCS3, 30 min na fase** (`scripts_locais
+sx_longo.sh`, X a cada 15 s: o Kratos morre, volta pelo
   checkpoint e luta de novo): flips até 1.798 s, nenhuma falha de página fora do RSX, nenhum erro fatal, 697 janelas
   de 2 s com mediana de 9,93 quadros reais/s; capturas a cada 5 min com o combate e o HUD inteiros. Menu principal
   também confirmado (captura dos 30 s). A luta do Poseidon em si não é alcançável só com X (precisa jogar ou save).
