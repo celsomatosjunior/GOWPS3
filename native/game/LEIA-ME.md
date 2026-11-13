@@ -268,6 +268,35 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
 
 ## Ponto de retomada (atualizado a cada pausa)
 
+**13/11/2026 tarde: geração de código SPU (ramo `tradutor-spu` aqui e no ps3recomp; autorizado pelo Celso;
+a versão funcional segue em `integra-rsx-wws`/`native-recomp`).**
+- **Demonstração no código de máquina** (relatório local `<trabalho>\relatorio_tradutor_13nov.txt`; ferramenta
+  `scripts_locais\asm_laco.py`, que classifica cada instrução do laço mais amostrado). Perfil da reprodução de
+  512 jobs EDGE: derramamento na pilha 18% das amostras de job, mov entre registradores 9%, pshufb 9%, endereço/acesso
+  à LS 8%, float 5%, fronteira `ctx->gpr` só 1,6%. No laço mais quente (482 instruções por volta para 24 fm/fma,
+  16 shufb, 16 lqd, 8 stqd): clamps 25% das instruções / 30% das amostras, pilha 36% / 29%, pshufb 9% / 17%. O
+  excesso sobre um laço ideal (~266 instruções com a mesma semântica) é quase todo pilha: o laço SPU está em
+  pipeline (~33 valores vivos na volta) e o x86 tem 16 xmm. Endereços da LS: `leal off(base)` + `andl $0x3fff0`
+  por acesso (a máscara depois da soma impede [base+desloc]) e 12 endereços guardados na pilha.
+  Já existente (não é novo): locais + vivacidade, fusão de trechos e laço local, preserve_none, clamps só nos
+  operandos que podem vir fora da faixa, shufb por pshufb sem desvio, núcleos nativos com modo sombra.
+- **Proposta 1, `--spu-shufb-inv`** (ps3recomp `tools/spu_shufb_inv.py` + `spu_shufb_k`): shufb cujo b e c o laço
+  não escreve vira `pshufb(a, idxA) | K(b,c)`; o compilador tira idxA e K do laço (2 instruções e 2 registradores
+  por shufb no laço, eram 3 e 4). Exata (5 milhões de casos contra a referência; na reprodução, PUTs e
+  registradores idênticos nos 512 jobs). 318 shufb marcados; laço mais quente 482 -> 446 instruções. Reprodução:
+  ~-1% us/job. **No jogo (4+4): us/job(60s) 29,8/31,7/29,3/30,5 x 30,1/30,8/30,9/30,1 -- neutro.** Desligada.
+- **Proposta 2, `-DSPU_CFLT_INT`** (spu_helpers.h): csflt/cuflt sem o double para 29 <= i8 <= 251 (truncamento de
+  24 bits no inteiro, conversão exata, escala por potência de 2). Exata (17,8 milhões de casos; reprodução com PUTs
+  e registradores idênticos). Laço 0x7D78: 384 -> 321 instruções. Reprodução 4+4: média 32,31 -> 32,09 us/job,
+  mediana 23,7 -> 23,2. Desligada até o A/B no jogo.
+- Reprodutor: o contexto de cada job ficava na lista da coerência depois do `free` (tombo intermitente em
+  `spu_coh_notify_write`, rodadas cortadas); corrigido no ps3recomp d170fd53. Diferença de `ls_diff` (±1 byte em
+  ~15-20 jobs) aparece até entre duas execuções do mesmo exe: não serve para comparar exatidão; PUTs e
+  registradores sim.
+- Conclusão parcial: ajustes por operação dão ~1% cada na reprodução, abaixo do ruído do jogo (±0,7 us/job por
+  execução). O que pesa é a pressão de registradores nos laços em pipeline; próximas hipóteses (ver relatório):
+  LS espelhada para tirar a segunda máscara dos endereços, e reler da LS valores que atravessam a volta.
+
 **12/11/2026 noite: executor Wws próprio para as listas EDGE (ramo `wws-exec` aqui, `gow3-wws` no ps3recomp;
 autorizado pelo Celso, desligado por padrão até validar).**
 - **Medidas antes de começar:** índices nativos + coerência por vetor juntos contra a base (mesmo exe, 6+6 rodadas
