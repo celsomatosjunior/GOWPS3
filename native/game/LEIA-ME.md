@@ -369,6 +369,11 @@ autorizado pelo Celso, desligado por padrão até validar).**
   numa thread nova: ~325 us até começar, ~1,9 ms rodando. Fora do caminho crítico; um pool de threads daria < 1%.
 - Título da janela com a ponte mostrava FPS 0 (ninguém contava os flips): corrigido no ps3recomp a1862ee3 (o flip do
   RSX do RPCS3 conta). Com `PS3_JANELA_FUNDO` a janela da ponte é empurrada para baixo nos primeiros 30 s (d113a8c).
+- Núcleo de skinning (local, `edge_nativo\gow3_edge_skin.h`): o T de cada par (dois `shufb` por vértice) passa a ser
+  um `shufb` de 256 bits para os dois vértices, com as mesmas operações. Sombra: 0 diferenças em 8 mil+ chamadas.
+  Reprodução 3+3 (`ab_replay.sh 3 jobcap206s 50`): média 32,50 -> 32,27 us/job, mediana 24,0 -> 23,5, o novo à
+  frente nas 3; mesmos 477 jobs com DMAs iguais. Pequeno, mantido. Coerência e memcmp do módulo já estão no
+  mínimo (só linhas reservadas avisam; `SPU_OVL_INCREMENTAL` padrão): o que sobra é a qualidade do código traduzido.
 - **Plano:** gancho nativo no `spu_run_policy_module` para os wids 8-10, que só toma uma execução cujo próximo item
   é um job tipo 1 de forma conhecida (o resto -- lista vazia, tipos 2/3/4, cabeçalho diferente -- roda o gerenciador
   traduzido); os mesmos comandos MFC pelo runtime (atômicas e coerência iguais), o estado que o job e os serviços
