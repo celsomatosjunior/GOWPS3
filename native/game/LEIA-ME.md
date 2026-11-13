@@ -289,6 +289,12 @@ a versão funcional segue em `integra-rsx-wws`/`native-recomp`).**
   24 bits no inteiro, conversão exata, escala por potência de 2). Exata (17,8 milhões de casos; reprodução com PUTs
   e registradores idênticos). Laço 0x7D78: 384 -> 321 instruções. Reprodução 4+4: média 32,31 -> 32,09 us/job,
   mediana 23,7 -> 23,2. Desligada até o A/B no jogo.
+- **Pacote 1+2 no jogo** (mesmo build com as duas, contra a base com o mesmo reprodutor; `ab_exes.sh`, 330 s, duas
+  rodadas de 6+6 alternadas): us/job(60s) base 29,5/30,4/30,4/30,7/30,3/29,7 + 30,5/30,6/30,5/30,0/30,6/29,8
+  (média 30,25) x pacote 30,0/29,6/29,7/29,6/30,1/29,8 + 30,1/29,5/30,4/30,0/29,6/29,9 (média 29,86): **-1,3%**,
+  ~2,9 erros-padrão, pacote à frente em 9 dos 12 pares. Executor Wws: 0 divergências nas 24. Quadros reais
+  (mediana das medianas) 12,27 -> 12,72: dominados pela cena, não decidem. Ganho pequeno mas consistente; ligar
+  por padrão só depois das inicializações sem travamento (10+10 alternadas).
 - Reprodutor: o contexto de cada job ficava na lista da coerência depois do `free` (tombo intermitente em
   `spu_coh_notify_write`, rodadas cortadas); corrigido no ps3recomp d170fd53. Diferença de `ls_diff` (±1 byte em
   ~15-20 jobs) aparece até entre duas execuções do mesmo exe: não serve para comparar exatidão; PUTs e
