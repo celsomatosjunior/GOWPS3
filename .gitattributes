@@ -1,0 +1,2 @@
+# Patches do ps3recomp: bytes exatos (vários arquivos do ps3recomp são CRLF; o autocrlf os corromperia)
+native/*.patch -text
