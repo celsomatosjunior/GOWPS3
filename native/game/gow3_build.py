@@ -358,6 +358,9 @@ def add_spu_jobs(args, proj: Path, cm: Path):
             if args.spu_float == "aprox":   # operandos de float a limitar (SPU_AX_CLAMP, ver spu_simd)
                 texto = mark_float_inputs(texto, chains=not args.sem_cadeias, flow=args.fluxo_float, ls_assumed=args.float_ls)[0]
             texto = spu_vivos(args, texto, jobs=True, nome=c.parent.name)
+            if args.spu_shufb_inv:   # shufb com b e c fixos no laço (ps3recomp tools/spu_shufb_inv.py)
+                from spu_shufb_inv import mark_shufb_invariant
+                texto = mark_shufb_invariant(texto)[0]
             if args.spu_pn:   # corpos preserve_none + invólucros (ps3recomp tools/spu_cc_pn.py)
                 from spu_cc_pn import apply_pn
                 texto = apply_pn(texto)[0]
@@ -397,6 +400,9 @@ def spu_dir_projeto(args, proj: Path) -> Path:
         if args.spu_float == "aprox":
             texto = mark_float_inputs(texto, chains=not args.sem_cadeias, flow=args.fluxo_float, ls_assumed=args.float_ls)[0]
         texto = spu_vivos(args, texto, nome=c.parent.name)
+        if args.spu_shufb_inv:
+            from spu_shufb_inv import mark_shufb_invariant
+            texto = mark_shufb_invariant(texto)[0]
         if args.spu_ibl and c.parent.name == "pm_wwsjob":
             # desvios indiretos do gerenciador Wws para as próprias funções direto (ps3recomp tools/spu_ibl.py, do
             # SPU_IBL do Arnaldo); a imagem dele fica em LS 0xA00..0xA00+12032; liga em tempo de execução com SPU_IBL=1
@@ -797,6 +803,9 @@ def main() -> int:
     ap.add_argument("--rsx-rpcs3", metavar="PASTA",
                     help="liga o RSX do RPCS3 (ps3recomp gpu/, compilado nessa pasta com MSVC: ninja ps3rsx_flip_smoke); "
                          "o exe usa a ponte por padrão (PS3_RSX=live volta ao live draw). O exe fica sob GPL-2.0")
+    ap.add_argument("--spu-shufb-inv", action="store_true",
+                    help="shufb cujo b e c o laço não muda viram spu_shufb_k (tools/spu_shufb_inv.py): mesmo resultado, "
+                         "o compilador tira do laço a parte de b e c (2 instruções e 2 registradores por shufb no laço)")
     ap.add_argument("--spu-pn", action="store_true",
                     help="módulos de job com corpos preserve_none e invólucros na convenção padrão (tools/spu_cc_pn.py): "
                          "as chamadas e saltos diretos entre funções traduzidas não salvam rbx..r15/xmm6-15")
