@@ -304,6 +304,18 @@ autorizado pelo Celso, desligado por padrão até validar).**
 - **12/11 23h: LIGADO POR PADRÃO (autorizado pelo Celso).** `GOW3_WWS_EXEC=0` volta ao gerenciador traduzido; os
   estados não reconhecidos continuam indo sozinhos para ele. Conferência sem a variável (exe_exec3): 0 travadas em
   12 inicializações, executor ativo (~155 mil nativas nos 55 s, 0 divergências).
+- **Integração ponte RSX + executor (ramo `integra-rsx-wws` nos dois repositórios, criado de `wws-exec`/`gow3-wws`,
+  que já contêm `rsx-rpcs3`/`gow3-rsx`; os ramos antigos ficam como estão).** Com `PS3_RSX=rpcs3`, A/B alternado 4+4
+  (`ab_integra.sh`, executor desligado x ligado): us/job(60s) 36,0/36,2/36,1/35,7 x 30,2/30,2/30,1/30,0 (**-16,4%**,
+  4 de 4 pares); q/s reais (mediana) 9,8/9,6/11,2/13,6 x 12,6/12,3/12,2/12,0 (a cena varia mais com a ponte: no
+  par 4 a base pegou uma cena leve, 2.325 jobs/quadro x 2.862). 6,5-7,4 milhões de nativas por rodada, 0
+  divergências. **0 travadas em 30 inicializações** com ponte + executor (a ponte sozinha tinha 1 em 100).
+  Live draw x ponte, os dois com o executor (`ab_rsx_exec.sh 3`): q/s reais 10,6/11,2/10,4 x 16,1/11,8/12,9 e
+  us/job(60s) 33,0/32,6/31,3 x 29,1/30,7/29,5 -- a ponte na frente nos 3 pares (o live draw disputa CPU com as
+  threads das SPUs). Teste prolongado ponte + executor (960 s, `rodar_integ_longo.log`): até o fim, 0 divergências,
+  sem paradas nem timeouts do RSX; o Kratos morre aos ~5 min (daí em diante o fallback, como no live draw).
+  Configuração mais rápida hoje: `PS3_RSX=rpcs3` + executor (padrão). A ponte continua opcional pela variável; o build
+  com ponte exige o ps3recomp no ramo `integra-rsx-wws` (ganchos `g_spurs_pm_native`/`g_spu_stop_pc`).
 - **Módulo de 60 KB por job (analisado, não feito):** em 2.284 execuções (listas 8-10) a imagem em 0x444600 é sempre
   a mesma (fica no segmento de texto do EBOOT, só leitura) e o job escreve na área do módulo só em 0x126B0-0x12C80
   (dados). Com `SPU_OVL_INCREMENTAL=1` (padrão) cada GET já vira um memcmp e só a última parte é copiada: pular
