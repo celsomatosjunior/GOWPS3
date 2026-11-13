@@ -316,6 +316,24 @@ autorizado pelo Celso, desligado por padrão até validar).**
   sem paradas nem timeouts do RSX; o Kratos morre aos ~5 min (daí em diante o fallback, como no live draw).
   Configuração mais rápida hoje: `PS3_RSX=rpcs3` + executor (padrão). A ponte continua opcional pela variável; o build
   com ponte exige o ps3recomp no ramo `integra-rsx-wws` (ganchos `g_spurs_pm_native`/`g_spu_stop_pc`).
+- **Perfil ponte + executor (13/11, `logs/prof_integ.log`, `prof_integ2.log` com chamadores):** as listas 8, 9 e
+  10 rodam em paralelo, cada uma numa SPU (threads 62-77% ocupadas, o resto esperando trabalho no
+  `spurs_pm_worker`); o PPU principal ~59% ocupado e ~39% em `sys_timer_usleep(30)` (lr 0x1E5978, sondagem do slot
+  da lista; o runtime faz espera ativa com `SwitchToThread`, reação de ~30 us: não é atraso de timer). Na SPU mais
+  ocupada: job 61% do ocupado, despacho 9% (`spu_indirect_branch` 2,7% + `spu_lifted_lookup` 1,9% do total), DMA 5%,
+  coerência 4%, memcpy/memcmp ~6%; o gerenciador traduzido caiu para 1,9%. No PPU: código traduzido 46% do total e
+  os helpers do VMX 7,3% (`vmx_vmaddfp` sozinho 5%): com o PPU mais no caminho crítico, o `--ppu-avx2` (neutro em
+  06/11, quando a SPU dominava) medido de novo (`ab_exes.sh 4 avx2 exec3 avx2 PS3_RSX=rpcs3`): q/s reais
+  12,0/11,9/12,7/11,4 x 12,7/12,1/12,0/12,4 (+2,5%, 3 de 4), us/job igual -- **neutro de novo, fica desligado**.
+- **Outras listas Wws (13/11):** os wids 0-11 usam todos o mesmo gerenciador (image 278921217). Sem o executor, por
+  10 s: wid 6 3,6 s (40 mil execuções, só na SPU 0), wid 7 2,2 s, wid 4 1,7 s (23 mil), wid 2 1,5 s, wid 5 1,0 s;
+  wids 8-10 ~3,2 s cada (~90 mil execuções cada). A forma varia (despejos `wws_exec\w6.bin`/`w4.bin`, `forma.py`):
+  o wid 6 tem 5 módulos de job (2 a 7 pedaços de 16 KB, 13-21 comandos antes do job, entrada 0x4080), o wid 4 três
+  (entradas 0xC928/0x76E8/0xDD70, cauda maior). Estender o executor = interpretar o cabeçalho como o gerenciador e
+  validar wid a wid (dias). Teto: ~6 us por execução economizados (o que o EDGE deu) -> ~0,46 s por 10 s no total
+  (wid 6 ~0,24 s, wid 4 ~0,14 s), ~30% do que as listas EDGE deram e espalhado pelas SPUs: provavelmente abaixo do
+  ruído dos quadros reais (~+-5%). Adiado; se for feito, começar pelo wid 6 (SPU 0, a mais carregada).
+- Despacho (`spu_lifted_lookup` ~1,9%): já tem cache por thread (SPU_DISPATCH_CACHE); o resto é o caminho de acerto.
 - **Módulo de 60 KB por job (analisado, não feito):** em 2.284 execuções (listas 8-10) a imagem em 0x444600 é sempre
   a mesma (fica no segmento de texto do EBOOT, só leitura) e o job escreve na área do módulo só em 0x126B0-0x12C80
   (dados). Com `SPU_OVL_INCREMENTAL=1` (padrão) cada GET já vira um memcmp e só a última parte é copiada: pular
