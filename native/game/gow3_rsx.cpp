@@ -68,6 +68,22 @@ extern "C" int gow3_rsx_init(uint32_t w, uint32_t h, const char* title)
             HWND hw = (HWND)rsx_null_backend_get_hwnd();
             ShowWindow(hw, SW_SHOWNOACTIVATE);
             SetWindowPos(hw, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            /* A swapchain e o RSX do RPCS3 podem trazer a janela para a frente depois daqui: durante a
+             * inicialização (~30 s) ela volta para baixo de tempos em tempos, sem foco, para não atrapalhar
+             * quem está digitando em outra janela. Depois disso fica onde o usuário a puser. */
+            CreateThread(nullptr, 0, [](LPVOID p) -> DWORD {
+                const HWND h = (HWND)p;
+                for (int t = 0; t < 30; t++) {
+                    Sleep(1000);
+                    if (GetForegroundWindow() == h) {   /* tomou o foco sozinha: devolve à janela de baixo */
+                        HWND prox = GetWindow(h, GW_HWNDNEXT);
+                        while (prox && !IsWindowVisible(prox)) prox = GetWindow(prox, GW_HWNDNEXT);
+                        if (prox) SetForegroundWindow(prox);
+                    }
+                    SetWindowPos(h, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                }
+                return 0;
+            }, hw, 0, nullptr);
         }
         s_live = 2;
         fprintf(stderr, "[gow3-rsx] janela do backend nulo para o RSX do RPCS3\n");
