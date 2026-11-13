@@ -372,8 +372,10 @@ autorizado pelo Celso, desligado por padrão até validar).**
 - Núcleo de skinning (local, `edge_nativo\gow3_edge_skin.h`): o T de cada par (dois `shufb` por vértice) passa a ser
   um `shufb` de 256 bits para os dois vértices, com as mesmas operações. Sombra: 0 diferenças em 8 mil+ chamadas.
   Reprodução 3+3 (`ab_replay.sh 3 jobcap206s 50`): média 32,50 -> 32,27 us/job, mediana 24,0 -> 23,5, o novo à
-  frente nas 3; mesmos 477 jobs com DMAs iguais. Pequeno, mantido. Coerência e memcmp do módulo já estão no
-  mínimo (só linhas reservadas avisam; `SPU_OVL_INCREMENTAL` padrão): o que sobra é a qualidade do código traduzido.
+  frente nas 3; mesmos 477 jobs com DMAs iguais. **Ganho só na reprodução, ainda não confirmado em A/B no jogo**
+  (está no núcleo local que o build usa). Coerência e memcmp do módulo já estão no mínimo (só linhas reservadas
+  avisam; `SPU_OVL_INCREMENTAL` padrão): o que sobra é a qualidade do código traduzido. A comparação "~2x por job"
+  com o RPCS3 é estimativa (q/s do RPCS3 com o mesmo número de jobs suposto), não tempo por job medido.
 - **Plano:** gancho nativo no `spu_run_policy_module` para os wids 8-10, que só toma uma execução cujo próximo item
   é um job tipo 1 de forma conhecida (o resto -- lista vazia, tipos 2/3/4, cabeçalho diferente -- roda o gerenciador
   traduzido); os mesmos comandos MFC pelo runtime (atômicas e coerência iguais), o estado que o job e os serviços
