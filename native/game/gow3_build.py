@@ -361,6 +361,9 @@ def add_spu_jobs(args, proj: Path, cm: Path):
             if args.spu_shufb_inv:   # shufb com b e c fixos no laço (ps3recomp tools/spu_shufb_inv.py)
                 from spu_shufb_inv import mark_shufb_invariant
                 texto = mark_shufb_invariant(texto)[0]
+            if args.spu_ls_espelho:   # lqd/stqd como [base mascarada + desloc] na LS espelhada (tools/spu_ls_disp.py)
+                from spu_ls_disp import rewrite_ls_disp
+                texto = rewrite_ls_disp(texto)[0]
             if args.spu_pn:   # corpos preserve_none + invólucros (ps3recomp tools/spu_cc_pn.py)
                 from spu_cc_pn import apply_pn
                 texto = apply_pn(texto)[0]
@@ -808,6 +811,9 @@ def main() -> int:
     ap.add_argument("--spu-shufb-inv", action=argparse.BooleanOptionalAction, default=True,
                     help="shufb cujo b e c o laço não muda viram spu_shufb_k (tools/spu_shufb_inv.py): mesmo resultado, "
                          "o compilador tira do laço a parte de b e c (2 instruções e 2 registradores por shufb no laço)")
+    ap.add_argument("--spu-ls-espelho", action="store_true",
+                    help="módulos de job com lqd/stqd em ls + desloc + (base & 0x3FFF0) (tools/spu_ls_disp.py); o "
+                         "runtime passa a dar a cada contexto uma LS com 64 KB espelhados de cada lado (SPU_LS_MIRROR)")
     ap.add_argument("--spu-pn", action="store_true",
                     help="módulos de job com corpos preserve_none e invólucros na convenção padrão (tools/spu_cc_pn.py): "
                          "as chamadas e saltos diretos entre funções traduzidas não salvam rbx..r15/xmm6-15")
