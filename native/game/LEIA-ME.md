@@ -338,6 +338,22 @@ autorizado pelo Celso, desligado por padrão até validar).**
   a mesma (fica no segmento de texto do EBOOT, só leitura) e o job escreve na área do módulo só em 0x126B0-0x12C80
   (dados). Com `SPU_OVL_INCREMENTAL=1` (padrão) cada GET já vira um memcmp e só a última parte é copiada: pular
   também o memcmp de 48 KB daria ~1-1,5% e exigiria provar que o job nunca escreve fora dos dados -- adiado.
+- **13/11 tarde, onde está o tempo agora (ponte + executor):** wids 8+9+10 = 9,7 s de SPU a cada 10 s
+  (`logs/prof_13b.log`): a cadeia EDGE continua o limite (quadro ~ jobs x us/job, ~30 us/job). Na thread que roda
+  quase só EDGE, do ocupado: código dos jobs ~43%, núcleos nativos ~18% (`gow3_edge_skin_10e20` sozinho ~12%), despacho
+  ~10%, memcpy/memcmp ~9% (2/3 dados de DMA, 1/3 o memcmp do módulo), coerência ~7% (`spu_lockline_lock` ~3,5%:
+  trava global disputada por PPU e SPUs), DMA ~5%, canais ~3%, Wws ~2%. Funções de job: nenhuma acima de ~2,4% do
+  ocupado (0x11310, 0x6130, 0x7D78: laços de descompressão de vértices) -- núcleo nativo novo renderia pouco.
+  Por isso estender o executor a outras listas não muda o quadro (não estão no caminho crítico).
+- **CPU por thread** (`scripts_locais\cpu_threads.ps1`, com `-ExecutionPolicy Bypass`): o processo usa ~9 núcleos;
+  giram em espera ativa o `frame_clock` (100%, `GCM_DRAIN_MS=0`), o PPU (100%, `usleep(30)`), a `rsx::thread` do RPCS3
+  (100%) e 5 threads "spu job" (~50% cada, sondando DMA em `mfc_do_transfer` e esperando sinal). A/B 3+3 com a ponte,
+  `GCM_DRAIN_MS=4` (frame_clock dormindo): us/job 30,3/30,1/34,2 x 29,2/31,0/29,7, q/s reais 12,7/11,7/12,6 x
+  12,2/12,3/11,0 -- **neutro**: os giros não atrasam o EDGE (sobram núcleos no 5950X). Padrão mantido.
+- Tasks SPURS assíncronas (`SPU_ASYNC_PROF=<s>`, ps3recomp 55a2793e): ~60/s (imagem 402824896, 5 por lote), cada uma
+  numa thread nova: ~325 us até começar, ~1,9 ms rodando. Fora do caminho crítico; um pool de threads daria < 1%.
+- Título da janela com a ponte mostrava FPS 0 (ninguém contava os flips): corrigido no ps3recomp a1862ee3 (o flip do
+  RSX do RPCS3 conta). Com `PS3_JANELA_FUNDO` a janela da ponte é empurrada para baixo nos primeiros 30 s (d113a8c).
 - **Plano:** gancho nativo no `spu_run_policy_module` para os wids 8-10, que só toma uma execução cujo próximo item
   é um job tipo 1 de forma conhecida (o resto -- lista vazia, tipos 2/3/4, cabeçalho diferente -- roda o gerenciador
   traduzido); os mesmos comandos MFC pelo runtime (atômicas e coerência iguais), o estado que o job e os serviços
