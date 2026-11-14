@@ -322,6 +322,20 @@ a versão funcional segue em `integra-rsx-wws`/`native-recomp`).**
   as checagens anteriores não fariam nada. **A/B no jogo 6+6 (14/11): us/job(60s) 29,17 (base) x 29,20 (atalho),
   divergências 0 -- neutro.** Fica desligado; as checagens puladas já custavam pouco, o peso está na própria
   consulta (`spu_lifted_lookup`) e na chamada.
+- **Perfil de 14/11 (exe padrão do ramo + atalho, `GOW3_PROF=100,40`, `scripts_locais/prof_top.py <map> <log>`):**
+  SPU das EDGE, do ocupado: código traduzido 60%, núcleos nativos 8,4%, despacho 9,2% (`spu_indirect_branch` 3,7,
+  `spu_lifted_lookup` 2,6, `spu_drain_call` 1,0, `spu_lifted_lookup_full` + `spu_lookup` 1,1, `spu_interp_run_until`
+  0,55), memcpy (VCRUNTIME) 6,2%, DMA 4,9%, coerência 4,3%, canais 2,6%. Funções traduzidas: nenhuma acima de 3,5%
+  (0x6C10 3,5, 0x9A68 2,9, 0xF428 2,1, 912f:0x4C48 1,8...): perfil plano.
+- **Cache de despacho e interpretador (`SPU_DISPATCH_CACHE=shadow`, `SPU_INTERP_STATS=20`, `SPU_INTERP_PCLOG`):**
+  ~45% das consultas erram (0 divergências na sombra); o interpretador roda 3-5 M passos/s e cada passo consulta
+  a cache e volta NULL (NULL não é guardado). 829 pcs distintos, 745 deles na imagem 223 -- as 3 rotinas curtas que o
+  job copia para ~245 endereços cada (já conhecido, 29/10). Na SPU das EDGE o interpretador é só ~0,55% e as
+  consultas que erram ~1,1%: traduzir as cópias ou guardar o NULL renderia no máximo ~1,5%, abaixo do ruído do jogo.
+  Não feito.
+- Já medidos e não repetir: flags do compilador nos jobs (list-burr fica; misched, pbqp, ilpmin, -O3, znver3
+  neutros ou piores), limites de float (~6%, tirá-los muda o resultado), laços com registradores locais do port do
+  Ascension (só rendem com AVX-512; esta CPU não tem).
 - Reprodutor: o contexto de cada job ficava na lista da coerência depois do `free` (tombo intermitente em
   `spu_coh_notify_write`, rodadas cortadas); corrigido no ps3recomp d170fd53. Diferença de `ls_diff` (±1 byte em
   ~15-20 jobs) aparece até entre duas execuções do mesmo exe: não serve para comparar exatidão; PUTs e
