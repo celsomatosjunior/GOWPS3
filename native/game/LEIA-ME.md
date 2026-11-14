@@ -336,6 +336,17 @@ a versão funcional segue em `integra-rsx-wws`/`native-recomp`).**
 - Já medidos e não repetir: flags do compilador nos jobs (list-burr fica; misched, pbqp, ilpmin, -O3, znver3
   neutros ou piores), limites de float (~6%, tirá-los muda o resultado), laços com registradores locais do port do
   Ascension (só rendem com AVX-512; esta CPU não tem).
+- **Hipótese 4 do relatório (reler da LS valores que atravessam a volta), protótipo à mão (14/11):** banco isolado
+  em `GOW3_trabalho\scratch\h4` (`gera.py` gera do fonte traduzido a original e a nova; `banco.c`, mesmas flags do
+  build). Laço 0x11310: as 16 cargas do fim da volta (3 matrizes + 4 vértices) e os 8 shufb delas passam para o topo
+  da volta seguinte, relidas da LS; antes das gravações de cada volta, um teste de sobreposição (gravações em r62/r65
+  contra o que foi lido por r40/r62, e nenhuma volta no fim da LS) desvia para a cópia original do laço no meio da
+  volta, e na saída os valores são relidos. **Exata** (LS, registradores e pc iguais em 180 casos, com e sem
+  sobreposição e perto do fim da LS) e **-15% por volta** (28,1 -> 23,9 ns). Levantamento (`levanta2.py`) dos
+  laços quentes das EDGE: só 0x6C10 (14 cargas, com desvios internos), 0x11310 (16), 0x11038 (12), 0x72B8 (12),
+  0x6130 (8) têm essa forma; 0x9C48, 0xF728, 0xFB58, 0x8DD0 não têm nenhuma (os derramamentos ali vêm de valores
+  calculados). Teto estimado ~1% do total: um passe geral do tradutor (dias, risco de exatidão) não compensa.
+  Hipótese encerrada com a medida.
 - Reprodutor: o contexto de cada job ficava na lista da coerência depois do `free` (tombo intermitente em
   `spu_coh_notify_write`, rodadas cortadas); corrigido no ps3recomp d170fd53. Diferença de `ls_diff` (±1 byte em
   ~15-20 jobs) aparece até entre duas execuções do mesmo exe: não serve para comparar exatidão; PUTs e
