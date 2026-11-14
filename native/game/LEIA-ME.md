@@ -318,8 +318,10 @@ a versão funcional segue em `integra-rsx-wws`/`native-recomp`).**
 - **Desvios indiretos (`SPU_IB_HIST2=<s>`, novo, por thread, inclui o atalho residente):** a SPU das EDGE faz
   ~3,6 milhões por segundo, todos para slots residentes (alvos alinhados em 0x40: 0x1BB00, 0x1BC40, 0x0D140...;
   dezenas por job). `spu_indirect_branch` + `spu_lifted_lookup` ~7% da thread. Atalho na entrada
-  (ps3recomp tradutor-spu, `SPU_IB_ENTRY_FAST=0` desliga): resolve pelo mesmo bloco residente quando as
-  checagens anteriores não fariam nada. A/B no jogo: ver abaixo.
+  (ps3recomp 4e4d6096/7531c997, desligado; `SPU_IB_ENTRY_FAST=1` liga): resolve pelo mesmo bloco residente quando
+  as checagens anteriores não fariam nada. **A/B no jogo 6+6 (14/11): us/job(60s) 29,17 (base) x 29,20 (atalho),
+  divergências 0 -- neutro.** Fica desligado; as checagens puladas já custavam pouco, o peso está na própria
+  consulta (`spu_lifted_lookup`) e na chamada.
 - Reprodutor: o contexto de cada job ficava na lista da coerência depois do `free` (tombo intermitente em
   `spu_coh_notify_write`, rodadas cortadas); corrigido no ps3recomp d170fd53. Diferença de `ls_diff` (±1 byte em
   ~15-20 jobs) aparece até entre duas execuções do mesmo exe: não serve para comparar exatidão; PUTs e
