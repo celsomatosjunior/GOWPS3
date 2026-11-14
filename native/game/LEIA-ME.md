@@ -306,8 +306,9 @@ a versão funcional segue em `integra-rsx-wws`/`native-recomp`).**
   (inteiro 69 -> 28, pilha 88+65 -> 76+53). Reprodução 3+3: média -1%, mediana igual. **No jogo 6+6: us/job(60s)
   29,67 -> 30,55 (+3%, pior em 5 de 6), quadros reais piores.** Fica desligada. A primeira versão dava LS espelhada
   a todo contexto e parava na abertura (tabela cheia; o teste de segurança pegou antes de qualquer resultado errado).
-  Causa da piora não isolada (candidatos: páginas do mapeamento de seção para a LS do policy module, ordem de
-  memória entre os dois apelidos das mesmas páginas).
+  Diagnóstico (mesmo exe, 6+6, `SPU_LS_MIRROR_FORCE=1` dá a LS espelhada sem a reescrita): us/job(60s) 29,3 x 29,4
+  nas 5 rodadas comparáveis -- o mapeamento é neutro; a piora vem do código reescrito (o exe cresce 3 MB, 99,3 ->
+  102,3 MB, apesar do laço quente menor). Hipótese encerrada.
 - Reprodutor: o contexto de cada job ficava na lista da coerência depois do `free` (tombo intermitente em
   `spu_coh_notify_write`, rodadas cortadas); corrigido no ps3recomp d170fd53. Diferença de `ls_diff` (±1 byte em
   ~15-20 jobs) aparece até entre duas execuções do mesmo exe: não serve para comparar exatidão; PUTs e
