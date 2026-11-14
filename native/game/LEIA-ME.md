@@ -298,6 +298,16 @@ a versão funcional segue em `integra-rsx-wws`/`native-recomp`).**
   último quadro 52-54 s. **Ligado por padrão no ramo `tradutor-spu`** (`--spu-shufb-inv` padrão, `--no-spu-shufb-inv`
   desliga; `-DSPU_CFLT_INT` nas opções SPU padrão); o build padrão sai igual ao exe testado (só o carimbo de tempo
   do PE difere). `native-recomp` segue sem as duas até o Celso decidir fundir.
+- **Hipótese 3, LS espelhada (`--spu-ls-espelho`, desligada; ps3recomp a46aedb5/961d74b4, `tools/spu_ls_disp.py`):**
+  os contextos que rodam jobs (residentes do policy module, reprodução) ganham uma LS com os últimos 64 KB antes e
+  os primeiros 64 KB depois (as mesmas páginas mapeadas duas vezes); lqd/stqd com deslocamento viram
+  `ls + d + (base & 0x3FFF0)`, exato para |d| <= 64 KB; cada função reescrita confere na entrada que o contexto tem
+  a LS espelhada. Exata (reprodução: 0 de 512 jobs diferentes). Código: laço 0x11310 446 -> 383 instruções
+  (inteiro 69 -> 28, pilha 88+65 -> 76+53). Reprodução 3+3: média -1%, mediana igual. **No jogo 6+6: us/job(60s)
+  29,67 -> 30,55 (+3%, pior em 5 de 6), quadros reais piores.** Fica desligada. A primeira versão dava LS espelhada
+  a todo contexto e parava na abertura (tabela cheia; o teste de segurança pegou antes de qualquer resultado errado).
+  Causa da piora não isolada (candidatos: páginas do mapeamento de seção para a LS do policy module, ordem de
+  memória entre os dois apelidos das mesmas páginas).
 - Reprodutor: o contexto de cada job ficava na lista da coerência depois do `free` (tombo intermitente em
   `spu_coh_notify_write`, rodadas cortadas); corrigido no ps3recomp d170fd53. Diferença de `ls_diff` (±1 byte em
   ~15-20 jobs) aparece até entre duas execuções do mesmo exe: não serve para comparar exatidão; PUTs e
