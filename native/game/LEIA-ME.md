@@ -309,6 +309,17 @@ a versão funcional segue em `integra-rsx-wws`/`native-recomp`).**
   Diagnóstico (mesmo exe, 6+6, `SPU_LS_MIRROR_FORCE=1` dá a LS espelhada sem a reescrita): us/job(60s) 29,3 x 29,4
   nas 5 rodadas comparáveis -- o mapeamento é neutro; a piora vem do código reescrito (o exe cresce 3 MB, 99,3 ->
   102,3 MB, apesar do laço quente menor). Hipótese encerrada.
+- **Onde está o caminho crítico (13/11 noite, exe padrão do ramo):** `SPURS_EDGE_READY=10` mostra que em 99,8% dos
+  inícios de execução de uma lista EDGE nenhuma das outras duas está pronta nem rodando (havia 3+ SPUs livres):
+  o jogo alimenta uma lista por vez (o PPU espera vaga na lista corrente). As listas rodam ~96,7% do tempo de
+  parede; o quadro é a soma serial do tempo por job (~30 us). Perfil da SPU das EDGE (`prof_wws.py`, 40 s):
+  código traduzido 59% do ocupado, núcleos nativos 9%, despacho 8,5%, memcpy 7% (quase todo `mfc_do_transfer`,
+  dado necessário; `spu_overlay_get_unchanged` ~1,6%), DMA 5,5%, coerência 4%, canais 3%.
+- **Desvios indiretos (`SPU_IB_HIST2=<s>`, novo, por thread, inclui o atalho residente):** a SPU das EDGE faz
+  ~3,6 milhões por segundo, todos para slots residentes (alvos alinhados em 0x40: 0x1BB00, 0x1BC40, 0x0D140...;
+  dezenas por job). `spu_indirect_branch` + `spu_lifted_lookup` ~7% da thread. Atalho na entrada
+  (ps3recomp tradutor-spu, `SPU_IB_ENTRY_FAST=0` desliga): resolve pelo mesmo bloco residente quando as
+  checagens anteriores não fariam nada. A/B no jogo: ver abaixo.
 - Reprodutor: o contexto de cada job ficava na lista da coerência depois do `free` (tombo intermitente em
   `spu_coh_notify_write`, rodadas cortadas); corrigido no ps3recomp d170fd53. Diferença de `ls_diff` (±1 byte em
   ~15-20 jobs) aparece até entre duas execuções do mesmo exe: não serve para comparar exatidão; PUTs e
