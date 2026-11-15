@@ -358,6 +358,12 @@ def add_spu_jobs(args, proj: Path, cm: Path):
             if args.spu_float == "aprox":   # operandos de float a limitar (SPU_AX_CLAMP, ver spu_simd)
                 texto = mark_float_inputs(texto, chains=not args.sem_cadeias, flow=args.fluxo_float, ls_assumed=args.float_ls)[0]
             texto = spu_vivos(args, texto, jobs=True, nome=c.parent.name)
+            if args.spu_shufb_inv:   # shufb com b e c fixos no laço (ps3recomp tools/spu_shufb_inv.py)
+                from spu_shufb_inv import mark_shufb_invariant
+                texto = mark_shufb_invariant(texto)[0]
+            if args.spu_ls_espelho:   # lqd/stqd como [base mascarada + desloc] na LS espelhada (tools/spu_ls_disp.py)
+                from spu_ls_disp import rewrite_ls_disp
+                texto = rewrite_ls_disp(texto)[0]
             if args.spu_pn:   # corpos preserve_none + invólucros (ps3recomp tools/spu_cc_pn.py)
                 from spu_cc_pn import apply_pn
                 texto = apply_pn(texto)[0]
@@ -397,6 +403,9 @@ def spu_dir_projeto(args, proj: Path) -> Path:
         if args.spu_float == "aprox":
             texto = mark_float_inputs(texto, chains=not args.sem_cadeias, flow=args.fluxo_float, ls_assumed=args.float_ls)[0]
         texto = spu_vivos(args, texto, nome=c.parent.name)
+        if args.spu_shufb_inv:
+            from spu_shufb_inv import mark_shufb_invariant
+            texto = mark_shufb_invariant(texto)[0]
         if args.spu_ibl and c.parent.name == "pm_wwsjob":
             # desvios indiretos do gerenciador Wws para as próprias funções direto (ps3recomp tools/spu_ibl.py, do
             # SPU_IBL do Arnaldo); a imagem dele fica em LS 0xA00..0xA00+12032; liga em tempo de execução com SPU_IBL=1
@@ -466,7 +475,9 @@ def spu_simd(args, cm: Path):
     # -pre-RA-sched=list-burr (o escalonador do SelectionDAG que reduz registradores): no código dos jobs o
     # derramamento na pilha é ~25% das amostras (16 registradores AVX para 128 da SPU); ~6% menos acessos à pilha
     # nas funções quentes e ~2% de us/job (05/11).
-    opts = (args.spu_opt or "-O2;-mllvm;-pre-RA-sched=list-burr") + ";-ffp-contract=off;-w;" + ("-mavx2;-mfma" if args.spu_simd == "avx2" else "-msse4.1")
+    # -DSPU_CFLT_INT: csflt/cuflt sem passar por double (exato; ligado em 13/11 com --spu-shufb-inv depois do A/B
+    # no jogo de 12+12 rodadas: -1,3% us/job, e 10+10 inicializações sem travamento).
+    opts = (args.spu_opt or "-O2;-mllvm;-pre-RA-sched=list-burr;-DSPU_CFLT_INT") + ";-ffp-contract=off;-w;" + ("-mavx2;-mfma" if args.spu_simd == "avx2" else "-msse4.1")
     # --spu-float aprox: fa/fm/fma do SPU como as operações do host (SPU_FLOAT_APPROX do spu_helpers.h, como o
     # "approximate xfloat" padrão do RPCS3); exato = a emulação bit a bit (truncamento, faixa estendida).
     # SPU_LS_NODIAG: sem o teste das sondas de LS (SPU_LS_WATCH, SPU_SMC_WATCH...) em cada lqd/stqd; --spu-ls-diag
@@ -784,7 +795,7 @@ def main() -> int:
     ap.add_argument("--spu-ls-diag", action="store_true",
                     help="compila as sondas de LS do runtime SPU (SPU_LS_WATCH etc.) no código traduzido")
     ap.add_argument("--spu-opt", default="",
-                    help="opções de otimização das fontes SPU no lugar de -O2;-mllvm;-pre-RA-sched=list-burr, separadas por ;")
+                    help="opções de otimização das fontes SPU no lugar de -O2;-mllvm;-pre-RA-sched=list-burr;-DSPU_CFLT_INT, separadas por ;")
     ap.add_argument("--spu-float", choices=["aprox", "exato"], default="aprox",
                     help="ponto flutuante do SPU: aprox = operações do host (como o RPCS3); exato = bit a bit")
     ap.add_argument("--sem-fundir", action="store_true",
@@ -797,6 +808,12 @@ def main() -> int:
     ap.add_argument("--rsx-rpcs3", metavar="PASTA",
                     help="liga o RSX do RPCS3 (ps3recomp gpu/, compilado nessa pasta com MSVC: ninja ps3rsx_flip_smoke); "
                          "o exe usa a ponte por padrão (PS3_RSX=live volta ao live draw). O exe fica sob GPL-2.0")
+    ap.add_argument("--spu-shufb-inv", action=argparse.BooleanOptionalAction, default=True,
+                    help="shufb cujo b e c o laço não muda viram spu_shufb_k (tools/spu_shufb_inv.py): mesmo resultado, "
+                         "o compilador tira do laço a parte de b e c (2 instruções e 2 registradores por shufb no laço)")
+    ap.add_argument("--spu-ls-espelho", action="store_true",
+                    help="módulos de job com lqd/stqd em ls + desloc + (base & 0x3FFF0) (tools/spu_ls_disp.py); o "
+                         "runtime passa a dar a cada contexto uma LS com 64 KB espelhados de cada lado (SPU_LS_MIRROR)")
     ap.add_argument("--spu-pn", action="store_true",
                     help="módulos de job com corpos preserve_none e invólucros na convenção padrão (tools/spu_cc_pn.py): "
                          "as chamadas e saltos diretos entre funções traduzidas não salvam rbx..r15/xmm6-15")

@@ -268,6 +268,97 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
 
 ## Ponto de retomada (atualizado a cada pausa)
 
+**13/11/2026 tarde: geração de código SPU (ramo `tradutor-spu` aqui e no ps3recomp; autorizado pelo Celso;
+a versão funcional segue em `integra-rsx-wws`/`native-recomp`).**
+- **Demonstração no código de máquina** (relatório local `<trabalho>\relatorio_tradutor_13nov.txt`; ferramenta
+  `scripts_locais\asm_laco.py`, que classifica cada instrução do laço mais amostrado). Perfil da reprodução de
+  512 jobs EDGE: derramamento na pilha 18% das amostras de job, mov entre registradores 9%, pshufb 9%, endereço/acesso
+  à LS 8%, float 5%, fronteira `ctx->gpr` só 1,6%. No laço mais quente (482 instruções por volta para 24 fm/fma,
+  16 shufb, 16 lqd, 8 stqd): clamps 25% das instruções / 30% das amostras, pilha 36% / 29%, pshufb 9% / 17%. O
+  excesso sobre um laço ideal (~266 instruções com a mesma semântica) é quase todo pilha: o laço SPU está em
+  pipeline (~33 valores vivos na volta) e o x86 tem 16 xmm. Endereços da LS: `leal off(base)` + `andl $0x3fff0`
+  por acesso (a máscara depois da soma impede [base+desloc]) e 12 endereços guardados na pilha.
+  Já existente (não é novo): locais + vivacidade, fusão de trechos e laço local, preserve_none, clamps só nos
+  operandos que podem vir fora da faixa, shufb por pshufb sem desvio, núcleos nativos com modo sombra.
+- **Proposta 1, `--spu-shufb-inv`** (ps3recomp `tools/spu_shufb_inv.py` + `spu_shufb_k`): shufb cujo b e c o laço
+  não escreve vira `pshufb(a, idxA) | K(b,c)`; o compilador tira idxA e K do laço (2 instruções e 2 registradores
+  por shufb no laço, eram 3 e 4). Exata (5 milhões de casos contra a referência; na reprodução, PUTs e
+  registradores idênticos nos 512 jobs). 318 shufb marcados; laço mais quente 482 -> 446 instruções. Reprodução:
+  ~-1% us/job. **No jogo (4+4): us/job(60s) 29,8/31,7/29,3/30,5 x 30,1/30,8/30,9/30,1 -- neutro.** Desligada.
+- **Proposta 2, `-DSPU_CFLT_INT`** (spu_helpers.h): csflt/cuflt sem o double para 29 <= i8 <= 251 (truncamento de
+  24 bits no inteiro, conversão exata, escala por potência de 2). Exata (17,8 milhões de casos; reprodução com PUTs
+  e registradores idênticos). Laço 0x7D78: 384 -> 321 instruções. Reprodução 4+4: média 32,31 -> 32,09 us/job,
+  mediana 23,7 -> 23,2. Desligada até o A/B no jogo.
+- **Pacote 1+2 no jogo** (mesmo build com as duas, contra a base com o mesmo reprodutor; `ab_exes.sh`, 330 s, duas
+  rodadas de 6+6 alternadas): us/job(60s) base 29,5/30,4/30,4/30,7/30,3/29,7 + 30,5/30,6/30,5/30,0/30,6/29,8
+  (média 30,25) x pacote 30,0/29,6/29,7/29,6/30,1/29,8 + 30,1/29,5/30,4/30,0/29,6/29,9 (média 29,86): **-1,3%**,
+  ~2,9 erros-padrão, pacote à frente em 9 dos 12 pares. Executor Wws: 0 divergências nas 24. Quadros reais
+  (mediana das medianas) 12,27 -> 12,72: dominados pela cena, não decidem. Ganho pequeno mas consistente; ligar
+  por padrão só depois das inicializações sem travamento: 10+10 alternadas (`boot.sh`, 55 s), 0 travadas em cada,
+  último quadro 52-54 s. **Ligado por padrão no ramo `tradutor-spu`** (`--spu-shufb-inv` padrão, `--no-spu-shufb-inv`
+  desliga; `-DSPU_CFLT_INT` nas opções SPU padrão); o build padrão sai igual ao exe testado (só o carimbo de tempo
+  do PE difere). **15/11: fundido em `native-recomp`** (decisão do Celso; merge do `tradutor-spu`, e no ps3recomp
+  `integra-rsx-wws` avançou até o `tradutor-spu`, refletido em `native/ps3recomp-gow3.patch`). Versão anterior
+  preservada nos ramos locais `native-recomp-antes-tradutor` (GOWPS3 b5eb23f) e `integra-rsx-wws-antes-tradutor`
+  (ps3recomp a1862ee3); `--no-spu-shufb-inv --spu-opt "-O2;-mllvm;-pre-RA-sched=list-burr"` gera o build antigo.
+  LS espelhada (`--spu-ls-espelho`) e atalho de despacho (`SPU_IB_ENTRY_FAST=1`) entram desligados.
+- **Hipótese 3, LS espelhada (`--spu-ls-espelho`, desligada; ps3recomp a46aedb5/961d74b4, `tools/spu_ls_disp.py`):**
+  os contextos que rodam jobs (residentes do policy module, reprodução) ganham uma LS com os últimos 64 KB antes e
+  os primeiros 64 KB depois (as mesmas páginas mapeadas duas vezes); lqd/stqd com deslocamento viram
+  `ls + d + (base & 0x3FFF0)`, exato para |d| <= 64 KB; cada função reescrita confere na entrada que o contexto tem
+  a LS espelhada. Exata (reprodução: 0 de 512 jobs diferentes). Código: laço 0x11310 446 -> 383 instruções
+  (inteiro 69 -> 28, pilha 88+65 -> 76+53). Reprodução 3+3: média -1%, mediana igual. **No jogo 6+6: us/job(60s)
+  29,67 -> 30,55 (+3%, pior em 5 de 6), quadros reais piores.** Fica desligada. A primeira versão dava LS espelhada
+  a todo contexto e parava na abertura (tabela cheia; o teste de segurança pegou antes de qualquer resultado errado).
+  Diagnóstico (mesmo exe, 6+6, `SPU_LS_MIRROR_FORCE=1` dá a LS espelhada sem a reescrita): us/job(60s) 29,3 x 29,4
+  nas 5 rodadas comparáveis -- o mapeamento é neutro; a piora vem do código reescrito (o exe cresce 3 MB, 99,3 ->
+  102,3 MB, apesar do laço quente menor). Hipótese encerrada.
+- **Onde está o caminho crítico (13/11 noite, exe padrão do ramo):** `SPURS_EDGE_READY=10` mostra que em 99,8% dos
+  inícios de execução de uma lista EDGE nenhuma das outras duas está pronta nem rodando (havia 3+ SPUs livres):
+  o jogo alimenta uma lista por vez (o PPU espera vaga na lista corrente). As listas rodam ~96,7% do tempo de
+  parede; o quadro é a soma serial do tempo por job (~30 us). Perfil da SPU das EDGE (`prof_wws.py`, 40 s):
+  código traduzido 59% do ocupado, núcleos nativos 9%, despacho 8,5%, memcpy 7% (quase todo `mfc_do_transfer`,
+  dado necessário; `spu_overlay_get_unchanged` ~1,6%), DMA 5,5%, coerência 4%, canais 3%.
+- **Desvios indiretos (`SPU_IB_HIST2=<s>`, novo, por thread, inclui o atalho residente):** a SPU das EDGE faz
+  ~3,6 milhões por segundo, todos para slots residentes (alvos alinhados em 0x40: 0x1BB00, 0x1BC40, 0x0D140...;
+  dezenas por job). `spu_indirect_branch` + `spu_lifted_lookup` ~7% da thread. Atalho na entrada
+  (ps3recomp 4e4d6096/7531c997, desligado; `SPU_IB_ENTRY_FAST=1` liga): resolve pelo mesmo bloco residente quando
+  as checagens anteriores não fariam nada. **A/B no jogo 6+6 (14/11): us/job(60s) 29,17 (base) x 29,20 (atalho),
+  divergências 0 -- neutro.** Fica desligado; as checagens puladas já custavam pouco, o peso está na própria
+  consulta (`spu_lifted_lookup`) e na chamada.
+- **Perfil de 14/11 (exe padrão do ramo + atalho, `GOW3_PROF=100,40`, `scripts_locais/prof_top.py <map> <log>`):**
+  SPU das EDGE, do ocupado: código traduzido 60%, núcleos nativos 8,4%, despacho 9,2% (`spu_indirect_branch` 3,7,
+  `spu_lifted_lookup` 2,6, `spu_drain_call` 1,0, `spu_lifted_lookup_full` + `spu_lookup` 1,1, `spu_interp_run_until`
+  0,55), memcpy (VCRUNTIME) 6,2%, DMA 4,9%, coerência 4,3%, canais 2,6%. Funções traduzidas: nenhuma acima de 3,5%
+  (0x6C10 3,5, 0x9A68 2,9, 0xF428 2,1, 912f:0x4C48 1,8...): perfil plano.
+- **Cache de despacho e interpretador (`SPU_DISPATCH_CACHE=shadow`, `SPU_INTERP_STATS=20`, `SPU_INTERP_PCLOG`):**
+  ~45% das consultas erram (0 divergências na sombra); o interpretador roda 3-5 M passos/s e cada passo consulta
+  a cache e volta NULL (NULL não é guardado). 829 pcs distintos, 745 deles na imagem 223 -- as 3 rotinas curtas que o
+  job copia para ~245 endereços cada (já conhecido, 29/10). Na SPU das EDGE o interpretador é só ~0,55% e as
+  consultas que erram ~1,1%: traduzir as cópias ou guardar o NULL renderia no máximo ~1,5%, abaixo do ruído do jogo.
+  Não feito.
+- Já medidos e não repetir: flags do compilador nos jobs (list-burr fica; misched, pbqp, ilpmin, -O3, znver3
+  neutros ou piores), limites de float (~6%, tirá-los muda o resultado), laços com registradores locais do port do
+  Ascension (só rendem com AVX-512; esta CPU não tem).
+- **Hipótese 4 do relatório (reler da LS valores que atravessam a volta), protótipo à mão (14/11):** banco isolado
+  em `GOW3_trabalho\scratch\h4` (`gera.py` gera do fonte traduzido a original e a nova; `banco.c`, mesmas flags do
+  build). Laço 0x11310: as 16 cargas do fim da volta (3 matrizes + 4 vértices) e os 8 shufb delas passam para o topo
+  da volta seguinte, relidas da LS; antes das gravações de cada volta, um teste de sobreposição (gravações em r62/r65
+  contra o que foi lido por r40/r62, e nenhuma volta no fim da LS) desvia para a cópia original do laço no meio da
+  volta, e na saída os valores são relidos. **Exata** (LS, registradores e pc iguais em 180 casos, com e sem
+  sobreposição e perto do fim da LS) e **-15% por volta** (28,1 -> 23,9 ns). Levantamento (`levanta2.py`) dos
+  laços quentes das EDGE: só 0x6C10 (14 cargas, com desvios internos), 0x11310 (16), 0x11038 (12), 0x72B8 (12),
+  0x6130 (8) têm essa forma; 0x9C48, 0xF728, 0xFB58, 0x8DD0 não têm nenhuma (os derramamentos ali vêm de valores
+  calculados). Teto estimado ~1% do total: um passe geral do tradutor (dias, risco de exatidão) não compensa.
+  Hipótese encerrada com a medida.
+- Reprodutor: o contexto de cada job ficava na lista da coerência depois do `free` (tombo intermitente em
+  `spu_coh_notify_write`, rodadas cortadas); corrigido no ps3recomp d170fd53. Diferença de `ls_diff` (±1 byte em
+  ~15-20 jobs) aparece até entre duas execuções do mesmo exe: não serve para comparar exatidão; PUTs e
+  registradores sim.
+- Conclusão parcial: ajustes por operação dão ~1% cada na reprodução, abaixo do ruído do jogo (±0,7 us/job por
+  execução). O que pesa é a pressão de registradores nos laços em pipeline; próximas hipóteses (ver relatório):
+  LS espelhada para tirar a segunda máscara dos endereços, e reler da LS valores que atravessam a volta.
+
 **12/11/2026 noite: executor Wws próprio para as listas EDGE (ramo `wws-exec` aqui, `gow3-wws` no ps3recomp;
 autorizado pelo Celso, desligado por padrão até validar).**
 - **Medidas antes de começar:** índices nativos + coerência por vetor juntos contra a base (mesmo exe, 6+6 rodadas
@@ -485,7 +576,8 @@ autorizado pelo Celso, desligado por padrão até validar).**
   mediana 24,8 -> 23,2 e só 350 de 512 jobs com as mesmas saídas: sem os limites os jobs pesados fazem outro
   trabalho (o "ganho" de 07/11 de novo). O custo real dos limites fica perto de ~6%.
 
-- **Ponte do RSX do RPCS3, 30 min na fase** (`scripts_locaissx_longo.sh`, X a cada 15 s: o Kratos morre, volta pelo
+- **Ponte do RSX do RPCS3, 30 min na fase** (`scripts_locais
+sx_longo.sh`, X a cada 15 s: o Kratos morre, volta pelo
   checkpoint e luta de novo): flips até 1.798 s, nenhuma falha de página fora do RSX, nenhum erro fatal, 697 janelas
   de 2 s com mediana de 9,93 quadros reais/s; capturas a cada 5 min com o combate e o HUD inteiros. Menu principal
   também confirmado (captura dos 30 s). A luta do Poseidon em si não é alcançável só com X (precisa jogar ou save).
