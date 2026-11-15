@@ -3542,6 +3542,102 @@ index 00000000..5483e3a1
 +    std::this_thread::yield();
 +#endif
 +}
+diff --git a/gpu/ps3rsx.cmake b/gpu/ps3rsx.cmake
+new file mode 100644
+index 00000000..a1a952a6
+--- /dev/null
++++ b/gpu/ps3rsx.cmake
+@@ -0,0 +1,90 @@
++# Links a port's executable against ps3rsx (RPCS3's RSX, gpu/README.md).
++#
++#   include(${PS3RECOMP_DIR}/gpu/ps3rsx.cmake)
++#   ps3rsx_link(<target> <rpcs3_build_dir> SOURCES <files that call ps3rsx.h>)
++#
++# <rpcs3_build_dir> is the build tree of gpu/ (gpu/CMakeLists.txt), built
++# separately (MSVC on Windows, Apple clang or gcc elsewhere). The libraries
++# are those of that tree's ps3rsx_flip_smoke (Windows) or ps3rsx_link_probe,
++# read from its build.ninja, so the list is not kept by hand.
++# Defines PS3RECOMP_RPCS3_RSX, and adds bridge/ to the include path, on the
++# SOURCES only: on the whole target either would change the compile command of
++# every lifted translation unit and rebuild them all. GPL-2.0 applies to the
++# result.
++
++function(ps3rsx_link target build_dir)
++    cmake_parse_arguments(PARSE_ARGV 2 arg "" "" "SOURCES")
++    set(ninja "${build_dir}/build.ninja")
++    if(WIN32)
++        set(ps3rsx_lib "${build_dir}/ps3rsx.lib")
++        set(ps3rsx_edge "^build ps3rsx_flip_smoke\\.exe:")
++    else()
++        set(ps3rsx_lib "${build_dir}/libps3rsx.a")
++        set(ps3rsx_edge "^build ps3rsx_link_probe:")
++    endif()
++    if(NOT EXISTS "${ninja}" OR NOT EXISTS "${ps3rsx_lib}")
++        message(FATAL_ERROR "ps3rsx: no built ps3rsx in ${build_dir} (build gpu/ first)")
++    endif()
++
++    file(STRINGS "${ninja}" lines)
++    set(in_smoke FALSE)
++    set(libs "")
++    foreach(line IN LISTS lines)
++        if(line MATCHES "${ps3rsx_edge}")
++            set(in_smoke TRUE)
++        elseif(in_smoke AND line MATCHES "^  LINK_LIBRARIES = (.*)$")
++            set(libs "${CMAKE_MATCH_1}")
++            break()
++        elseif(NOT line MATCHES "^  ")
++            set(in_smoke FALSE)
++        endif()
++    endforeach()
++    if(NOT libs)
++        message(FATAL_ERROR "ps3rsx: ps3rsx_flip_smoke's libraries not found in ${ninja}")
++    endif()
++
++    if(WIN32)
++        separate_arguments(libs WINDOWS_COMMAND "${libs}")
++    else()
++        separate_arguments(libs UNIX_COMMAND "${libs}")
++    endif()
++    set(resolved "")
++    set(pending_framework FALSE)
++    foreach(lib IN LISTS libs)
++        if(pending_framework)
++            # "-framework Metal" as one item: CMake treats a bare -framework as
++            # a keyword and then looks for a library named Metal.
++            list(APPEND resolved "-framework ${lib}")
++            set(pending_framework FALSE)
++            continue()
++        endif()
++        if(lib STREQUAL "-framework")
++            set(pending_framework TRUE)
++            continue()
++        endif()
++        string(REPLACE "\\" "/" lib "${lib}")
++        if(IS_ABSOLUTE "${lib}")
++            list(APPEND resolved "${lib}")
++        elseif(EXISTS "${build_dir}/${lib}")
++            list(APPEND resolved "${build_dir}/${lib}")
++        else()
++            # A system import library (kernel32.lib, dxgi.lib, ...).
++            list(APPEND resolved "${lib}")
++        endif()
++    endforeach()
++
++    target_link_libraries(${target} PRIVATE ${resolved})
++    # RPCS3's threads take the executable's default stack size, and RPCS3
++    # links its own with 8 MB (its shader cache loader alone overflows 1 MB).
++    if(WIN32)
++        target_link_options(${target} PRIVATE /STACK:8388608)
++    elseif(APPLE)
++        # The main thread. RPCS3's own threads set their stacks when they start;
++        # the shader cache loader is the one that overflowed a 1 MB default.
++        target_link_options(${target} PRIVATE "LINKER:-stack_size,0x800000")
++    endif()
++    set_property(SOURCE ${arg_SOURCES} APPEND PROPERTY INCLUDE_DIRECTORIES "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/bridge")
++    set_property(SOURCE ${arg_SOURCES} APPEND PROPERTY COMPILE_DEFINITIONS PS3RECOMP_RPCS3_RSX)
++    list(LENGTH resolved n)
++    message(STATUS "ps3rsx:          linked from ${build_dir} (${n} libraries)")
++endfunction()
 diff --git a/gpu/rsx/3rdparty/GL/KHR/khrplatform.h b/gpu/rsx/3rdparty/GL/KHR/khrplatform.h
 new file mode 100644
 index 00000000..01646449
