@@ -268,6 +268,45 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
 
 ## Ponto de retomada (atualizado a cada pausa)
 
+**15/11/2026: pacote fundido; fronteira das chamadas (ramos `tradutor-spu-2` aqui e no ps3recomp).**
+- **Fusão** (pedido do Celso): `native-recomp` da20e77 = merge do `tradutor-spu` (shufb-inv + `SPU_CFLT_INT` ligados,
+  -1,3% us/job; LS espelhada e atalho de despacho desligados). Versão anterior nos ramos locais
+  `native-recomp-antes-tradutor` (b5eb23f) e, no ps3recomp, `integra-rsx-wws-antes-tradutor` (a1862ee3).
+- **Cópia limpa** (`<Projetos>\limpo15`, `build_limpo.sh`): ps3recomp 4e8f3ca8 + os 3 patches. A primeira tentativa
+  parou no CMake: `gpu/ps3rsx.cmake` nunca tinha sido versionado (a regra `*.cmake` do `.gitignore` o escondia).
+  Corrigido (ps3recomp 2f2903e7, `ps3recomp-gpu-2.patch` em d66536b). Build completo (traduzir, projeto, compilar):
+  exe igual ao do diretório de trabalho (`exe_integ15`) menos os 2 bytes do carimbo de tempo do PE.
+- **Combate** (`scripts_locais\combate.sh <exe> <s> <prefixo>`: X nas telas iniciais, depois analógico para a frente
+  e quadrado/triângulo/X a cada 2 s, captura da janela a cada 30 s): `exe_integ15`, 330 s: us/job(60s) 30,6,
+  executor Wws 0 divergências, 14,1 q/s reais; luta na floresta, tela de carregamento aos 300 s.
+- **Custo comum a várias rotinas** (`scripts_locais\insn_det.py`, `fronteira.py` no perfil do jogo `logs\prof_ibf.log`):
+  **14,5% das amostras dos jobs são cópias de fronteira** entre `ctx->gpr` e a pilha (gravação antes de chamada ou
+  saída 8,3%, derramamento na entrada 3,1%, leitura do ctx 2,2%), espalhadas por ~12 funções. Caso típico: `brsl`
+  dentro de laço (912f:0x52A4 chama 0x4C48 a cada volta: 70 gravações + 70 releituras; a folha lê 14 registradores
+  e escreve r2-r77). `vpinsrd` (3,2%) é quase todo da 0x6C10 (fluxo de bits), não é comum.
+- **Proposta 3, `--spu-recarga`** (ps3recomp `tools/spu_call_reload.py`, testes `tools/test_spu_call_reload.py`):
+  depois de uma chamada só relê o que quem chama lê antes de redefinir; o que a chamada escreve fica valendo em
+  `ctx->gpr` e a gravação de volta do valor velho sai (dois conjuntos por linha: ctx certo / local certo). As
+  gravações antes da chamada ficam (só saem as já certas no ctx), então um retorno não local ainda acha tudo no ctx.
+  Estático no módulo 14561: releituras depois de chamadas 8.620 -> 919, 12.043 gravações a menos.
+  Duas falhas achadas e corrigidas antes da medida (primeiras reproduções: 512 de 512 jobs errados): gravações
+  dentro de `if (...) { ...; sai }` contavam no caminho que segue; ganchos de núcleo nativo (`gow3_edge_*(ctx)`)
+  mudam registradores sem `ctx->gpr[N] =` visível. **Reprodução (jobcap206s, 512 jobs x 3): 0 diferenças** contra a
+  base (gets, puts, registradores, bytes de PUT, DMAs). Desligada até a captura de combate e o A/B.
+- **Fragilidade no padrão (`spu_live_flush`)**: o bloco `{ _k = gancho(ctx); if (_k == 1) {...} }` era tomado por
+  saída incondicional e as gravações antes dele eram cortadas (r0, r3, r80-r83, r126 nos dois pontos, 0xC158 e
+  0xC168 do 14561). Hoje não erra: esses registradores não mudam entre a última sincronização e o gancho
+  (`scratchronteira\ganchos_chk.py`). Corrigido no ps3recomp cc16df3a (ramo `tradutor-spu-2`), com teste; muda o
+  build padrão só nesses dois pontos (mais gravações); entra no padrão com a próxima validação.
+- **Fila** (em ordem): (1) captura de jobs no combate (`jobcap_comb`, `SPU_JOBCAP=...,206,D200,512,4000000`,
+  `SPU_JOBCAP_STRIDE=11`) e exatidão da recarga nela; (2) base nova com o `spu_live_flush` corrigido, exata contra
+  `exe_integ15` nas duas capturas; (3) execução do exe da cópia limpa; (4) A/B 12+12 base nova x recarga
+  (`ab_exes.sh`), mais inicializações 10+10 antes de ligar; (5) se ganhar: estender a saída das gravações já certas
+  às funções sem chamada; (6) candidatos de 0,5-1% documentados (MFC/canais, núcleo da 0x6C10) ficam para depois.
+- Comandos: `bash scripts_locais/build_exe.sh <rótulo> [--spu-recarga]`; reprodução `rodar_env.sh <rótulo> 300
+  /dev/null "SPU_JOBREPLAY=<trabalho>\jobcap206s,3,0,512" SPU_JOBREPLAY_CODE=444600:4000:D97C` e
+  `python scripts_locais/cmp_replay.py <base.log> <x.log>`.
+
 **13/11/2026 tarde: geração de código SPU (ramo `tradutor-spu` aqui e no ps3recomp; autorizado pelo Celso;
 a versão funcional segue em `integra-rsx-wws`/`native-recomp`).**
 - **Demonstração no código de máquina** (relatório local `<trabalho>\relatorio_tradutor_13nov.txt`; ferramenta
