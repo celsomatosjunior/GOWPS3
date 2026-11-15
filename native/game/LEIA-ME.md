@@ -292,7 +292,11 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   Duas falhas achadas e corrigidas antes da medida (primeiras reproduções: 512 de 512 jobs errados): gravações
   dentro de `if (...) { ...; sai }` contavam no caminho que segue; ganchos de núcleo nativo (`gow3_edge_*(ctx)`)
   mudam registradores sem `ctx->gpr[N] =` visível. **Reprodução (jobcap206s, 512 jobs x 3): 0 diferenças** contra a
-  base (gets, puts, registradores, bytes de PUT, DMAs). Desligada até a captura de combate e o A/B.
+  base (gets, puts, registradores, bytes de PUT, DMAs). **Captura de combate** (`jobcap_comb`, 512 jobs logo depois
+  de um carregamento, luta com muitos inimigos; gravada com `GOW3_WWS_EXEC=0`: com o executor Wws o `SPU_JOBCAP` não
+  vê as entradas dos jobs): `rec3` x `integ15` 0 diferenças. Base nova `base2` (`spu_live_flush` corrigido) x
+  `integ15`: 0 diferenças nas duas capturas; `rec4` (recarga sobre a `base2`) x `base2`: 0 diferenças nas duas
+  (`scripts_locais\exatidao.sh <captura> <rótulos>`). Desligada até o A/B no jogo.
 - **Fragilidade no padrão (`spu_live_flush`)**: o bloco `{ _k = gancho(ctx); if (_k == 1) {...} }` era tomado por
   saída incondicional e as gravações antes dele eram cortadas (r0, r3, r80-r83, r126 nos dois pontos, 0xC158 e
   0xC168 do 14561). Hoje não erra: esses registradores não mudam entre a última sincronização e o gancho
