@@ -354,6 +354,11 @@ def add_spu_jobs(args, proj: Path, cm: Path):
             texto = aplica_ganchos(args, c.parent.name, c.read_text(encoding="utf-8"))
             if not args.sem_fundir:   # o trecho seguinte (preâmbulo -> laço) na mesma função C
                 texto = inline_fallthrough(texto, max_lines=args.fundir_linhas, max_depth=args.fundir_trechos)[0]
+            if args.spu_fundir_folha:   # folha reta colada no lugar da chamada (ps3recomp tools/spu_fuse_leaf.py)
+                from spu_fuse_leaf import fuse
+                texto, st = fuse(texto, args.spu_fundir_folha)
+                if st["fused"] or st["skipped"]:
+                    print(f"  {c.parent.name}: folhas fundidas em {st['fused']} chamadas; recusadas {st['skipped']}")
             texto = localize_source(texto, max_lines=args.fundir_linhas + 100)
             if args.spu_float == "aprox":   # operandos de float a limitar (SPU_AX_CLAMP, ver spu_simd)
                 texto = mark_float_inputs(texto, chains=not args.sem_cadeias, flow=args.fluxo_float, ls_assumed=args.float_ls)[0]
@@ -818,6 +823,10 @@ def main() -> int:
                     help="módulos de job: depois de uma chamada a uma função do módulo, relê só os registradores que "
                          "quem chama lê antes de redefinir; os que a chamada escreve ficam valendo em ctx->gpr e as "
                          "gravações de volta do valor velho saem (tools/spu_call_reload.py); padrão desde 15/11, --no-spu-recarga desliga")
+    ap.add_argument("--spu-fundir-folha", action="append", default=[], metavar="MOD:END",
+                    help="experimental (15/11): cola a folha reta MOD:END (ex. 912f:4C48) no lugar de cada chamada "
+                         "direta dela no módulo (tools/spu_fuse_leaf.py); a função original fica para os outros "
+                         "caminhos. Desligado por padrão")
     ap.add_argument("--spu-ls-espelho", action="store_true",
                     help="módulos de job com lqd/stqd em ls + desloc + (base & 0x3FFF0) (tools/spu_ls_disp.py); o "
                          "runtime passa a dar a cada contexto uma LS com 64 KB espelhados de cada lado (SPU_LS_MIRROR)")
