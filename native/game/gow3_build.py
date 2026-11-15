@@ -358,6 +358,9 @@ def add_spu_jobs(args, proj: Path, cm: Path):
             if args.spu_float == "aprox":   # operandos de float a limitar (SPU_AX_CLAMP, ver spu_simd)
                 texto = mark_float_inputs(texto, chains=not args.sem_cadeias, flow=args.fluxo_float, ls_assumed=args.float_ls)[0]
             texto = spu_vivos(args, texto, jobs=True, nome=c.parent.name)
+            if args.spu_recarga:   # depois de uma chamada, só relê o que quem chama lê (tools/spu_call_reload.py)
+                from spu_call_reload import process as recarga
+                texto = recarga(texto)[0]
             if args.spu_shufb_inv:   # shufb com b e c fixos no laço (ps3recomp tools/spu_shufb_inv.py)
                 from spu_shufb_inv import mark_shufb_invariant
                 texto = mark_shufb_invariant(texto)[0]
@@ -811,6 +814,10 @@ def main() -> int:
     ap.add_argument("--spu-shufb-inv", action=argparse.BooleanOptionalAction, default=True,
                     help="shufb cujo b e c o laço não muda viram spu_shufb_k (tools/spu_shufb_inv.py): mesmo resultado, "
                          "o compilador tira do laço a parte de b e c (2 instruções e 2 registradores por shufb no laço)")
+    ap.add_argument("--spu-recarga", action="store_true",
+                    help="módulos de job: depois de uma chamada a uma função do módulo, relê só os registradores que "
+                         "quem chama lê antes de redefinir; os que a chamada escreve ficam valendo em ctx->gpr e as "
+                         "gravações de volta do valor velho saem (tools/spu_call_reload.py)")
     ap.add_argument("--spu-ls-espelho", action="store_true",
                     help="módulos de job com lqd/stqd em ls + desloc + (base & 0x3FFF0) (tools/spu_ls_disp.py); o "
                          "runtime passa a dar a cada contexto uma LS com 64 KB espelhados de cada lado (SPU_LS_MIRROR)")
