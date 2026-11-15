@@ -304,6 +304,44 @@ static int start_watchdog()
 
 static int s_started = start_watchdog();
 
+/* GOW3_STALL=<s>: vigia de travamento. Depois dos primeiros flips, se o contador de flips não andar por <s>
+ * segundos, grava os LRs do PS3 e as pilhas do host (como o GOW3_WATCHDOG, com o GOW3_PEEK) três vezes, a cada 2 s,
+ * e para. Para a falha rara do label 0x51 (GOW3_PEEK=2E200510 mostra o valor do label quando parou). */
+extern "C" unsigned cellGcm_flip_request_count(void);
+
+static DWORD WINAPI stall_watch(LPVOID arg)
+{
+    const int lim = (int)(intptr_t)arg;
+    HMODULE self = GetModuleHandleA(NULL);
+    unsigned last = 0;
+    DWORD since = GetTickCount();
+    for (;;) {
+        Sleep(500);
+        const unsigned n = cellGcm_flip_request_count();
+        const DWORD now = GetTickCount();
+        if (n != last || n < 100u) { last = n; since = now; continue; }
+        if (now - since < (DWORD)lim * 1000u) continue;
+        fprintf(stderr, "[GOW3-STALL] sem flips há %d s (flips=%u)\n", lim, n);
+        for (int round = 1; round <= 3; round++) {
+            fprintf(stderr, "[GOW3-WD] LRs do PS3 (rodada %d):\n", round);
+            ppu_report_guest_lrs();
+            dump(self, round);
+            Sleep(2000);
+        }
+        return 0;
+    }
+}
+
+static int start_stall_watch()
+{
+    const char* e = getenv("GOW3_STALL");
+    int s = e ? atoi(e) : 0;
+    if (s > 0) CreateThread(NULL, 0, stall_watch, (LPVOID)(intptr_t)s, 0, NULL);
+    return s;
+}
+
+static int s_stall_started = start_stall_watch();
+
 /* GOW3_PROF=<início s>,<duração s>: perfil por amostragem. A cada ~2 ms suspende cada thread e conta o RIP
  * (deslocamento no executável, resolver com o GOW3Native.map); no fim imprime, por thread, todas as posições
  * mais vistas e o total de amostras. Só diagnóstico. */
