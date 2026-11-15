@@ -814,10 +814,10 @@ def main() -> int:
     ap.add_argument("--spu-shufb-inv", action=argparse.BooleanOptionalAction, default=True,
                     help="shufb cujo b e c o laço não muda viram spu_shufb_k (tools/spu_shufb_inv.py): mesmo resultado, "
                          "o compilador tira do laço a parte de b e c (2 instruções e 2 registradores por shufb no laço)")
-    ap.add_argument("--spu-recarga", action="store_true",
+    ap.add_argument("--spu-recarga", action=argparse.BooleanOptionalAction, default=True,
                     help="módulos de job: depois de uma chamada a uma função do módulo, relê só os registradores que "
                          "quem chama lê antes de redefinir; os que a chamada escreve ficam valendo em ctx->gpr e as "
-                         "gravações de volta do valor velho saem (tools/spu_call_reload.py)")
+                         "gravações de volta do valor velho saem (tools/spu_call_reload.py); padrão desde 15/11, --no-spu-recarga desliga")
     ap.add_argument("--spu-ls-espelho", action="store_true",
                     help="módulos de job com lqd/stqd em ls + desloc + (base & 0x3FFF0) (tools/spu_ls_disp.py); o "
                          "runtime passa a dar a cada contexto uma LS com 64 KB espelhados de cada lado (SPU_LS_MIRROR)")

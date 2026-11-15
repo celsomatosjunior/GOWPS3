@@ -296,17 +296,26 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   de um carregamento, luta com muitos inimigos; gravada com `GOW3_WWS_EXEC=0`: com o executor Wws o `SPU_JOBCAP` não
   vê as entradas dos jobs): `rec3` x `integ15` 0 diferenças. Base nova `base2` (`spu_live_flush` corrigido) x
   `integ15`: 0 diferenças nas duas capturas; `rec4` (recarga sobre a `base2`) x `base2`: 0 diferenças nas duas
-  (`scripts_locais\exatidao.sh <captura> <rótulos>`). Desligada até o A/B no jogo.
+  (`scripts_locais\exatidao.sh <captura> <rótulos>`). A/B e inicializações no item seguinte.
 - **Fragilidade no padrão (`spu_live_flush`)**: o bloco `{ _k = gancho(ctx); if (_k == 1) {...} }` era tomado por
   saída incondicional e as gravações antes dele eram cortadas (r0, r3, r80-r83, r126 nos dois pontos, 0xC158 e
   0xC168 do 14561). Hoje não erra: esses registradores não mudam entre a última sincronização e o gancho
-  (`scratchronteira\ganchos_chk.py`). Corrigido no ps3recomp cc16df3a (ramo `tradutor-spu-2`), com teste; muda o
+  (`scratch\fronteira\ganchos_chk.py`). Corrigido no ps3recomp cc16df3a (ramo `tradutor-spu-2`), com teste; muda o
   build padrão só nesses dois pontos (mais gravações); entra no padrão com a próxima validação.
-- **Fila** (em ordem): (1) captura de jobs no combate (`jobcap_comb`, `SPU_JOBCAP=...,206,D200,512,4000000`,
-  `SPU_JOBCAP_STRIDE=11`) e exatidão da recarga nela; (2) base nova com o `spu_live_flush` corrigido, exata contra
-  `exe_integ15` nas duas capturas; (3) execução do exe da cópia limpa; (4) A/B 12+12 base nova x recarga
-  (`ab_exes.sh`), mais inicializações 10+10 antes de ligar; (5) se ganhar: estender a saída das gravações já certas
-  às funções sem chamada; (6) candidatos de 0,5-1% documentados (MFC/canais, núcleo da 0x6C10) ficam para depois.
+- **A/B no jogo** (`ab_exes.sh 12 rec base2 rec4`, 330 s, alternado; `logs\ab_rec.out`): us/job (execução inteira)
+  base 29,40 x recarga 28,75 em média, **-2,2%** (~2,6 erros-padrão), recarga à frente em 9 de 10 pares;
+  us/job(60s) -1,1% sem um ponto fora (34,2 na var_7; com ele, neutro). Executor Wws: 0 divergências em todas.
+  Duas execuções sem medida: `base_4`, janela fechada de fora aos 26 s (`[quit] requested (window closed)`; as
+  falhas de escrita no log são do encerramento) -- não é falha do exe; `var_1` (recarga), travamento conhecido da
+  ponte aos 77 s (`semaphore_acquire has timed out`, label 0x51 em 0x2E200510, o mesmo de 12/11, ~1%).
+  **Inicializações 10+10 alternadas (`boot.sh`, 55 s): 0 travadas em cada**, último quadro 53-54 s.
+  **Ligada por padrão no ramo `tradutor-spu-2`** (`--spu-recarga` padrão, `--no-spu-recarga` desliga; inclui a
+  correção do `spu_live_flush`); o build padrão sai igual ao `exe_rec4` (só o carimbo do PE). Não fundida no
+  `native-recomp` (decisão do Celso).
+- **Fila** (em ordem; (1)-(4) feitos em 15/11): (5) estender a saída das gravações já certas às funções sem
+  chamada (mesma análise C/Lc, sem `calls`), com testes, exatidão nas duas capturas e A/B; (6) se o travamento da
+  ponte (label 0x51) voltar, investigar o RsxSync (wid 11); (7) candidatos de 0,5-1% (MFC/canais, núcleo da 0x6C10)
+  ficam para depois; (8) fusão do `tradutor-spu-2` no `native-recomp` só com o Celso.
 - Comandos: `bash scripts_locais/build_exe.sh <rótulo> [--spu-recarga]`; reprodução `rodar_env.sh <rótulo> 300
   /dev/null "SPU_JOBREPLAY=<trabalho>\jobcap206s,3,0,512" SPU_JOBREPLAY_CODE=444600:4000:D97C` e
   `python scripts_locais/cmp_replay.py <base.log> <x.log>`.
@@ -642,7 +651,7 @@ sx_longo.sh`, X a cada 15 s: o Kratos morre, volta pelo
   de novo pelo relógio de quadros). O contador de quadros do próprio jogo (0x649ED8, +1 por volta do laço
   principal) e o contador de flips do GCM (`[flip]`) dão exatamente a metade: os "~19 q/s" da v21 são ~10
   quadros reais por segundo. O RPCS3 (título da janela, que conta flips) faz ~21-23 na mesma luta. A/B entre
-  builds do live draw continuam válidos (o fator é o mesmo); para quadros reais, `GOW3_trabalhops_real.py`.
+  builds do live draw continuam válidos (o fator é o mesmo); para quadros reais, `GOW3_trabalho\fps_real.py`.
 - **Ponte do RSX do RPCS3** (ramo `rsx-rpcs3` aqui, `gow3-rsx` no ps3recomp; código do ps3kit de Arnaldo Lima,
   GPL-2.0): `gow3_build.py --rsx-rpcs3 <pasta do build de gpu/>` e rodar com `PS3_RSX=rpcs3`. Sem a variável o
   exe é o de sempre (live draw). Marcos: compila, o RSX inicia (Vulkan), primeiro quadro, abertura e fase com
