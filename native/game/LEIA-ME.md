@@ -312,10 +312,19 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   **Ligada por padrão no ramo `tradutor-spu-2`** (`--spu-recarga` padrão, `--no-spu-recarga` desliga; inclui a
   correção do `spu_live_flush`); o build padrão sai igual ao `exe_rec4` (só o carimbo do PE). Não fundida no
   `native-recomp` (decisão do Celso).
-- **Fila** (em ordem; (1)-(4) feitos em 15/11): (5) estender a saída das gravações já certas às funções sem
-  chamada (mesma análise C/Lc, sem `calls`), com testes, exatidão nas duas capturas e A/B; (6) se o travamento da
-  ponte (label 0x51) voltar, investigar o RsxSync (wid 11); (7) candidatos de 0,5-1% (MFC/canais, núcleo da 0x6C10)
-  ficam para depois; (8) fusão do `tradutor-spu-2` no `native-recomp` só com o Celso.
+- **Perfil depois da recarga** (`GOW3_PROF=100,40`, `fronteira.py`; logs `prof15_base2.log` / `prof15_rec4.log`):
+  fronteira 14,8% -> 13,0% das amostras dos jobs (912f 0x52A4: 111 -> 50; 2be9 0xA288: 58 -> 23). O maior item que
+  sobra é a saída da folha 912f 0x4C48 (66 amostras, ~1,1%): grava r2-r77 a cada volta, e a 0x52A4 relê só 22
+  deles. Não dá para cortar essas gravações dentro da folha: quem chama pode ser alcançado por despacho indireto
+  (retorno com tudo vivo) e, no laço, a última volta precisa dos valores. Só a fusão da folha na 0x52A4 (ou de
+  modo geral, folhas quentes em quem chama) tiraria o custo; o par soma ~1,9% das amostras dos jobs na fronteira.
+  **Fundir funções depende do Celso** (pedido de não fundir sem evidência nova; esta é a evidência).
+- **Item (5) medido e descartado:** gravações de valores que o ctx já tem em funções sem chamada: 8.795 no 14561,
+  12.274 no 912f e 17.613 no 2be9 (estático), mas **nenhuma nas funções quentes do perfil** -- peso ~0 no jogo.
+- **Fila** (em ordem): (a) decisão do Celso: fusão das folhas quentes em quem chama (912f 0x4C48 na 0x52A4,
+  ~1,9% de fronteira; exige exatidão nas duas capturas, A/B 12+12 e inicializações); (b) se o travamento da ponte
+  (label 0x51) voltar, investigar o RsxSync (wid 11); (c) candidatos de 0,5-1% (MFC/canais, núcleo da 0x6C10)
+  ficam para depois; (d) fusão do `tradutor-spu-2` no `native-recomp` só com o Celso.
 - Comandos: `bash scripts_locais/build_exe.sh <rótulo> [--spu-recarga]`; reprodução `rodar_env.sh <rótulo> 300
   /dev/null "SPU_JOBREPLAY=<trabalho>\jobcap206s,3,0,512" SPU_JOBREPLAY_CODE=444600:4000:D97C` e
   `python scripts_locais/cmp_replay.py <base.log> <x.log>`.
