@@ -365,7 +365,13 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   job no jogo (`SPU_JOBTIME=208,DD70`, executor Wws desligado, 3+3 x 240 s): **1.224 -> 1.081 us/job (-11,7%,
   3 de 3)**. Conclusão: a fusão é ganho no job que ela muda; o us/job das EDGE não serve de medida para ela.
   Mesma lente na recarga (cena, 10 pares): lista 4 -9,5% (9 de 10); no total o ruído da cena pesa mais.
-  Falta para ligar: inicializações. Decisão de ligar e de fundir ramos é do Celso.
+  **Inicializações 10+10 alternadas (`boot.sh`, 55 s, blocos de 5): 0 travadas em cada** (`pad16` e `fus16`).
+  Pronta para ligar (`--spu-fundir-folha 912f:4C48`); ligar e fundir ramos é decisão do Celso.
+- **Patamares do us/job x `GOW3_PIN`** (`scripts_locais\ab_pin.sh 4 ll1 600`, combate de 600 s, alternado, com o
+  amostrador `maquina.ps1`): **nenhum patamar em 8 rodadas** (us/job ~29-30 do começo ao fim, com e sem o pin),
+  nenhuma travada; máquina tranquila (desempenho do processador ~125% estável, jogo ~8,5 núcleos, nenhum outro
+  processo acima de 0,33 núcleo). Os patamares das 16:55-17:35 não se repetiram, então o pin não pôde ser testado
+  contra eles; fica a referência do amostrador para a próxima vez que aparecerem.
 - **Travada do label 0x51 de novo, na base (`pad16`, sem a fusão):** `base_5` aos 17 s e `base_12` aos 87 s, mesma
   assinatura (`semaphore_acquire timed out`, 0x2E200510 = 0x657, espera 0x658). O vigia `GOW3_STALL=5` gravou:
   as threads do PPU em `sys_lwcond_wait`; depois da travada as listas 9, 10 e 11 (11 = RsxSync) nunca mais rodam e
