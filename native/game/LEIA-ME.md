@@ -361,6 +361,10 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   em 60, sem 1 em 60; com as 3 em 48 da tarde (comportamento antigo), 4 em 108 sem o lock. A diferença ainda não é
   significativa (p ~ 0,3 com 0 em 60). Caçada 4 só sem o lock (`caca51d.sh 40 ll2`, logs `caca4_*`) para pegar uma
   travada com os contadores.
+  **Caçada 4 (11:15-14:55): 0 travadas em 40, todas sem o lock.** Nas cenas de 330 s das caçadas: sem o lock 1 em
+  100, com o lock 0 em 60 -- taxa ~1%, nada distinguível. Caçada 5 em inicializações de 60 s (mais baratas; a ponte
+  tinha 1 em 100 delas em 12/11, aos 13 s, na rajada de flips do carregamento), sem o lock (`caca51e.sh 160 ll2 0`,
+  guarda só os logs que param antes de 50 s ou têm `GOW3-STALL`, `caca5_*`).
 - Comandos: `bash scripts_locais/build_exe.sh <rótulo> [--spu-recarga]`; reprodução `rodar_env.sh <rótulo> 300
   /dev/null "SPU_JOBREPLAY=<trabalho>\jobcap206s,3,0,512" SPU_JOBREPLAY_CODE=444600:4000:D97C` e
   `python scripts_locais/cmp_replay.py <base.log> <x.log>`.
