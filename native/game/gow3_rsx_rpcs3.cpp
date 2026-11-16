@@ -45,6 +45,18 @@ static void rpcs3_rsx_guest_write(unsigned ea, unsigned size)
     spu_lockline_unlock();
 }
 
+// The reports and labels the RSX stores into guest memory, made inside the lock-line lock (ps3recomp
+// gpu/rsx/Emu/RSX/ps3recomp_store.h): a store that landed between the compare and the commit of an SPU's
+// PUTLLC was written back over. The report that zeroes the SPURS workload flag (spurs+0x6C) shares its line
+// with what the SPURS kernel commits; a lost zero leaves RsxSync (wid 11) unstarted, label 0x51 unwritten
+// and the RSX waiting for it (the bridge's rare stop, semaphore_acquire timed out at 0x2E200510).
+// PS3_RSX_STORE_LOCK=0: as before (the store, then rpcs3_rsx_guest_write).
+static void rpcs3_rsx_store_unlock(unsigned ea, unsigned size)
+{
+    for (uint32_t line = ea & ~127u; line < ea + size; line += 128u) spu_coh_notify_write(line);
+    spu_lockline_unlock();
+}
+
 static int rpcs3_rsx_start(uint32_t context_addr, uint32_t local_size)
 {
     // cellGcmInit runs on a guest thread; the window is the frame clock's (the live draw's window).
@@ -62,6 +74,11 @@ static int rpcs3_rsx_start(uint32_t context_addr, uint32_t local_size)
     p.local_size = local_size;
     p.on_event = cellGcm_rsx_event;
     p.on_guest_write = rpcs3_rsx_guest_write;
+    {
+        const char* sl = getenv("PS3_RSX_STORE_LOCK");
+        if (!sl || strcmp(sl, "0")) { p.store_lock = spu_lockline_lock; p.store_unlock = rpcs3_rsx_store_unlock; }
+        fprintf(stderr, "[ps3rsx] reports and labels stored %s the lock-line lock\n", p.store_lock ? "inside" : "outside");
+    }
     if (const char* e = getenv("PS3_PERF_OVERLAY")) p.perf_overlay = atoi(e);
     fprintf(stderr, "[ps3rsx] starting RPCS3's RSX (%s), context 0x%08X, local 0x%X\n",
             p.renderer == PS3RSX_OPENGL ? "OpenGL" : "Vulkan", context_addr, local_size);
