@@ -343,6 +343,13 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   (`+0x08`) e sinais (`+0x70`) das duas instâncias, para ver na próxima travada se o flag ficou em zero (RsxSync
   marcado e não escalado: falha do kernel do host) ou em 0xFFFFFFFF (zero perdido ou RsxSync rodou e a cadeia parou
   depois).
+  **Caçada 1 (16/11 madrugada, `scripts_locais\caca51.sh 20 ll1`, cena de 330 s alternando `PS3_RSX_STORE_LOCK`
+  1/0, `SPURS_FLAG_DBG=1`, vigia e PEEK):** **0 travadas em 40** (20 com o lock, 20 sem). O `[flagdbg]` confirma o
+  flag do RsxSync na instância 0x70038C80 (`+0x6C`, receptor 11, `maxcont=1`): se o contador `active` da lista 11
+  ficasse preso em 1 ela nunca mais seria escolhida -- candidato a conferir na próxima travada (a linha `[flagdbg]
+  wid=11 ... active=` mostra). Somando a noite: 0 em 60 inicializações, 0 em 8 combates de 600 s, 0 em 40 cenas;
+  contra 3 em 48 cenas do A/B da tarde (rec4 1, pad16 2). O `SPURS_FLAG_DBG` imprime a cada mudança do flag e pode
+  mudar o tempo; caçada 2 sem ele (`caca51b.sh`, logs `caca2_*`).
 - Comandos: `bash scripts_locais/build_exe.sh <rótulo> [--spu-recarga]`; reprodução `rodar_env.sh <rótulo> 300
   /dev/null "SPU_JOBREPLAY=<trabalho>\jobcap206s,3,0,512" SPU_JOBREPLAY_CODE=444600:4000:D97C` e
   `python scripts_locais/cmp_replay.py <base.log> <x.log>`.
