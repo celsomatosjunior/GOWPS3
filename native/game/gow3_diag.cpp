@@ -231,6 +231,9 @@ static void snap(int round)
  * consumos pelo kernel do SPURS (ps3recomp cellSpurs.c) */
 extern "C" volatile unsigned g_gow3_flag_reports, g_gow3_flag_report_zero, g_spurs_flag_consumed;
 extern "C" volatile unsigned long long g_gow3_flag_report_ms, g_spurs_flag_consumed_ms;
+/* escritas de SPU que tiraram o flag do zero (ps3recomp spu_channels.c, SPU_FLAGGUARD) */
+extern "C" volatile unsigned g_spu_flagguard_hits;
+extern "C" volatile unsigned long long g_spu_flagguard_ms;
 static void dump(HMODULE self, int round)
 {
     snap(round);
@@ -241,7 +244,9 @@ static void dump(HMODULE self, int round)
       add("[GOW3-FLAG] relatórios do RSX sobre o flag %u (com zero %u), último há %llu ms; consumos pelo kernel %u, "
           "último há %llu ms\n", g_gow3_flag_reports, g_gow3_flag_report_zero,
           g_gow3_flag_report_ms ? t - g_gow3_flag_report_ms : 0ull, g_spurs_flag_consumed,
-          g_spurs_flag_consumed_ms ? t - g_spurs_flag_consumed_ms : 0ull); }
+          g_spurs_flag_consumed_ms ? t - g_spurs_flag_consumed_ms : 0ull);
+      add("[GOW3-FLAG] escritas de SPU que tiraram o flag do zero %u, última há %llu ms\n", g_spu_flagguard_hits,
+          g_spu_flagguard_ms ? t - g_spu_flagguard_ms : 0ull); }
     if (round == 1) { find_values(); dump_ranges(); }
     for (unsigned t = 0; t < 64u; t++)
         if (g_hle_inflight[t]) add("[GOW3-WD]   guest-tid %u dentro de %s\n", t, g_hle_inflight[t]);
