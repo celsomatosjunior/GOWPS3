@@ -357,6 +357,20 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   890 -> 754 us/job (cena, -15%) e 1092 -> 905 (combate, -17%). Observação: na 208 a reprodução não bate com a
   gravação nem na base (bytes de PUT diferentes em ~1/3 dos jobs, código automodificável indo ao interpretador,
   `[spu-smc] microstep`); a comparação vale entre os dois exes com as mesmas entradas, como nas da 206.
+- **A/B da fusão no jogo** (`ab_exes.sh 12 fus pad16 fus16`, cena de 330 s, `logs\ab_fus.out`): o us/job das listas
+  EDGE deu +1,7% (EP 0,8%), mas **a 912f (imagem 208) não roda nas listas EDGE 8-10, e sim na lista 4**
+  (ModelServer), que o `edge_ms.py` não conta. Por lista, em ms de SPU por quadro (`scratch\wid_ms.py`, mediana dos
+  blocos por rodada, razão por par, 10 pares; 2 rodadas da base travaram, ver abaixo): **lista 4 -6,4%** (EP 1,8%,
+  fusão menor em 8 de 10), listas EDGE 8-10 -1,2% (EP 1,8%), **SPU total -2,5%** (EP 0,8%, 8 de 10). Tempo do próprio
+  job no jogo (`SPU_JOBTIME=208,DD70`, executor Wws desligado, 3+3 x 240 s): **1.224 -> 1.081 us/job (-11,7%,
+  3 de 3)**. Conclusão: a fusão é ganho no job que ela muda; o us/job das EDGE não serve de medida para ela.
+  Mesma lente na recarga (cena, 10 pares): lista 4 -9,5% (9 de 10); no total o ruído da cena pesa mais.
+  Falta para ligar: inicializações. Decisão de ligar e de fundir ramos é do Celso.
+- **Travada do label 0x51 de novo, na base (`pad16`, sem a fusão):** `base_5` aos 17 s e `base_12` aos 87 s, mesma
+  assinatura (`semaphore_acquire timed out`, 0x2E200510 = 0x657, espera 0x658). O vigia `GOW3_STALL=5` gravou:
+  as threads do PPU em `sys_lwcond_wait`; depois da travada as listas 9, 10 e 11 (11 = RsxSync) nunca mais rodam e
+  as 1, 3, 4 e 7 giram sem trabalho, como no `var_1`. No `base_12` o bloco antes da travada teve ~3x mais execuções
+  nas listas 8-10. Investigação no ramo `ponte-lockline` (seção seguinte no LEIA-ME daquele ramo).
 - Comandos: `bash scripts_locais/build_exe.sh <rótulo> [--spu-recarga]`; reprodução `rodar_env.sh <rótulo> 300
   /dev/null "SPU_JOBREPLAY=<trabalho>\jobcap206s,3,0,512" SPU_JOBREPLAY_CODE=444600:4000:D97C` e
   `python scripts_locais/cmp_replay.py <base.log> <x.log>`.
