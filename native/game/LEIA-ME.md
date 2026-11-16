@@ -377,6 +377,14 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   espera a seguir), daí ~1% das rodadas. **Causa da travada do label 0x51 confirmada; o lock da ponte (padrão
   neste ramo) a corrige.** Velocidade nas mesmas rodadas (quadros apresentados): -1,0% (EP 1,0) com o lock,
   inconclusivo; A/B de velocidade próprio a seguir.
+  **A/B de velocidade (`ab_env.sh 10 lockvel ll3 "PS3_RSX_STORE_LOCK=0"`, cena de 330 s, base = com o lock):** sem o
+  lock -0,32% us/job (EP 0,54; 4/9 menores), 60 s -0,58% (EP 0,52) -- **o lock não custa velocidade mensurável.**
+  O par 7 ficou fora: `base_7` (com o lock) parou aos 66 s num **laço de "FIFO error: possible desync event"** (88
+  mil, `last cmd = 0x75807fa0`) e "Dead FIFO ... recovering anyway". Problema **diferente e anterior ao lock**:
+  desyncs isolados (o RSX lendo dado como comando, recuperado) aparecem em 9 logs antigos, com e sem o lock e em exes
+  sem ele (`rec_base_5`, `comb15_base2_4`, `pac_var_3`, `pin0_1`, caçadas 1 e 3), entre 28 e 67 s; só aqui a
+  recuperação não saiu do laço (1 em ~1.235 logs). Fica para investigar à parte (coerência do buffer de comandos
+  entre a PPU e o RSX).
 - Comandos: `bash scripts_locais/build_exe.sh <rótulo> [--spu-recarga]`; reprodução `rodar_env.sh <rótulo> 300
   /dev/null "SPU_JOBREPLAY=<trabalho>\jobcap206s,3,0,512" SPU_JOBREPLAY_CODE=444600:4000:D97C` e
   `python scripts_locais/cmp_replay.py <base.log> <x.log>`.
