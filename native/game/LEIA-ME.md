@@ -357,6 +357,10 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   RSX sobre o flag (e quantos o deixaram em zero) e os consumos pelo kernel do SPURS (ps3recomp 54554c80), com o
   tempo desde o último de cada, na linha `[GOW3-FLAG]` do retrato. Em operação normal são iguais (1.673 = 1.673 aos
   80 s). Caçada 3 com eles (`caca51c.sh`, logs `caca3_*`).
+  **Caçada 3 (07:30-11:13, `exe_ll2`): 0 travadas em 40** (20 com o lock, 20 sem). Total das caçadas: com o lock 0
+  em 60, sem 1 em 60; com as 3 em 48 da tarde (comportamento antigo), 4 em 108 sem o lock. A diferença ainda não é
+  significativa (p ~ 0,3 com 0 em 60). Caçada 4 só sem o lock (`caca51d.sh 40 ll2`, logs `caca4_*`) para pegar uma
+  travada com os contadores.
 - Comandos: `bash scripts_locais/build_exe.sh <rótulo> [--spu-recarga]`; reprodução `rodar_env.sh <rótulo> 300
   /dev/null "SPU_JOBREPLAY=<trabalho>\jobcap206s,3,0,512" SPU_JOBREPLAY_CODE=444600:4000:D97C` e
   `python scripts_locais/cmp_replay.py <base.log> <x.log>`.
