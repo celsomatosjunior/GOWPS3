@@ -365,6 +365,18 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   100, com o lock 0 em 60 -- taxa ~1%, nada distinguível. Caçada 5 em inicializações de 60 s (mais baratas; a ponte
   tinha 1 em 100 delas em 12/11, aos 13 s, na rajada de flips do carregamento), sem o lock (`caca51e.sh 160 ll2 0`,
   guarda só os logs que param antes de 50 s ou têm `GOW3-STALL`, `caca5_*`).
+  **Caçada 5 (15:00-17:40): 1 travada em 160** (`caca5_l0_105`, aos 18 s). Contadores: **125 relatórios do RSX com
+  zero, 124 consumos pelo kernel**, o último relatório 32 ms depois do último consumo, e o flag em 0xFFFFFFFF -- o
+  último zero foi apagado sem o kernel vê-lo (o receptor só foi armado uma vez; o kernel só grava 0xFF consumindo e
+  contando). **Achado o apagador:** `SPU_FLAGGUARD=<ea>` (ps3recomp c116717d, diagnóstico desligado por padrão; conta
+  e registra toda escrita de SPU -- `PUT`, `PUTLLC`, `PUTLLUC` -- que tira a palavra do zero, com a cópia da reserva;
+  contador na linha `[GOW3-FLAG]`, GOWPS3 ae0f1f4; `exe_ll3`). Sempre o mesmo: **`PUTLLC` da spu0 (`pc=0x03050`) na
+  linha 0x70038C80, 0 -> 0xFFFFFFFF, com a reserva em 0xFFFFFFFF**: o zero do RSX caiu entre a comparação e a gravação
+  do `PUTLLC` e foi escrito por cima. **A/B (`guarda_ab.sh 10 ll3`, 120 s alternados): sem o lock 8 apagamentos em
+  10 rodadas (6 com algum), com o lock 0 em 10** (p ~ 0,004). Nem todo zero apagado trava (só quando é o que o RSX
+  espera a seguir), daí ~1% das rodadas. **Causa da travada do label 0x51 confirmada; o lock da ponte (padrão
+  neste ramo) a corrige.** Velocidade nas mesmas rodadas (quadros apresentados): -1,0% (EP 1,0) com o lock,
+  inconclusivo; A/B de velocidade próprio a seguir.
 - Comandos: `bash scripts_locais/build_exe.sh <rótulo> [--spu-recarga]`; reprodução `rodar_env.sh <rótulo> 300
   /dev/null "SPU_JOBREPLAY=<trabalho>\jobcap206s,3,0,512" SPU_JOBREPLAY_CODE=444600:4000:D97C` e
   `python scripts_locais/cmp_replay.py <base.log> <x.log>`.
