@@ -325,6 +325,24 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   ~1,9% de fronteira; exige exatidão nas duas capturas, A/B 12+12 e inicializações); (b) se o travamento da ponte
   (label 0x51) voltar, investigar o RsxSync (wid 11); (c) candidatos de 0,5-1% (MFC/canais, núcleo da 0x6C10)
   ficam para depois; (d) fusão do `tradutor-spu-2` no `native-recomp` só com o Celso.
+- **Ramo `ponte-lockline` (15/11 noite; aqui e no ps3recomp, a partir do `tradutor-spu-2`): travada do label 0x51.**
+  As travadas de 15/11 (`var_1` do A/B da recarga; `base_5` e `base_12` do A/B da fusão, ver o LEIA-ME do ramo
+  `fusao-folha`) têm a mesma assinatura: label 0x51 (0x2E200510) parado um abaixo do esperado, RsxSync (lista 11) e as
+  listas 9-10 sem rodar depois. Achado no código: a ponte do RSX grava relatórios e labels na memória do PS3 **fora**
+  do `spu_lockline_lock` e só depois chama o gancho que avisa as reservas das SPUs. O caminho antigo (live draw) grava
+  com `vm_write32`, que passa pelo lock (`VM_WRITE_COH`): 0 travadas em 180 inicializações, contra ~1% da ponte.
+  Mudança: `ps3recomp_guest_store` (`gpu/rsx/Emu/RSX/ps3recomp_store.h`) faz a gravação entre os ganchos
+  `store_lock`/`store_unlock` do host (`gow3_rsx_rpcs3.cpp`: o lock de linha; o destrave avisa as reservas), nos
+  relatórios (`get_report`, `RSXThread`, `RSXZCULL`) e nos labels (`nv47_sync.hpp`, labels adiados do zcull).
+  `PS3_RSX_STORE_LOCK=0` volta ao antigo. **Não confirmado como causa:** o flag que dispara o RsxSync
+  (`spurs+0x6C`) é consumido pelo kernel do SPURS do host (`cellSpurs.c`, já sob o lock), e alargar a janela do
+  `PUTLLC` nas duas linhas do cabeçalho do SPURS (`SPU_PUTLLC_JANELA=50,70038C80,70039C80`, diagnóstico novo,
+  desligado por padrão) não reproduziu a travada nem mudou a velocidade (quase nenhum `PUTLLC` de SPU nessas linhas).
+  Inicializações de 55 s alternadas em blocos de 5 (`exe_ll1`): **0 em 30 com o lock, 0 em 30 sem** -- sem
+  informação. Próximo: rodadas longas com `GOW3_STALL=5` e `GOW3_PEEK` do flag (`+0x6C`), receptor (`+0x74`), prontos
+  (`+0x08`) e sinais (`+0x70`) das duas instâncias, para ver na próxima travada se o flag ficou em zero (RsxSync
+  marcado e não escalado: falha do kernel do host) ou em 0xFFFFFFFF (zero perdido ou RsxSync rodou e a cadeia parou
+  depois).
 - Comandos: `bash scripts_locais/build_exe.sh <rótulo> [--spu-recarga]`; reprodução `rodar_env.sh <rótulo> 300
   /dev/null "SPU_JOBREPLAY=<trabalho>\jobcap206s,3,0,512" SPU_JOBREPLAY_CODE=444600:4000:D97C` e
   `python scripts_locais/cmp_replay.py <base.log> <x.log>`.
