@@ -350,6 +350,13 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   wid=11 ... active=` mostra). Somando a noite: 0 em 60 inicializações, 0 em 8 combates de 600 s, 0 em 40 cenas;
   contra 3 em 48 cenas do A/B da tarde (rec4 1, pad16 2). O `SPURS_FLAG_DBG` imprime a cada mudança do flag e pode
   mudar o tempo; caçada 2 sem ele (`caca51b.sh`, logs `caca2_*`).
+  **Caçada 2 (03:35-07:15): 1 travada em 40, sem o lock** (`caca2_l0_7`, aos 92 s, label 0x6A7 esperando 0x6A8). No
+  retrato o flag do RsxSync (0x70038CEC) está em **0xFFFFFFFF** e o receptor em 11 (0x70038CF4 = 0x50B): não é a
+  lista 11 marcada e não escalada (o suspeito do `active` preso cai). Sobra: o zero do relatório se perdeu, ou o
+  RsxSync rodou e a cadeia parou depois. Para separar: `GOW3_FLAGWATCH=70038CEC` (`exe_ll2`) conta os relatórios do
+  RSX sobre o flag (e quantos o deixaram em zero) e os consumos pelo kernel do SPURS (ps3recomp 54554c80), com o
+  tempo desde o último de cada, na linha `[GOW3-FLAG]` do retrato. Em operação normal são iguais (1.673 = 1.673 aos
+  80 s). Caçada 3 com eles (`caca51c.sh`, logs `caca3_*`).
 - Comandos: `bash scripts_locais/build_exe.sh <rótulo> [--spu-recarga]`; reprodução `rodar_env.sh <rótulo> 300
   /dev/null "SPU_JOBREPLAY=<trabalho>\jobcap206s,3,0,512" SPU_JOBREPLAY_CODE=444600:4000:D97C` e
   `python scripts_locais/cmp_replay.py <base.log> <x.log>`.
