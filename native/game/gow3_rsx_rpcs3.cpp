@@ -35,11 +35,28 @@ struct CellGcmRsxHooks {
 };
 extern "C" void cellGcm_set_rsx_hooks(const CellGcmRsxHooks* hooks);
 
+// GOW3_FLAGWATCH=<ea hex> (e.g. 70038CEC, the SPURS workload flag RsxSync receives): the RSX's stores that cover
+// it, how many left it zero (read inside the lock; the lock-free path reads it after the store) and when the last
+// one was -- printed by the GOW3_STALL dump next to the kernel's consumptions of the flag (cellSpurs.c).
+extern "C" { volatile unsigned g_gow3_flag_reports = 0, g_gow3_flag_report_zero = 0;
+             volatile unsigned long long g_gow3_flag_report_ms = 0; }
+static void flag_note(unsigned ea, unsigned size)
+{
+    static uint32_t w = 1;   /* 1: not read yet; 0: off */
+    if (w == 1) { const char* e = getenv("GOW3_FLAGWATCH"); w = e ? (uint32_t)strtoul(e, nullptr, 16) : 0; }
+    if (!w || w < ea || w >= ea + size) return;
+    g_gow3_flag_reports++;
+    g_gow3_flag_report_ms = GetTickCount64();
+    uint32_t v; memcpy(&v, vm_base + w, 4);
+    if (!v) g_gow3_flag_report_zero++;
+}
+
 // A label the RSX wrote: an SPU may hold a reservation on its line (a GETLLAR poll on an RSX fence), and
 // must see the line as written, as the PPU's stores do (VM_WRITE_COH).
 static void rpcs3_rsx_guest_write(unsigned ea, unsigned size)
 {
     if (!size) return;
+    flag_note(ea, size);
     spu_lockline_lock();
     for (uint32_t line = ea & ~127u; line < ea + size; line += 128u) spu_coh_notify_write(line);
     spu_lockline_unlock();
@@ -53,6 +70,7 @@ static void rpcs3_rsx_guest_write(unsigned ea, unsigned size)
 // PS3_RSX_STORE_LOCK=0: as before (the store, then rpcs3_rsx_guest_write).
 static void rpcs3_rsx_store_unlock(unsigned ea, unsigned size)
 {
+    flag_note(ea, size);
     for (uint32_t line = ea & ~127u; line < ea + size; line += 128u) spu_coh_notify_write(line);
     spu_lockline_unlock();
 }
