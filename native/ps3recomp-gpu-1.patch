@@ -86211,10 +86211,10 @@ index 00000000..445e5290
 +};
 diff --git a/gpu/rsx/Emu/RSX/RSXFIFO.cpp b/gpu/rsx/Emu/RSX/RSXFIFO.cpp
 new file mode 100644
-index 00000000..897debb9
+index 00000000..d100de7a
 --- /dev/null
 +++ b/gpu/rsx/Emu/RSX/RSXFIFO.cpp
-@@ -0,0 +1,1148 @@
+@@ -0,0 +1,1145 @@
 +#include "stdafx.h"
 +
 +#include "Emu/System.h"
@@ -86281,8 +86281,7 @@ index 00000000..897debb9
 +    for (u64 i = ff; i < s_fifo_flow_count; ++i)
 +    {
 +        const auto& f = s_fifo_flow[i % 32];
-+        std::fprintf(stderr, "[fifo-diag] flow #%llu: %08X -> %08X cmd=%08X put=%08X (%llu headers ago)
-+",
++        std::fprintf(stderr, "[fifo-diag] flow #%llu: %08X -> %08X cmd=%08X put=%08X (%llu headers ago)\n",
 +            static_cast<unsigned long long>(i), f.from, f.to, f.cmd, f.put,
 +            static_cast<unsigned long long>(s_fifo_header_count - f.at));
 +        if (s_fifo_iomap && i + 4 >= s_fifo_flow_count)
@@ -86290,13 +86289,11 @@ index 00000000..897debb9
 +            {
 +                const u32 ea = s_fifo_iomap->get_addr(io);
 +                if (ea != umax && vm::check_addr(ea, vm::page_readable, 16))
-+                    std::fprintf(stderr, "[fifo-diag]   raw io=%08X ea=%08X: %08X %08X %08X %08X
-+", io, ea,
++                    std::fprintf(stderr, "[fifo-diag]   raw io=%08X ea=%08X: %08X %08X %08X %08X\n", io, ea,
 +                        static_cast<u32>(vm::read32(ea)), static_cast<u32>(vm::read32(ea + 4)),
 +                        static_cast<u32>(vm::read32(ea + 8)), static_cast<u32>(vm::read32(ea + 12)));
 +                else
-+                    std::fprintf(stderr, "[fifo-diag]   raw io=%08X: not mapped
-+", io);
++                    std::fprintf(stderr, "[fifo-diag]   raw io=%08X: not mapped\n", io);
 +            }
 +    }
 +    if (s_fifo_iomap && s_fifo_header_count)
