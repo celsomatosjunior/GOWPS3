@@ -58620,10 +58620,10 @@ index 00000000..8dc41e0f
 +}
 diff --git a/gpu/rsx/Emu/RSX/NV47/HW/nv4097.cpp b/gpu/rsx/Emu/RSX/NV47/HW/nv4097.cpp
 new file mode 100644
-index 00000000..5795769b
+index 00000000..2db8e5e2
 --- /dev/null
 +++ b/gpu/rsx/Emu/RSX/NV47/HW/nv4097.cpp
-@@ -0,0 +1,910 @@
+@@ -0,0 +1,915 @@
 +#include "stdafx.h"
 +#include "nv4097.h"
 +#include "nv47_sync.hpp"
@@ -59326,26 +59326,31 @@ index 00000000..5795769b
 +				RSX(ctx)->get_zcull_stats(type, vm::cast(address_ptr));
 +				break;
 +			default:
-+				if (address_ptr % 16)
++			{
++				// ps3recomp: inside the host's lock-line lock when it gives one (ps3recomp_store.h)
++				const u64 timer = RSX(ctx)->timestamp();
++				ps3recomp_guest_store(address_ptr, 16, [&]
 +				{
-+					// ps3recomp: Ascension writes this one (type 255, offset 0xFFFFFF)
-+					// unaligned, which the 16-byte atomic below cannot do.
-+					const u64 timer = RSX(ctx)->timestamp();
-+					be_t<u64> t = timer;
-+					be_t<u32> pad = 0;
-+					std::memcpy(vm::base(address_ptr), &t, 8);
-+					std::memcpy(vm::base(address_ptr + 12), &pad, 4);
-+				}
-+				else
-+				{
-+					vm::_ptr<atomic_t<CellGcmReportData>>(address_ptr)->atomic_op([&](CellGcmReportData& data)
++					if (address_ptr % 16)
 +					{
-+						data.timer = RSX(ctx)->timestamp();
-+						data.padding = 0;
-+					});
-+				}
-+				if (g_ps3recomp_rsx_write_hook) g_ps3recomp_rsx_write_hook(address_ptr, 16); // ps3recomp
++						// ps3recomp: Ascension writes this one (type 255, offset 0xFFFFFF)
++						// unaligned, which the 16-byte atomic below cannot do.
++						be_t<u64> t = timer;
++						be_t<u32> pad = 0;
++						std::memcpy(vm::base(address_ptr), &t, 8);
++						std::memcpy(vm::base(address_ptr + 12), &pad, 4);
++					}
++					else
++					{
++						vm::_ptr<atomic_t<CellGcmReportData>>(address_ptr)->atomic_op([&](CellGcmReportData& data)
++						{
++							data.timer = timer;
++							data.padding = 0;
++						});
++					}
++				});
 +				break;
++			}
 +			}
 +		}
 +
@@ -59823,15 +59828,16 @@ index 00000000..38d4e29a
 +#include "nv4097.h" // 3D engine (GRAPH)
 diff --git a/gpu/rsx/Emu/RSX/NV47/HW/nv47_sync.hpp b/gpu/rsx/Emu/RSX/NV47/HW/nv47_sync.hpp
 new file mode 100644
-index 00000000..43ddc390
+index 00000000..9a45ee5d
 --- /dev/null
 +++ b/gpu/rsx/Emu/RSX/NV47/HW/nv47_sync.hpp
-@@ -0,0 +1,120 @@
+@@ -0,0 +1,119 @@
 +#pragma once
 +
 +#include "util/types.hpp"
 +#include "Emu/RSX/RSXThread.h"
 +#include "Emu/RSX/Host/MM.h"
++#include "Emu/RSX/ps3recomp_store.h"
 +
 +#include "context_accessors.define.h"
 +
@@ -59938,10 +59944,8 @@ index 00000000..43ddc390
 +				}
 +			}
 +
-+			vm::write<atomic_t<RsxSemaphore>>(address, data);
-+
-+			if (g_ps3recomp_rsx_write_hook) // ps3recomp
-+				g_ps3recomp_rsx_write_hook(address, 4);
++			// ps3recomp: inside the host's lock-line lock when it gives one (ps3recomp_store.h)
++			ps3recomp_guest_store(address, 4, [&] { vm::write<atomic_t<RsxSemaphore>>(address, data); });
 +		}
 +	}
 +}
@@ -86207,10 +86211,10 @@ index 00000000..445e5290
 +};
 diff --git a/gpu/rsx/Emu/RSX/RSXFIFO.cpp b/gpu/rsx/Emu/RSX/RSXFIFO.cpp
 new file mode 100644
-index 00000000..ea1fb01a
+index 00000000..897debb9
 --- /dev/null
 +++ b/gpu/rsx/Emu/RSX/RSXFIFO.cpp
-@@ -0,0 +1,1117 @@
+@@ -0,0 +1,1148 @@
 +#include "stdafx.h"
 +
 +#include "Emu/System.h"
@@ -86247,6 +86251,11 @@ index 00000000..ea1fb01a
 +    thread_local fifo_header_trace s_fifo_headers[64]{};
 +    thread_local u64 s_fifo_header_count = 0;
 +    thread_local const rsx::rsx_iomap_table* s_fifo_iomap = nullptr;
++    // ps3recomp: each jump of the get (a JUMP, CALL, RET, a get/put reset, a recovery), the
++    // header count at it, to tell how the get got where the first error was
++    struct fifo_flow_trace { u32 from, to, cmd, put; u64 at; };
++    thread_local fifo_flow_trace s_fifo_flow[32]{};
++    thread_local u64 s_fifo_flow_count = 0;
 +    bool fifo_trace_enabled()
 +    {
 +        static const bool enabled = [] { const char* e = std::getenv("PS3_RSX_FIFO_DIAG"); return e && e[0] == '1'; }();
@@ -86267,6 +86276,28 @@ index 00000000..ea1fb01a
 +    {
 +        const auto& h = s_fifo_headers[i % 64];
 +        std::fprintf(stderr, "[fifo-diag] io=%08X ea=%08X cmd=%08X live=%08X put=%08X\n", h.io, h.ea, h.cmd, h.live, h.put);
++    }
++    const u64 ff = s_fifo_flow_count > 32 ? s_fifo_flow_count - 32 : 0;
++    for (u64 i = ff; i < s_fifo_flow_count; ++i)
++    {
++        const auto& f = s_fifo_flow[i % 32];
++        std::fprintf(stderr, "[fifo-diag] flow #%llu: %08X -> %08X cmd=%08X put=%08X (%llu headers ago)
++",
++            static_cast<unsigned long long>(i), f.from, f.to, f.cmd, f.put,
++            static_cast<unsigned long long>(s_fifo_header_count - f.at));
++        if (s_fifo_iomap && i + 4 >= s_fifo_flow_count)
++            for (const u32 io : {f.from & ~15u, f.to & ~15u})
++            {
++                const u32 ea = s_fifo_iomap->get_addr(io);
++                if (ea != umax && vm::check_addr(ea, vm::page_readable, 16))
++                    std::fprintf(stderr, "[fifo-diag]   raw io=%08X ea=%08X: %08X %08X %08X %08X
++", io, ea,
++                        static_cast<u32>(vm::read32(ea)), static_cast<u32>(vm::read32(ea + 4)),
++                        static_cast<u32>(vm::read32(ea + 8)), static_cast<u32>(vm::read32(ea + 12)));
++                else
++                    std::fprintf(stderr, "[fifo-diag]   raw io=%08X: not mapped
++", io);
++            }
 +    }
 +    if (s_fifo_iomap && s_fifo_header_count)
 +    {
@@ -86550,6 +86581,10 @@ index 00000000..ea1fb01a
 +
 +		void FIFO_control::set_get(u32 get, u32 spin_cmd)
 +		{
++#ifdef PS3RECOMP_RSX_ONLY
++			if (fifo_trace_enabled() && !(spin_cmd && m_fifo_pos == get))
++				s_fifo_flow[s_fifo_flow_count++ % 32] = {m_fifo_pos, get, m_cmd, m_ctrl->put, s_fifo_header_count};
++#endif
 +			invalidate_cache();
 +
 +			m_thread->last_code_jump = m_fifo_pos;
@@ -88636,14 +88671,15 @@ index 00000000..0de96bb8
 +}
 diff --git a/gpu/rsx/Emu/RSX/RSXThread.cpp b/gpu/rsx/Emu/RSX/RSXThread.cpp
 new file mode 100644
-index 00000000..c0e06910
+index 00000000..46093634
 --- /dev/null
 +++ b/gpu/rsx/Emu/RSX/RSXThread.cpp
-@@ -0,0 +1,4099 @@
+@@ -0,0 +1,4101 @@
 +#include "stdafx.h"
 +
 +// ps3recomp: see nv47_sync.hpp
 +extern void (*g_ps3recomp_rsx_write_hook)(u32 address, u32 size);
++#include "Emu/RSX/ps3recomp_store.h"
 +extern void (*g_ps3recomp_rsx_report_hook)(u32 address, bool awaited);
 +#include "RSXThread.h"
 +// ps3recomp: wakes the RSX thread's report hold (gpu/bridge/ps3rsx_thread.cpp)
@@ -91539,8 +91575,9 @@ index 00000000..c0e06910
 +		rsx::reservation_lock<true> lock(sink, 16);
 +		if (g_ps3recomp_rsx_report_hook) // ps3recomp
 +			g_ps3recomp_rsx_report_hook(sink, vm::_ptr<atomic_t<CellGcmReportData>>(sink)->load().padding != 0u);
-+		vm::_ptr<atomic_t<CellGcmReportData>>(sink)->store({timestamp(), value, 0});
-+		if (g_ps3recomp_rsx_write_hook) g_ps3recomp_rsx_write_hook(sink, 16); // ps3recomp
++		const u64 ts = timestamp();
++		// ps3recomp: inside the host's lock-line lock when it gives one (ps3recomp_store.h)
++		ps3recomp_guest_store(sink, 16, [&] { vm::_ptr<atomic_t<CellGcmReportData>>(sink)->store({ts, value, 0}); });
 +	}
 +
 +	u32 thread::copy_zcull_stats(u32 memory_range_start, u32 memory_range, u32 destination)
@@ -93245,14 +93282,15 @@ index 00000000..fd8baef5
 +}
 diff --git a/gpu/rsx/Emu/RSX/RSXZCULL.cpp b/gpu/rsx/Emu/RSX/RSXZCULL.cpp
 new file mode 100644
-index 00000000..db405986
+index 00000000..01da9bc4
 --- /dev/null
 +++ b/gpu/rsx/Emu/RSX/RSXZCULL.cpp
-@@ -0,0 +1,1223 @@
+@@ -0,0 +1,1222 @@
 +#include "stdafx.h"
 +
 +// ps3recomp: see nv47_sync.hpp
 +extern void (*g_ps3recomp_rsx_write_hook)(u32 address, u32 size);
++#include "Emu/RSX/ps3recomp_store.h"
 +extern void (*g_ps3recomp_rsx_report_hook)(u32 address, bool awaited);
 +#include "Core/RSXEngLock.hpp"
 +#include "Core/RSXReservationLock.hpp"
@@ -93667,8 +93705,8 @@ index 00000000..db405986
 +			rsx::reservation_lock<true> lock(sink, 16);
 +			auto report = vm::get_super_ptr<atomic_t<CellGcmReportData>>(sink);
 +			if (g_ps3recomp_rsx_report_hook) g_ps3recomp_rsx_report_hook(sink, report->load().padding != 0u); // ps3recomp
-+			report->store({timestamp, value, 0});
-+			if (g_ps3recomp_rsx_write_hook) g_ps3recomp_rsx_write_hook(sink, 16); // ps3recomp
++			// ps3recomp: inside the host's lock-line lock when it gives one (ps3recomp_store.h)
++			ps3recomp_guest_store(sink, 16, [&] { report->store({timestamp, value, 0}); });
 +		}
 +
 +		void ZCULL_control::write(queued_report_write* writer, u64 timestamp, u32 value)
@@ -93743,10 +93781,8 @@ index 00000000..db405986
 +				const auto label = m_deferred_labels.front();
 +				m_deferred_labels.pop_front();
 +
-+				vm::write<atomic_t<RsxSemaphore>>(label.address, label.data);
-+
-+				if (g_ps3recomp_rsx_write_hook)
-+					g_ps3recomp_rsx_write_hook(label.address, 4);
++				// ps3recomp: inside the host's lock-line lock when it gives one (ps3recomp_store.h)
++				ps3recomp_guest_store(label.address, 4, [&] { vm::write<atomic_t<RsxSemaphore>>(label.address, label.data); });
 +
 +				if (s_zcull_stats)
 +				{
@@ -136940,6 +136976,43 @@ index 00000000..05423496
 +	std::pair<std::string_view, std::string_view> get_method_name(u32 id, std::string& result_str);
 +
 +	std::add_pointer_t<void(std::string&, u32, u32)> get_pretty_printing_function(u32 id);
++}
+diff --git a/gpu/rsx/Emu/RSX/ps3recomp_store.h b/gpu/rsx/Emu/RSX/ps3recomp_store.h
+new file mode 100644
+index 00000000..36b652c4
+--- /dev/null
++++ b/gpu/rsx/Emu/RSX/ps3recomp_store.h
+@@ -0,0 +1,31 @@
++#pragma once
++
++// ps3recomp: a store the RSX makes into guest memory (a report, a semaphore label) on a line the host's SPUs may
++// hold a lock-line reservation on. The host's PUTLLC compares the reserved line and commits its local store
++// under one lock (runtime/spu/spu_channels.c); a store that lands between that compare and that commit is written
++// straight back over, and nobody learns it happened. In God of War III the report that zeroes the SPURS workload
++// flag (spurs+0x6C, the trigger of the RsxSync workload) shares its line with what the SPURS kernel commits, so a
++// lost zero stops RsxSync, the label the RSX then waits for is never written, and the game stops.
++//
++// With the lock hooks set (gpu/bridge/ps3rsx_thread.cpp, from ps3rsx_params) the store is made inside that lock and
++// the unlock hook tells the reservations on the lines before it releases it, as the host's own PPU stores do
++// (VM_WRITE_COH). Without them: the store, then the write hook, as before.
++
++extern void (*g_ps3recomp_rsx_write_hook)(u32 address, u32 size);
++extern void (*g_ps3recomp_rsx_store_lock)();
++extern void (*g_ps3recomp_rsx_store_unlock)(u32 address, u32 size);
++
++template <typename F>
++inline void ps3recomp_guest_store(u32 address, u32 size, F&& store)
++{
++	if (g_ps3recomp_rsx_store_lock)
++	{
++		g_ps3recomp_rsx_store_lock();
++		store();
++		g_ps3recomp_rsx_store_unlock(address, size);
++		return;
++	}
++	store();
++	if (g_ps3recomp_rsx_write_hook)
++		g_ps3recomp_rsx_write_hook(address, size);
 +}
 diff --git a/gpu/rsx/Emu/RSX/rsx_cache.h b/gpu/rsx/Emu/RSX/rsx_cache.h
 new file mode 100644

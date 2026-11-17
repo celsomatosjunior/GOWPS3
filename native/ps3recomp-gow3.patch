@@ -153,7 +153,7 @@ index 7e222c92..33b21296 100644
  }
  
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
-index 82ea66c6..f8ff1ab4 100644
+index 82ea66c6..6e0a77d6 100644
 --- a/libs/spurs/cellSpurs.c
 +++ b/libs/spurs/cellSpurs.c
 @@ -16,6 +16,7 @@
@@ -174,7 +174,19 @@ index 82ea66c6..f8ff1ab4 100644
  #ifdef _WIN32
  #include <windows.h>
  #else
-@@ -445,6 +449,7 @@ struct SpursPmSlot {
+@@ -272,6 +276,11 @@ extern void spu_lockline_lock(void);
+ extern void spu_lockline_unlock(void);
+ extern int  spu_coh_is_reserved(uint32_t);
+ extern void spu_coh_notify_write(uint32_t);
++/* Workload-flag consumptions (both kernel paths), for the GOW3 stall dump: against the RSX's reports on the
++ * flag (gow3_rsx_rpcs3.cpp) they tell a lost zero from a chain that stopped after RsxSync ran. */
++volatile unsigned g_spurs_flag_consumed = 0;
++volatile unsigned long long g_spurs_flag_consumed_ms = 0;
++static void spurs_flag_consumed_note(void) { g_spurs_flag_consumed++; g_spurs_flag_consumed_ms = GetTickCount64(); }
+ static inline u16 ef_r16(uint32_t a) { const uint8_t* p = vm_base + a; return (u16)((p[0] << 8) | p[1]); }
+ static inline void ef_w16(uint32_t a, u16 v) { uint8_t* p = vm_base + a; p[0] = (uint8_t)(v >> 8); p[1] = (uint8_t)v; }
+ static inline void ef_line_end(uint32_t ea)
+@@ -445,6 +454,7 @@ struct SpursPmSlot {
      const uint8_t* pm;
      u64 data;
      HANDLE thread;
@@ -182,7 +194,7 @@ index 82ea66c6..f8ff1ab4 100644
  };
  static struct SpursInst {
      u32 ea, nspus;
-@@ -492,6 +497,50 @@ static void spurs_commit_hook(uint32_t line)
+@@ -492,6 +502,50 @@ static void spurs_commit_hook(uint32_t line)
  }
  static SRWLOCK s_workload_registry_lock = SRWLOCK_INIT;
  
@@ -233,7 +245,7 @@ index 82ea66c6..f8ff1ab4 100644
  static s32 spurs_scheduler_start(struct SpursInst* si);
  static s32 spurs_scheduler_stop(struct SpursInst* si, u32 ea);
  static void spurs_scheduler_retire(u32 ea);
-@@ -560,6 +609,8 @@ static s32 spurs_initialize_common(u32 spurs_ea, u32 nspus, const char* prefix)
+@@ -560,6 +614,8 @@ static s32 spurs_initialize_common(u32 spurs_ea, u32 nspus, const char* prefix)
      memset(vm_base + spurs_ea, 0, SPURS_INST_SIZE);
      *(vm_base + spurs_ea + SPURS_NSPUS) = (u8)si->nspus;
      vm_write64(spurs_ea + SPURS_WKL_FLAG, 0xFFFFFFFFFFFFFFFFull); /* no receiver */
@@ -242,7 +254,7 @@ index 82ea66c6..f8ff1ab4 100644
  
      s32 start_rc = spurs_scheduler_start(si);
      AcquireSRWLockExclusive(&si->lock);
-@@ -874,6 +925,40 @@ static int spurs_guest_range_valid(u32 ea, u32 bytes)
+@@ -874,6 +930,40 @@ static int spurs_guest_range_valid(u32 ea, u32 bytes)
   * Taskset
   * =====================================================================*/
  
@@ -283,7 +295,7 @@ index 82ea66c6..f8ff1ab4 100644
  static s32 spurs_create_taskset(CellSpurs* spurs, CellSpursTaskset* taskset,
                                  u64 args, const u8* priority, u32 maxContention,
                                  u32 taskset_size)
-@@ -910,6 +995,7 @@ static s32 spurs_create_taskset(CellSpurs* spurs, CellSpursTaskset* taskset,
+@@ -910,6 +1000,7 @@ static s32 spurs_create_taskset(CellSpurs* spurs, CellSpursTaskset* taskset,
      spurs_taskset_init(taskset_ea, spurs_ea, args, /*wid*/0,
                         taskset_size, /*evf1*/0, /*evf2*/0);
      g_ydkj_real_taskset_ea = taskset_ea;
@@ -291,7 +303,7 @@ index 82ea66c6..f8ff1ab4 100644
  
      g_ydkj_real_spurs_ea = spurs_ea;   /* capture for the taskset-policy handoff (LS[0x1C0]) */
      printf("[cellSpurs] CreateTaskset() ea=0x%08X spurs=0x%08X (real BE layout)\n", taskset_ea, spurs_ea);
-@@ -937,6 +1023,84 @@ s32 cellSpursCreateTasksetWithAttribute(CellSpurs* spurs,
+@@ -937,6 +1028,84 @@ s32 cellSpursCreateTasksetWithAttribute(CellSpurs* spurs,
      return spurs_create_taskset(spurs, taskset, 0, NULL, 0, size);
  }
  
@@ -376,7 +388,7 @@ index 82ea66c6..f8ff1ab4 100644
  s32 cellSpursDestroyTaskset(CellSpursTaskset* taskset)
  {
      taskset = GUEST_PTR(taskset, CellSpursTaskset*);
-@@ -1000,6 +1164,81 @@ s32 cellSpursTasksetAttributeSetName(CellSpursTasksetAttribute* attr,
+@@ -1000,6 +1169,81 @@ s32 cellSpursTasksetAttributeSetName(CellSpursTasksetAttribute* attr,
   * from an EA computed out of r3 = that argument (spu_0003 task main @0x17e70:
   * `wrch $ch18, f(r3.word3)`), so a zero argument makes it GET from EA 0 and
   * stall. lsPattern/argument arrive as guest EAs (generic adapter forwards r3..r10). */
@@ -458,7 +470,7 @@ index 82ea66c6..f8ff1ab4 100644
  s32 cellSpursCreateTask(CellSpursTaskset* taskset, CellSpursTaskId* taskId,
                          void* elf, void* context, u32 sizeContext,
                          u32 lsPattern_ea, u32 argument_ea)
-@@ -1714,6 +1953,126 @@ static WklPm* spurs_resolve_pm(u32 wid)
+@@ -1714,6 +1958,128 @@ static WklPm* spurs_resolve_pm(u32 wid)
   * occupies only its own slot; a later runnable producer can use another slot.
   * Admission and lifecycle state are serialized per instance. Guest execution
   * never runs under that lock, and only a genuine return releases contention. */
@@ -556,8 +568,10 @@ index 82ea66c6..f8ff1ab4 100644
 +        if (ready) vm_base[ea + SPURS_WKL_READY1 + wid] = (u8)(ready - 1);
 +        if (signal & (0x8000u >> wid))
 +            ef_w16(ea + SPURS_WKL_SIGNAL1, (u16)(signal & ~(0x8000u >> wid)));
-+        if (vm_read32(ea + 0x6C) == 0 && vm_read8(ea + 0x77) == wid)
++        if (vm_read32(ea + 0x6C) == 0 && vm_read8(ea + 0x77) == wid) {
 +            memset(vm_base + ea + 0x6C, 0xFF, 4);
++            spurs_flag_consumed_note();
++        }
 +        ef_line_end(ea);
 +        slot->data = vm_read64(ea + SPURS_WKL_INFO1 + wid * SPURS_WKL_INFO_SZ + 8);
 +    }
@@ -585,7 +599,7 @@ index 82ea66c6..f8ff1ab4 100644
  static DWORD WINAPI spurs_pm_worker(LPVOID p)
  {
      struct SpursPmSlot* slot = (struct SpursPmSlot*)p;
-@@ -1723,16 +2082,116 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
+@@ -1723,16 +2089,116 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
      { ULONG g = 256 * 1024; SetThreadStackGuarantee(&g); }
  #endif
      ps3_tprof_thread('S', (uint32_t)slot->spu_num);
@@ -706,7 +720,7 @@ index 82ea66c6..f8ff1ab4 100644
          AcquireSRWLockExclusive(&si->lock);
          u32 wid = slot->wid;
          if (si->active[wid]) si->active[wid]--;
-@@ -1740,7 +2199,7 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
+@@ -1740,7 +2206,7 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
          vm_base[slot->ea + SPURS_WKL_CURCONT + wid] = si->active[wid];
          ef_line_end(slot->ea);
          if (polls) si->idle[wid] = 0;
@@ -715,7 +729,7 @@ index 82ea66c6..f8ff1ab4 100644
          slot->busy = 0;
          WakeAllConditionVariable(&si->wake);
      }
-@@ -1767,7 +2226,23 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1767,7 +2233,23 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
          if (__atomic_exchange_n(&si->kick, 0, __ATOMIC_ACQ_REL)) {
              kick_pass = ++kick_run < 16;
          } else {
@@ -740,7 +754,7 @@ index 82ea66c6..f8ff1ab4 100644
              /* This full pass reads the line after any commit that woke it. */
              (void)__atomic_exchange_n(&si->kick, 0, __ATOMIC_ACQ_REL);
          }
-@@ -1779,8 +2254,52 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1779,8 +2261,52 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
          if (!kick_pass) si->pass_no++;
          u32 enabled = vm_read32(ea + SPURS_WKL_ENABLED);
          for (u32 sn = 0; sn < si->nspus; sn++) {
@@ -793,7 +807,7 @@ index 82ea66c6..f8ff1ab4 100644
              for (u32 checked = 0; checked < 16; checked++) {
                  u32 wid = si->cursor;
                  si->cursor = (wid + 1) & 15;
-@@ -1790,13 +2309,17 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1790,13 +2316,17 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                      continue;
                  if (!vm_read8(ea + SPURS_WKL_INFO1 + wid * SPURS_WKL_INFO_SZ + 0x18 + sn))
                      continue; /* priority zero makes this physical lane ineligible */
@@ -813,7 +827,7 @@ index 82ea66c6..f8ff1ab4 100644
                  if (kicked) si->idle[wid] = 0;
                  if (!kicked && (kick_pass || (si->pass_no & ((1u << si->idle[wid]) - 1))))
                      continue;
-@@ -1806,7 +2329,19 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1806,7 +2336,20 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                  if (ready) vm_base[ea + SPURS_WKL_READY1 + wid] = (u8)(ready - 1);
                  if (signal & (0x8000u >> wid))
                      ef_w16(ea + SPURS_WKL_SIGNAL1, (u16)(signal & ~(0x8000u >> wid)));
@@ -823,6 +837,7 @@ index 82ea66c6..f8ff1ab4 100644
 +                     * store that takes the lock-line itself, and this already holds it. */
 +                    memset(vm_base + ea + 0x6C, 0xFF, 4);
 +                    consumed = 1;
++                    spurs_flag_consumed_note();
 +                }
                  ef_line_end(ea);
 +                if (consumed) {
@@ -833,7 +848,7 @@ index 82ea66c6..f8ff1ab4 100644
                  slot->fn = pm->fn; slot->image_id = pm->image_id;
                  slot->pm = vm_base + (u32)(uintptr_t)s_workloads[wid].pm;
                  slot->pm_size = s_workloads[wid].sizePm;
-@@ -1833,6 +2368,8 @@ static s32 spurs_scheduler_start(struct SpursInst* si)
+@@ -1833,6 +2376,8 @@ static s32 spurs_scheduler_start(struct SpursInst* si)
      __atomic_store_n(&si->kick, 0, __ATOMIC_RELAXED);
      { extern void (*g_spu_line_commit_hook)(uint32_t);
        g_spu_line_commit_hook = spurs_commit_hook; }
@@ -2448,10 +2463,18 @@ index 35052c67..b059c9ef 100644
  #define VMX_FUN(name, expr, flush_in, nanmode) \
  VMX_INL void name(VMX_D, VMX_B, uint32_t vscr) { const uint8_t* b = (const uint8_t*)b_; uint8_t r[16]; \
 diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
-index 5fc50208..367d28ee 100644
+index 5fc50208..67e7a4d3 100644
 --- a/runtime/spu/spu_channels.c
 +++ b/runtime/spu/spu_channels.c
-@@ -76,6 +76,7 @@ static uint64_t spu_host_ns(void)
+@@ -23,6 +23,7 @@
+ #include <stdatomic.h>
+ #include <stdio.h>
+ #include <stdlib.h>
++#include <immintrin.h>   /* _mm_pause (SPU_PUTLLC_JANELA) */
+ #include <setjmp.h>
+ /* setjmp/longjmp also save and restore the signal mask on POSIX: one
+  * sigprocmask system call per halt, stack reset or task resume. These frames
+@@ -76,6 +77,7 @@ static uint64_t spu_host_ns(void)
      return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
  #endif
  }
@@ -2459,7 +2482,7 @@ index 5fc50208..367d28ee 100644
  
  /* ---------------------------------------------------------------------------
   * Clean SPU job abort (longjmp). The `br .` halt idiom and other terminal
-@@ -91,6 +92,8 @@ static uint64_t spu_host_ns(void)
+@@ -91,6 +93,8 @@ static uint64_t spu_host_ns(void)
   * released. cellSpurs sets it so a PPU blocked in cellSpursEventFlagWait wakes
   * when a task sets the flag, instead of on its next 2 ms poll. */
  void (*g_spu_line_commit_hook)(uint32_t line) = 0;
@@ -2468,7 +2491,7 @@ index 5fc50208..367d28ee 100644
  /* spu_workload.c: wakes tasks parked in WAIT_SIGNAL on that line's taskset. */
  void spu_taskset_line_committed(uint32_t line);
  /* SPU_LS_WATCH=0x1BE80[,0x927D80...]: watch up to 4 16-byte LS lines (reads
-@@ -576,7 +579,46 @@ volatile unsigned g_spu_putllc_sync_hit = 0;
+@@ -576,7 +580,46 @@ volatile unsigned g_spu_putllc_sync_hit = 0;
   * completion. Chosen above the context/descriptor we park near the top of LS. */
  #define SPU_JOB_RETURN_LS   0x3FF00u
  
@@ -2515,7 +2538,7 @@ index 5fc50208..367d28ee 100644
  static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
  {
      /* Classify FIRST. Every MFC_Cmd write lands here, and only the switch at
-@@ -592,6 +634,9 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
+@@ -592,6 +635,9 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
      uint32_t lsa = ctx->mfc_lsa & SPU_LS_MASK;
      uint8_t* ls  = &ctx->ls[lsa];
      uint8_t* mem = vm_base + ea;
@@ -2525,7 +2548,7 @@ index 5fc50208..367d28ee 100644
  
      { static int s_t = -1; if (s_t < 0) s_t = getenv("SPU_POLLTRACE") ? 1 : 0;
        if (s_t) { static uint64_t s_n = 0; static uint32_t s_lastea = 0;
-@@ -660,6 +705,11 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
+@@ -660,6 +706,11 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
       * threads and the PPU all write stderr, so a dump split across many fprintf
       * calls comes out shredded and unreadable exactly when it matters. */
      { static int s_ae = -1; static uint32_t s_aea;
@@ -2537,7 +2560,7 @@ index 5fc50208..367d28ee 100644
        if (s_ae < 0) { const char* e = getenv("SPU_ATOM_EA");
          s_aea = e ? (uint32_t)strtoul(e, 0, 16) & ~127u : 0; s_ae = s_aea ? 1 : 0;
          if (s_ae == 1) { extern uint32_t g_barrier_sync_watch;
-@@ -677,8 +727,8 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
+@@ -677,8 +728,8 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
                /* lr (gpr[0]) as well as pc: these atomics sit in generic helpers,
                 * so pc names the HELPER and only lr names the real caller. */
                p += snprintf(buf + p, sizeof buf - p,
@@ -2548,7 +2571,7 @@ index 5fc50208..367d28ee 100644
                              ctx->gpr[0]._u32[0] & SPU_LS_MASK, (uint32_t)ea);
                int nb = s_af == 2 ? 128 : s_af ? 64 : 8;   /* 64 covers +0x30 pendingRecv; =2 the whole line */
                p += snprintf(buf + p, sizeof buf - p, " RAM=");
-@@ -707,6 +757,7 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
+@@ -707,6 +758,7 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
        } }
      switch (cmd) {
      case MFC_GETLLAR_CMD:
@@ -2556,7 +2579,7 @@ index 5fc50208..367d28ee 100644
          /* Lockstep tick: a guest GETLLAR..PUTLLC poll loop is intra-function
           * (all gotos), so it never crosses the SPU_DRAIN tick site -- without a
           * tick here a polling SPU would hold the run token forever while the
-@@ -744,6 +795,8 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
+@@ -744,6 +796,8 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
           * and a store that lands after the read now leaves BOTH stale -- which
           * is what makes the lost-reservation event fire. */
          memcpy(ls, mem, MFC_ATOMIC_LINE);              /* line -> local store */
@@ -2565,7 +2588,26 @@ index 5fc50208..367d28ee 100644
          /* Snapshot from `ls`, NOT a second read of `mem`. Hardware GETLLAR is a
           * single atomic 128-byte read, so the reserved data and the reservation
           * come from the same instant. Reading guest memory twice lets a PPU store
-@@ -843,6 +896,7 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
+@@ -840,9 +894,26 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
+         spu_lockline_lock();
+         if (ctx->resv_valid && ctx->resv_ea == ea &&
+             memcmp(mem, ctx->resv_line, MFC_ATOMIC_LINE) == 0) {
++            /* SPU_PUTLLC_JANELA=<us>,<line hex>[,<line hex>...]: diagnostic, off unless set. Waits <us>
++             * between the compare and the commit of a PUTLLC on those lines, which widens the window in
++             * which a store made outside the lock-line lock (the RSX bridge's reports and labels before
++             * gpu/rsx/Emu/RSX/ps3recomp_store.h) is written back over: a rare lost update made frequent. */
++            { static int jw_us = -1; static uint32_t jw_line[4]; static int jw_n;
++              if (__builtin_expect(jw_us < 0, 0)) {
++                  const char* e = getenv("SPU_PUTLLC_JANELA"); int us = 0, n = 0;
++                  if (e) { char* q; us = (int)strtol(e, &q, 10);
++                      while (*q == ',' && n < 4) { jw_line[n++] = (uint32_t)strtoul(q + 1, &q, 16) & ~127u; } }
++                  jw_n = n; jw_us = us > 0 && n ? us : 0;
++                  if (jw_us) fprintf(stderr, "[putllc-janela] %d us em %d linha(s)\n", jw_us, jw_n);
++              }
++              if (jw_us) for (int i = 0; i < jw_n; i++) if ((ea & ~127u) == jw_line[i]) {
++                  const uint64_t t_end = spu_host_ns() + (uint64_t)jw_us * 1000u;
++                  while (spu_host_ns() < t_end) _mm_pause();
++                  break; } }
              { extern void spu_lockguard_check(spu_context*, uint32_t, const uint8_t*, uint32_t, const char*);
                spu_lockguard_check(ctx, ea, ls, MFC_ATOMIC_LINE, "PUTLLC"); }
              memcpy(mem, ls, MFC_ATOMIC_LINE);          /* commit local store */
@@ -2573,7 +2615,7 @@ index 5fc50208..367d28ee 100644
              /* A committing PUTLLC is a line write like any other, so every
               * PEER reservation on it is lost and its SPU takes SPU_EVENT_LR.
               * Silent, this is the same lost update the PPU half was added to
-@@ -929,6 +983,7 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
+@@ -929,6 +1000,7 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
          ctx->resv_valid = 0;                           /* reservation consumed */
          spu_lockline_unlock();
          if (ctx->atomic_stat == 0) {
@@ -2581,7 +2623,7 @@ index 5fc50208..367d28ee 100644
              spu_taskset_line_committed(ea & ~127u);
              if (g_spu_line_commit_hook) g_spu_line_commit_hook(ea & ~127u);
          }
-@@ -940,6 +995,7 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
+@@ -940,6 +1012,7 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
          { extern void spu_lockguard_check(spu_context*, uint32_t, const uint8_t*, uint32_t, const char*);
            spu_lockguard_check(ctx, ea, ls, MFC_ATOMIC_LINE, "PUTLLUC"); }
          memcpy(mem, ls, MFC_ATOMIC_LINE);              /* unconditional store */
@@ -2589,7 +2631,7 @@ index 5fc50208..367d28ee 100644
          /* Unconditional, so it invalidates EVERY reservation on the line --
           * this SPU's included, which is why the notify runs before the
           * bookkeeping below rather than after it. A peer left holding a
-@@ -948,6 +1004,7 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
+@@ -948,6 +1021,7 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
          spu_coh_notify_write(ea);
          ctx->resv_valid = 0; ctx->atomic_stat = 2;   /* PUTLLUC complete */
          spu_lockline_unlock();
@@ -2597,7 +2639,7 @@ index 5fc50208..367d28ee 100644
          spu_taskset_line_committed(ea & ~127u);
          if (g_spu_line_commit_hook) g_spu_line_commit_hook(ea & ~127u);
          return 1;
-@@ -976,6 +1033,8 @@ static int channel_is_mfc(uint32_t ch)
+@@ -976,6 +1050,8 @@ static int channel_is_mfc(uint32_t ch)
   * ===========================================================================*/
  void spu_wrch(spu_context* ctx, uint32_t channel, u128 value)
  {
@@ -2606,7 +2648,7 @@ index 5fc50208..367d28ee 100644
      /* SPU_CHHIST=1: which channels a job actually touches, and how often. A
       * worker that never issues an MFC command is either not being handed its
       * work descriptor or is waiting on a channel we never satisfy; the channel
-@@ -1019,7 +1078,7 @@ void spu_wrch(spu_context* ctx, uint32_t channel, u128 value)
+@@ -1019,7 +1095,7 @@ void spu_wrch(spu_context* ctx, uint32_t channel, u128 value)
           * polling the MMIO window, whereas SPURS-thread mailboxes are drained
           * by paths that do not wake a stalled writer. A raw SPU's local store
           * is the guest window, not its own buffer. */
@@ -2615,7 +2657,7 @@ index 5fc50208..367d28ee 100644
              while (ctx->ch_out_mbox.count >= SPU_MBOX_DEPTH && ctx->status != SPU_STATUS_STOPPED) {
                  spu_honour_stop_request(ctx);
                  Sleep(0);
-@@ -1147,6 +1206,28 @@ static int spu_ch_ready(spu_context* ctx, uint32_t channel)
+@@ -1147,6 +1223,28 @@ static int spu_ch_ready(spu_context* ctx, uint32_t channel)
      }
  }
  
@@ -2644,7 +2686,7 @@ index 5fc50208..367d28ee 100644
  /* Signal the per-SPU wait CV so a blocked spu_rdch re-checks its predicate.
   * MUST be called by every producer AFTER it makes a read predicate true. */
  void spu_ch_wake(spu_context* ctx)
-@@ -1220,7 +1301,19 @@ static void spu_ch_wait(spu_context* ctx, uint32_t channel, const char* op)
+@@ -1220,7 +1318,19 @@ static void spu_ch_wait(spu_context* ctx, uint32_t channel, const char* op)
  /* ===========================================================================
   * Channel read (returns value in the preferred word slot)
   * ===========================================================================*/
@@ -2664,7 +2706,7 @@ index 5fc50208..367d28ee 100644
  {
      spu_honour_stop_request(ctx);
      { static int s_c = -1; if (s_c < 0) { const char* e = getenv("SPU_CHHIST"); s_c = e ? (atoi(e) > 0 ? atoi(e) : 2000) : 0; }
-@@ -1942,15 +2035,56 @@ int spu_overlay_register_verified_region(uint32_t content_ea, uint32_t load_lsa,
+@@ -1942,15 +2052,56 @@ int spu_overlay_register_verified_region(uint32_t content_ea, uint32_t load_lsa,
      return 1;
  }
  
@@ -2721,7 +2763,47 @@ index 5fc50208..367d28ee 100644
      }
      return *state == SPU_OVERLAY_VERIFIED;
  }
-@@ -2129,21 +2263,69 @@ void spu_lockguard_check(spu_context* ctx, uint32_t ea, const uint8_t* src, uint
+@@ -2112,8 +2263,39 @@ static void spu_ovl_dump(spu_context* ctx, uint32_t ea, uint32_t lsa, const uint
+  * halfwords). Log any SPU write that moves either halfword by anything other
+  * than 0 or +1 -- a stale whole-line store rolling the lock back. `src` is the
+  * new bytes for [ea, ea+size). */
++/* SPU_FLAGGUARD=<hex ea>: diagnostic, off unless set. The word at that EA is one only the RSX zeroes and only the
++ * host's SPURS kernel sets back (the workload flag, spurs+0x6C): any SPU write that takes it from zero to anything
++ * else wipes out a zero the kernel never saw. Counted (read by the host's stall dump) and the first ones logged. */
++volatile unsigned g_spu_flagguard_hits;
++volatile unsigned long long g_spu_flagguard_ms;
++static void spu_flagguard_check(spu_context* ctx, uint32_t ea, const uint8_t* src, uint32_t size, const char* what)
++{
++    static int64_t s_f = -2;
++    if (s_f == -2) { const char* e = getenv("SPU_FLAGGUARD"); s_f = e ? (int64_t)strtoul(e, 0, 16) : -1; }
++    if (s_f < 0 || !vm_base) return;
++    uint32_t g = (uint32_t)s_f;
++    if (g < ea || g + 4 > ea + size) return;
++    const uint8_t* o = vm_base + g; const uint8_t* n = src + (g - ea);
++    const uint32_t ow = ((uint32_t)o[0] << 24) | ((uint32_t)o[1] << 16) | ((uint32_t)o[2] << 8) | o[3];
++    const uint32_t nw = ((uint32_t)n[0] << 24) | ((uint32_t)n[1] << 16) | ((uint32_t)n[2] << 8) | n[3];
++    if (ow != 0 || nw == 0) return;
++    g_spu_flagguard_hits++;
++    g_spu_flagguard_ms = GetTickCount64();
++    /* The reservation's copy of the word: 0xFFFFFFFF with a zero in memory is a zero stored between the
++     * PUTLLC's compare and its commit (outside the lock-line lock); zero there means the SPU code itself
++     * wrote the new value over a zero it had read. */
++    uint32_t rw = 0xDEADBEEFu;
++    if (ctx && ctx->resv_ea == (g & ~127u)) { const uint8_t* r = ctx->resv_line + (g & 127u);
++        rw = ((uint32_t)r[0] << 24) | ((uint32_t)r[1] << 16) | ((uint32_t)r[2] << 8) | r[3]; }
++    static int c; if (PS3_LOG_FIRST(c, 32))
++        fprintf(stderr, "[flagguard] %s spu%u img=0x%X pc=0x%05X ea=0x%08X size=%u: 0x%08X -> 0x%08X (reserva 0x%08X)\n",
++                what, ctx ? (unsigned)(ctx->spu_id & 7u) : 0u, ctx ? (unsigned)ctx->image_id : 0u,
++                ctx ? (unsigned)(ctx->pc & SPU_LS_MASK) : 0u, ea, size, ow, nw, rw);
++}
++
+ void spu_lockguard_check(spu_context* ctx, uint32_t ea, const uint8_t* src, uint32_t size, const char* what)
+ {
++    spu_flagguard_check(ctx, ea, src, size, what);
+     static int64_t s_g = -2;
+     if (s_g == -2) { const char* e = getenv("SPU_LOCKGUARD"); s_g = e ? (int64_t)strtoul(e, 0, 16) : -1; }
+     if (s_g < 0 || !vm_base) return;
+@@ -2129,21 +2311,69 @@ void spu_lockguard_check(spu_context* ctx, uint32_t ea, const uint8_t* src, uint
                  ea, size, os, on, ns, nn); }
  }
  
@@ -2793,7 +2875,7 @@ index 5fc50208..367d28ee 100644
              }
          }
      }
-@@ -2161,6 +2343,12 @@ void spu_overlay_note_get(spu_context* ctx, uint32_t ea, const uint8_t* ls, uint
+@@ -2161,6 +2391,12 @@ void spu_overlay_note_get(spu_context* ctx, uint32_t ea, const uint8_t* ls, uint
                  for (unsigned slot = 0; slot < 4; ++slot) {
                      if (ctx->resident_code[slot].image_id && ctx->resident_code[slot].lsa != lsa)
                          continue;
@@ -2806,7 +2888,7 @@ index 5fc50208..367d28ee 100644
                      ctx->resident_code[slot].lsa = lsa;
                      ctx->resident_code[slot].size = o->span;
                      ctx->resident_code[slot].source_ea = ea;
-@@ -2575,6 +2763,45 @@ static int spu_smc_microstep(spu_context* ctx)
+@@ -2575,6 +2811,45 @@ static int spu_smc_microstep(spu_context* ctx)
                fprintf(stderr, "[spu-smc] microstep img=%d pc=0x%05X word 0x%08X not in the"
                        " microstep set -- handing to the interpreter (steps=%d)\n",
                        ctx->image_id, pc, w, steps); }
@@ -2852,7 +2934,7 @@ index 5fc50208..367d28ee 100644
          ctx->pc = pc;
          /* Stop at the drain's return point too: it sits mid-function, so it is
           * no lifted entry, and a job's return would otherwise run on through
-@@ -2600,8 +2827,124 @@ static int spu_smc_microstep(spu_context* ctx)
+@@ -2600,8 +2875,124 @@ static int spu_smc_microstep(spu_context* ctx)
      return 0;
  }
  
@@ -2977,7 +3059,7 @@ index 5fc50208..367d28ee 100644
      /* Real SPU bi/bisl mask the target to the 256 KB local store; the high bits
       * of a computed pointer (e.g. a packed handle like 0x7a028803) are ignored.
       * Without this, any indirect branch through such a value fails the lookup
-@@ -2658,6 +3001,37 @@ void spu_indirect_branch(spu_context* ctx)
+@@ -2658,6 +3049,37 @@ void spu_indirect_branch(spu_context* ctx)
              return;
          }
      }
@@ -3015,7 +3097,7 @@ index 5fc50208..367d28ee 100644
      /* Synthetic HLE tasks have no resident taskset policy at 0xA70. Real
       * tasksets use the SAME syscall address, so the API table alone is not
       * evidence that this is an HLE context. LLE tasks must enter Sony's policy
-@@ -2722,6 +3096,32 @@ void spu_indirect_branch(spu_context* ctx)
+@@ -2722,6 +3144,32 @@ void spu_indirect_branch(spu_context* ctx)
              for (int i = 0; i < 64; i++) if (pages[i]) p += snprintf(line+p, sizeof(line)-p, " 0x%X", i<<12);
              fprintf(stderr, "%s\n", line); }
        } }
@@ -3048,7 +3130,7 @@ index 5fc50208..367d28ee 100644
      { static int s_t = -1; if (s_t < 0) s_t = getenv("SPU_POLLTRACE") ? 1 : 0;
        if (s_t) { static uint64_t s_n = 0; static uint32_t s_last = 0; static uint64_t s_run = 0;
          if (ctx->pc == s_last) s_run++; else { s_last = ctx->pc; s_run = 1; }
-@@ -3049,6 +3449,7 @@ void spu_indirect_branch(spu_context* ctx)
+@@ -3049,6 +3497,7 @@ void spu_indirect_branch(spu_context* ctx)
                        fprintf(stderr, "[jobexec] dumped LS at job entry -> %s\n", dp); }
                    s_dumped = 1; } } }
      }
@@ -3056,7 +3138,7 @@ index 5fc50208..367d28ee 100644
      if (fn) {
          spu_check_stack_reset(ctx, fn);
          /* MUSTTAIL: a guest loop that iterates through an indirect branch (the
-@@ -3316,4 +3717,102 @@ void spu_trace_rt(spu_context* ctx, uint32_t rt)
+@@ -3316,4 +3765,102 @@ void spu_trace_rt(spu_context* ctx, uint32_t rt)
  
  #ifdef __cplusplus
  }
@@ -3353,7 +3435,7 @@ index ed2bcf58..897219b7 100644
 +#endif
 +}
 diff --git a/runtime/spu/spu_context.h b/runtime/spu/spu_context.h
-index c5ccbec7..e1fcf168 100644
+index c5ccbec7..927fcef1 100644
 --- a/runtime/spu/spu_context.h
 +++ b/runtime/spu/spu_context.h
 @@ -196,6 +196,12 @@ typedef struct spu_context {
@@ -3583,6 +3665,25 @@ index c5ccbec7..e1fcf168 100644
  /* Depth-aware SPU link return (`bi $r0`): host `return` while a matched
   * brsl/bisl frame is live (host_depth>0); at 0 the frame was destroyed (task
   * resume / restack unwind) so dispatch to the link register instead -- faithful
+@@ -1055,6 +1192,18 @@ void spu_direct_init(void);
+         return;                                                \
+     } while (0)
+ 
++/* The return of a leaf that tools/spu_fuse_leaf.py pasted in place of its call (`brsl` to link L): what
++ * SPU_RET + the call bracket leave behind for a straight-line leaf that does not write r0 -- pc = L, the job
++ * capture/replay return hook, image_id back as spu_img_restore sets it (the leaf does not change it). The drain
++ * after such a call never steps (pc == L, no trampoline pending in lifted code); a pending trampoline traps
++ * instead of running a drain the caller's register locals would not see. Touches no register. */
++#define SPU_INL_RET(ctx, L) do {                                              \
++        (ctx)->pc = (uint32_t)(L);                                            \
++        if (__builtin_expect(g_spu_jobcap_live > 0, 0)) spu_jobcap_ret((ctx), (uint32_t)(L)); \
++        if (__builtin_expect(g_spu_trampoline_fn != 0, 0)) __builtin_trap();  \
++        if ((ctx)->module_img_a00) (ctx)->image_id = (ctx)->module_img_a00;   \
++    } while (0)
++
+ /* Host return through a NON-r0 link register. Sony's SPU compiler links
+  * leaf/helper calls through r4/r5/r6/r8/r78 (`brsl $r4, helper` ...
+  * `bi $r4`); SPU_RET would publish r0 as the return PC, which is not where
 diff --git a/runtime/spu/spu_dispatch_mt.c b/runtime/spu/spu_dispatch_mt.c
 index d9f86bb4..b9ded356 100644
 --- a/runtime/spu/spu_dispatch_mt.c
@@ -5754,6 +5855,275 @@ index a657ba61..66c92621 100644
              # PSL1GHT/GCC ELFs: the entry descriptor's second word is NOT a TOC
              # (it repeats the code address); the real r2 the crt establishes is
              # .got + 0x8000 (the ELFv1 TOC bias). Without the right TOC every
+diff --git a/tools/spu_call_reload.py b/tools/spu_call_reload.py
+new file mode 100644
+index 00000000..7becfc56
+--- /dev/null
++++ b/tools/spu_call_reload.py
+@@ -0,0 +1,263 @@
++#!/usr/bin/env python3
++"""
++Reload after a call only the registers the caller itself reads (run after spu_live_flush.py).
++
++spu_reg_locals.py wraps every call to a lifted function (`brsl`) in a store of every written local before it and a
++reload of every local after it: the callee may change any register. In God of War III's EDGE jobs a call inside a
++loop then costs ~70 stores and ~70 reloads per pass (14.5% of the job samples in game sit in these copies), while
++the callee usually changes only its scratch registers (r2-r77 for the leaf 912f:0x4C48) and the caller reads few
++of them afterwards. A value the callee leaves in ctx->gpr is already where the caller's own exits would store it.
++
++For each call to a function of the module this pass computes MOD (every register the callee and what it reaches
++may write: its stores to ctx->gpr, the functions it tail-branches to or calls; anything that leaves the module,
++an indirect branch, or a line touching ctx other than LS/channels is "every register"). After the call:
++
++  * a register the callee cannot write keeps its local (it equals ctx->gpr: the store before the call or the
++    entry load put it there), so it is not reloaded;
++  * a register in MOD that the caller does not read before redefining it is not reloaded either: ctx->gpr holds
++    its value ("ctx-authoritative"), and every later store of that register's stale local back to ctx->gpr (the
++    stores in front of exits, escapes and other calls) is dropped while it is ctx-authoritative.
++
++A register stays reloaded where that does not hold on every path: a local read of it, or a store of it, at a
++point some path reaches with the register ctx-authoritative and another with the local authoritative. Forward
++must/may analysis over the function's lines, with the blame for a conflict going back to the calls it came from,
++iterated to a fixpoint.
++
++The stores in front of the call stay as they are (only ctx-authoritative registers drop out): a callee that never
++returns to this host frame (a non-local return, spu_restart_dispatch) still finds every register in ctx->gpr.
++Same assumptions as spu_live_flush: SPU_DIRECT/a call reaches the lifted code of its target.
++"""
++
++import re
++import sys
++
++import spu_live_flush as L
++
++_FL = re.compile(r"ctx->gpr\[(\d+)\] = ")
++_RLD = re.compile(r"\br_(\d+) = ctx->gpr\[(\d+)\];\s*")
++_ASSIGN = re.compile(r"\br_(\d+) = (?!=)")
++_TOK = re.compile(r"\br_(\d+)\b")
++_FLUSH1 = re.compile(r"ctx->gpr\[(\d+)\] = r_(\d+);\s*")
++# helpers that take ctx and change no register behind the code's back (rdch writes through `ctx->gpr[N] =`)
++_SAFE = {"SPU_LSR", "SPU_LSW", "spu_ls_read128", "spu_ls_write128", "SPU_DIRECT", "SPU_DIRECT_LOCAL_OK", "SPU_RET",
++         "SPU_RET_REG", "spu_drain_call", "spu_img_restore", "spu_wrch", "spu_rdch", "spu_rchcnt", "spu_halt",
++         "SPU_INL_RET"}
++_CTXCALL = re.compile(r"\b(\w+)\(ctx\s*[,)]")
++
++
++def _opaque(raw):
++    """A call that takes ctx and may change registers without a visible `ctx->gpr[N] =` (a native kernel hook,
++    spu_stop, the indirect branch...); calls of lifted functions (`*_spu_func_*`) are handled as calls."""
++    return any(n not in _SAFE and "_spu_func_" not in n for n in _CTXCALL.findall(raw))
++
++
++def _succ(body, nodes, i):
++    """spu_live_flush's successors, plus the fall-through of a braced block whose exits are conditional
++    (`{ const int _k = hook(ctx); if (_k == 1) { SPU_DIRECT(...); } ... }`), which it takes for an exit."""
++    s = list(nodes[i][2])
++    t = body[i].strip()
++    if not s and i + 1 < len(body) and t.startswith("{") and "if (" in t:
++        s.append(i + 1)
++    return s
++
++
++def _mod_sets(fns):
++    own, succ, allx = {}, {}, set()
++    for n, f in fns.items():
++        w, s = set(), set()
++        for raw, nd in zip(f.body, f.nodes):
++            w |= {int(x) for x in _FL.findall(raw)}
++            ex = nd[3]
++            if ex:
++                if ex[0] in ("direct", "call") and ex[1] in fns:
++                    s.add(ex[1])
++                elif ex[0] != "ret":
++                    allx.add(n)
++            if nd[0] == set(L.ALL) and not ex or _opaque(raw):
++                allx.add(n)
++            if "SPU_RET_REG(" in raw or "SPU_TAILCALL(" in raw:
++                allx.add(n)
++        own[n], succ[n] = w, s
++    mod = {n: (set(L.ALL) if n in allx else set(own[n])) for n in fns}
++    for _ in range(1000):
++        ch = False
++        for n in fns:
++            new = set(mod[n])
++            for t in succ[n]:
++                new |= mod[t]
++            if new != mod[n]:
++                mod[n] = new
++                ch = True
++        if not ch:
++            break
++    return mod
++
++
++def _local_uses(raw):
++    s = _FLUSH1.sub(lambda m: "" if m.group(1) == m.group(2) else m.group(0), raw)
++    s = _RLD.sub(lambda m: "" if m.group(1) == m.group(2) else m.group(0), s)
++    s = re.sub(r"u128 r_(\d+) = ctx->gpr\[\1\];\s*", "", s)
++    s = _ASSIGN.sub("", s)
++    return {int(x) for x in _TOK.findall(s)}
++
++
++def _defs(raw):
++    return {int(x) for x in _ASSIGN.findall(raw)}
++
++
++def plan_function(fn: L.Fn, mod):
++    """-> ({reload line index: registers not reloaded}, {line index: registers whose stores can go})
++
++    Two must-sets per line: C, the registers ctx->gpr holds right, and Lc, the registers whose local is right.
++    Entry: both everything. `r_X = ...`: X in Lc, out of C. A store `ctx->gpr[X] = r_X`: X in C. After a call
++    (its reload line): C everything (the stores before it covered every register not already in C, and the callee
++    leaves its writes in ctx), Lc loses MOD except the reloaded. After any other reload line: C everything, the
++    reloaded in Lc. A store of X where X is in C goes (ctx already holds it). Conflicts (a local read of X not in Lc,
++    a store of X in neither set) put X back into the reloads of every call of the function; repeated to a fixpoint."""
++    body, nodes = fn.body, fn.nodes
++    n = len(body)
++    calls = {}
++    for i, nd in enumerate(nodes):
++        ex = nd[3]
++        if ex and ex[0] == "call" and ex[1] in mod and i + 1 < n:
++            nxt = body[i + 1]
++            rl = {int(a) for a, b in _RLD.findall(nxt) if a == b}
++            if rl and not L._strip_copies(nxt.strip()):
++                m = set(mod[ex[1]]) | {int(x) for x in _FL.findall(body[i])}
++                calls[i + 1] = (rl, m)            # reload line index -> (reloaded, MOD)
++    if not calls:
++        return {}, {}
++    keep = {r: set() for r in calls}                # registers still reloaded after each call
++    preds = [[] for _ in range(n)]
++    succ = [_succ(body, nodes, i) for i in range(n)]
++    for i in range(n):
++        for j in succ[i]:
++            preds[j].append(i)
++    opaque = [_opaque(b) for b in body]
++    condl = [b.strip().startswith("if") for b in body]
++    uses = [_local_uses(b) for b in body]
++    rel = [{int(a) for a, b in _RLD.findall(b) if a == b} for b in body]
++    defs = [_defs(b) - rel[i] for i, b in enumerate(body)]
++    flushes = [{int(a) for a, b in _FLUSH1.findall(b) if a == b} for b in body]
++    other_ctx_w = [{int(x) for x in _FL.findall(b)} - flushes[i] for i, b in enumerate(body)]
++    ALL = set(L.ALL)
++    while True:
++        Cin = [None] * n
++        Lin = [None] * n
++        Cout = [None] * n
++        Lout = [None] * n
++        work = [0]
++        inq = {0}
++        while work:
++            i = work.pop()
++            inq.discard(i)
++            if i == 0:
++                c, l = set(ALL), set(ALL)
++            else:
++                c = l = None
++                for p in preds[i]:
++                    if Cout[p] is None:
++                        continue
++                    c = set(Cout[p]) if c is None else c & Cout[p]
++                    l = set(Lout[p]) if l is None else l & Lout[p]
++                if c is None:
++                    continue
++            Cin[i], Lin[i] = c, l
++            if i in calls:
++                rl, cm = calls[i]
++                co, lo = set(ALL), (l - cm) | keep[i]
++            elif rel[i]:
++                co, lo = set(ALL), l | rel[i]
++            elif opaque[i]:
++                co, lo = set(ALL), set()
++            else:
++                # stores inside `if (...) { ... }` run only on the taken path, which leaves
++                co = (c | (set() if condl[i] else flushes[i])) - defs[i] - other_ctx_w[i]
++                lo = (l | (set() if condl[i] else defs[i])) - other_ctx_w[i]
++            if co != Cout[i] or lo != Lout[i]:
++                Cout[i], Lout[i] = co, lo
++                for j in succ[i]:
++                    if j not in inq:
++                        inq.add(j)
++                        work.append(j)
++        bad = set()
++        for i in range(n):
++            if Cin[i] is None:
++                continue
++            bad |= uses[i] - Lin[i] - defs[i] if defs[i] and flushes[i] else uses[i] - Lin[i]
++            bad |= flushes[i] - Cin[i] - Lin[i] - defs[i]
++        add = False
++        for r, (rl, cm) in calls.items():
++            x = (bad & rl) - keep[r]
++            if x:
++                keep[r] |= x
++                add = True
++        if not add:
++            if bad:      # a conflict no reload of a call can fix: leave the function as it is
++                return {}, {}
++            break
++    drop = {}
++    for i in range(n):
++        if Cin[i] is not None and flushes[i] and not defs[i] and not rel[i]:
++            d = flushes[i] & Cin[i]
++            if d:
++                drop[i] = d
++    # a call whose return point the analysis never reaches keeps every reload
++    return {r: (calls[r][0] - keep[r] if Cin[r] is not None else set()) for r in calls}, drop
++
++
++def process(text: str):
++    lines = text.split("\n")
++    fns, spans = {}, []
++    i = 0
++    while i < len(lines):
++        m = L._SIG.match(lines[i])
++        if m:
++            j = i + 1
++            while j < len(lines) and lines[j] != "}":
++                j += 1
++            fns[m.group(1)] = L.Fn(m.group(1), i, lines[i + 1:j])
++            spans.append((m.group(1), i + 1, j))
++            i = j + 1
++            continue
++        i += 1
++    for fn in fns.values():
++        L.analyse(fn)
++    mod = _mod_sets(fns)
++    st = {"calls": 0, "reloads_before": 0, "reloads_after": 0, "stores_cut": 0}
++    for name, a, b in reversed(spans):
++        fn = fns[name]
++        skip, auth = plan_function(fn, mod)
++        if not skip:
++            continue
++        body = list(fn.body)
++        for r, ks in skip.items():
++            rl = {int(x) for x, y in _RLD.findall(body[r]) if x == y}
++            st["calls"] += 1
++            st["reloads_before"] += len(rl)
++            st["reloads_after"] += len(rl - ks)
++            body[r] = _RLD.sub(lambda mm: "" if mm.group(1) == mm.group(2) and int(mm.group(1)) in ks
++                               else mm.group(0), body[r])
++            if not body[r].strip():
++                body[r] = body[r][:len(body[r]) - len(body[r].lstrip())] + ";"
++        for i2, d in auth.items():
++            def f(mm, d=d):
++                if mm.group(1) == mm.group(2) and int(mm.group(1)) in d:
++                    st["stores_cut"] += 1
++                    return ""
++                return mm.group(0)
++            body[i2] = _FLUSH1.sub(f, body[i2])
++        lines[a:b] = body
++    return "\n".join(lines), st
++
++
++def main():
++    if len(sys.argv) < 3:
++        sys.exit("uso: spu_call_reload.py <entrada.c> <saida.c>")
++    t, st = process(open(sys.argv[1], encoding="utf-8").read())
++    open(sys.argv[2], "w", encoding="utf-8", newline="\n").write(t)
++    print(st)
++
++
++if __name__ == "__main__":
++    main()
 diff --git a/tools/spu_cc_pn.py b/tools/spu_cc_pn.py
 new file mode 100644
 index 00000000..bf0e16a1
@@ -6139,6 +6509,145 @@ index 00000000..b2047997
 +        with open(p, "w", encoding="utf-8", newline="\n") as f:
 +            f.write(text)
 +        print(f"{p}: {n} operands wrapped")
+diff --git a/tools/spu_fuse_leaf.py b/tools/spu_fuse_leaf.py
+new file mode 100644
+index 00000000..ff933f7f
+--- /dev/null
++++ b/tools/spu_fuse_leaf.py
+@@ -0,0 +1,133 @@
++#!/usr/bin/env python3
++"""
++Fuse a straight-line leaf into the functions that call it (run after spu_inline_fallthrough.py, before
++spu_reg_locals.py).
++
++A lifted `brsl` is a host call: the caller stores every written local before it, the callee loads what it reads
++at its entry and stores everything it writes at its exit, and the caller reloads after it. In God of War III's EDGE
++job 912f the leaf 0x4C48 runs inside a loop of 0x52A4 and writes r2-r77 on every pass while the caller reads 22 of
++them: ~1.9% of the job samples in game sit in those copies. With the leaf's body pasted in place of the call, the
++caller's locals are the leaf's registers, and spu_reg_locals / spu_live_flush handle the whole loop as one body.
++
++Only leaves that are exactly a straight line are fused: register assignments and LS accesses, labels nobody jumps
++to, and a single `SPU_RET(ctx);` at the end; nothing else touching ctx, and no write of r0. The call site must be
++the lifter's call bracket, verbatim:
++
++    ctx->gpr[0] = spu_link(0xL); { int32_t _si = (int32_t)ctx->image_id; ctx->host_depth++; F(ctx);
++    spu_drain_call(ctx, 0xL); ctx->host_depth--; spu_img_restore(ctx, _si); }
++
++What the bracket does around such a leaf, and what SPU_INL_RET (spu_context.h) keeps of it:
++  * SPU_RET sets ctx->pc to r0, which is the link L (set right before, never written by the leaf), and returns
++    with host_depth > 0 (the bracket incremented it), so it sets no trampoline: SPU_INL_RET sets ctx->pc = L;
++  * host_depth++ / -- cancel out (nothing in between reads it);
++  * spu_drain_call: spu_jobcap_ret(ctx, L) while capture/replay is armed (kept), then nothing, since pc == L and
++    the trampoline is clear (the dispatcher clears it before it runs lifted code, and lifted code only sets it on
++    its way out). SPU_INL_RET traps if a trampoline is ever pending there instead of running a drain the locals
++    would not see;
++  * spu_img_restore(ctx, _si) with _si the image at the call, which the leaf does not change: image_id becomes
++    module_img_a00 when that is set, else stays (kept).
++The leaf itself stays as it is for every other way in (dispatch, other modules, indirect branches).
++"""
++
++import re
++import sys
++
++_SIG = re.compile(r"^void (\w+)\(spu_context\* ctx\) \{$")
++_LABEL = re.compile(r"^loc_([0-9A-Fa-f]{8}):$")
++_PURE = re.compile(r"^ctx->gpr\[(\d+)\] = [^;]*;$")
++_STORE_LS = re.compile(r"^spu_ls_write128\(ctx, [^;]*\);$")
++_CALL = re.compile(r"^ctx->gpr\[0\] = spu_link\((0x[0-9A-Fa-f]+)\); \{ int32_t _si = \(int32_t\)ctx->image_id; "
++                   r"ctx->host_depth\+\+; (\w+)\(ctx\); spu_drain_call\(ctx, (0x[0-9A-Fa-f]+)\); ctx->host_depth--; "
++                   r"spu_img_restore\(ctx, _si\); \}$")
++
++
++def _functions(lines):
++    out = {}
++    i = 0
++    while i < len(lines):
++        m = _SIG.match(lines[i])
++        if m:
++            j = i + 1
++            while j < len(lines) and lines[j] != "}":
++                j += 1
++            out[m.group(1)] = (i, j)
++            i = j + 1
++            continue
++        i += 1
++    return out
++
++
++def leaf_body(body):
++    """The lines to paste for a fusable leaf (labels dropped, the final SPU_RET removed), or (None, reason)."""
++    st = [b.strip() for b in body if b.strip()]
++    if not st or st[-1] != "SPU_RET(ctx);":
++        return None, "não termina em SPU_RET"
++    out = []
++    for s in st[:-1]:
++        if _LABEL.match(s) or re.match(r"^(?:/\*[^*]*\*/)?\s*;?$", s):
++            continue
++        if "goto" in s or "loc_" in s:
++            return None, "tem goto"
++        m = _PURE.match(s)
++        if m:
++            if m.group(1) == "0":
++                return None, "escreve r0"
++            rhs = s.split(" = ", 1)[1]
++            if re.search(r"\bctx\b", re.sub(r"ctx->gpr\[\d+\]|spu_ls_read128\(ctx,", "", rhs)):
++                return None, f"toca o ctx: {s[:60]}"
++            out.append(s)
++            continue
++        if _STORE_LS.match(s) and not re.search(r"\bctx\b", re.sub(r"ctx->gpr\[\d+\]|spu_ls_write128\(ctx,", "", s)):
++            out.append(s)
++            continue
++        return None, f"linha não reta: {s[:60]}"
++    return out, None
++
++
++def fuse(text: str, leaves):
++    """leaves: function names (or hex SPU addresses, matched as the name's `_spu_func_XXXXXXXX` suffix)."""
++    lines = text.split("\n")
++    fns = _functions(lines)
++    want = set()
++    for x in leaves:
++        if x in fns:
++            want.add(x)
++            continue
++        mod, _, a = x.rpartition(":")   # "912f:4C48": only in the module whose name has that prefix
++        suf = "_spu_func_%08X" % int(a, 16)
++        want |= {n for n in fns if n.endswith(suf) and (not mod or n.startswith("jobmod_" + mod))}
++    paste, st = {}, {"fused": 0, "skipped": []}
++    for n in sorted(want):
++        a, b = fns[n]
++        body, why = leaf_body(lines[a + 1:b])
++        if body is None:
++            st["skipped"].append((n, why))
++        else:
++            paste[n] = body
++    if not paste:
++        return text, st
++    out = []
++    for ln in lines:
++        m = _CALL.match(ln.strip())
++        if m and m.group(2) in paste and m.group(1).lower() == m.group(3).lower():
++            ind = ln[:len(ln) - len(ln.lstrip())]
++            L = m.group(1)
++            out.append(f"{ind}ctx->gpr[0] = spu_link({L});")
++            out.extend(ind + s for s in paste[m.group(2)])
++            out.append(f"{ind}SPU_INL_RET(ctx, {L});")
++            st["fused"] += 1
++            continue
++        out.append(ln)
++    return "\n".join(out), st
++
++
++def main():
++    if len(sys.argv) < 4:
++        sys.exit("uso: spu_fuse_leaf.py <entrada.c> <saida.c> <folha>[,<folha>...]")
++    t, st = fuse(open(sys.argv[1], encoding="utf-8").read(), sys.argv[3].split(","))
++    open(sys.argv[2], "w", encoding="utf-8", newline="\n").write(t)
++    print(st)
++
++
++if __name__ == "__main__":
++    main()
 diff --git a/tools/spu_ibl.py b/tools/spu_ibl.py
 new file mode 100644
 index 00000000..513bb1c6
@@ -6362,10 +6871,10 @@ index 35d8d428..027a2240 100644
          print(f"  {len(lifter.bi_r0_jump)} `bi $r0` computed-jump site(s) "
 diff --git a/tools/spu_live_flush.py b/tools/spu_live_flush.py
 new file mode 100644
-index 00000000..5310d251
+index 00000000..960f217b
 --- /dev/null
 +++ b/tools/spu_live_flush.py
-@@ -0,0 +1,321 @@
+@@ -0,0 +1,331 @@
 +#!/usr/bin/env python3
 +"""
 +Store back only the live registers at the exits of register-local SPU functions.
@@ -6421,6 +6930,7 @@ index 00000000..5310d251
 +_LSPTR = re.compile(r"(?:uint8_t\* )?_ls = ctx->ls;\s*")
 +# channel accesses read only the register they are given
 +_CHAN = re.compile(r"spu_(?:wrch|rdch)\(ctx, ")
++_INLRET = re.compile(r"^SPU_INL_RET\(ctx, 0x[0-9A-Fa-f]+\);$")   # tools/spu_fuse_leaf.py: no register
 +_CALL = re.compile(r"\b(\w+_spu_func_[0-9A-Fa-f]{8})\(ctx\);")
 +
 +
@@ -6502,12 +7012,20 @@ index 00000000..5310d251
 +            continue
 +        e = _exit_of(s)
 +        if e and not s.startswith("if"):
++            if s.startswith("{") and "if (" in s:
++                # `{ const int _k = hook(ctx); if (_k == 1) { SPU_DIRECT(...); } ... }`: the exits are conditional,
++                # the hook reads and may change any register, and the code goes on when it declines
++                fn.nodes.append((set(ALL), set(), nxt, e, None))
++                continue
 +            # an unconditional exit (possibly braced): nothing after it in this path
 +            fn.nodes.append((set(), set(), [], e, None))
 +            continue
 +        if s.startswith("goto "):
 +            g = _GOTO.findall(s)
 +            fn.nodes.append((set(), set(), [fn.labels[int(g[0], 16)]], None, None))
++            continue
++        if _INLRET.match(s):
++            fn.nodes.append((set(), set(), nxt, None, None))
 +            continue
 +        m = _DEF.match(s)
 +        if m and s.count(";") == 1:
@@ -6584,7 +7102,8 @@ index 00000000..5310d251
 +        elif _FLUSH.search(s) and not _strip_copies(s) and i + 1 < len(fn.body):
 +            # a line of stores followed by an unconditional exit line
 +            e = fn.nodes[i + 1][3]
-+            if e and e[0] in ("direct", "ret") and not fn.body[i + 1].strip().startswith("if"):
++            nx = fn.body[i + 1].strip()
++            if e and e[0] in ("direct", "ret") and not nx.startswith("if") and not (nx.startswith("{") and "if (" in nx):
 +                k, t = e
 +                tl = fns[t].live_in if k == "direct" and t in fns else ret_live
 +                raw = _FLUSH.sub(keep(tl), raw)
@@ -6789,10 +7308,10 @@ index 36cbc240..d18fb1db 100644
                                   if max(s, a) < min(e, b)})
 diff --git a/tools/spu_reg_locals.py b/tools/spu_reg_locals.py
 new file mode 100644
-index 00000000..2920aede
+index 00000000..6f272fbc
 --- /dev/null
 +++ b/tools/spu_reg_locals.py
-@@ -0,0 +1,245 @@
+@@ -0,0 +1,246 @@
 +#!/usr/bin/env python3
 +"""
 +Keep SPU registers in C locals inside each lifted function (spu_lifter.py
@@ -6837,7 +7356,8 @@ index 00000000..2920aede
 +_SIG = re.compile(r"^void \w*?(?:_spu_func_([0-9A-Fa-f]{8}))?\(spu_context\* ctx\) \{$")
 +_ASSIGN = re.compile(r"ctx->gpr\[(\d+)\] = ")
 +# Accesses that only read/write LS bytes, never ctx->gpr or control flow.
-+_SAFE_CTX = re.compile(r"ctx->gpr\[\d+\]|spu_ls_read128\(ctx,|spu_ls_write128\(ctx,")
++# SPU_INL_RET (tools/spu_fuse_leaf.py) sets pc/image_id after a fused leaf: no register, no control flow.
++_SAFE_CTX = re.compile(r"ctx->gpr\[\d+\]|spu_ls_read128\(ctx,|spu_ls_write128\(ctx,|SPU_INL_RET\(ctx,")
 +_LEAVES = ("SPU_DIRECT(", "SPU_RET(", "SPU_RET_REG(", "SPU_TAILCALL(")
 +
 +
@@ -7142,6 +7662,165 @@ index 00000000..79133f04
 +    if len(sys.argv) > 2:
 +        open(sys.argv[2], "w", encoding="utf-8").write(res)
 +    print(f"spu_shufb_inv: {n} shufb marked")
+diff --git a/tools/test_spu_call_reload.py b/tools/test_spu_call_reload.py
+new file mode 100644
+index 00000000..fa9ee6cf
+--- /dev/null
++++ b/tools/test_spu_call_reload.py
+@@ -0,0 +1,153 @@
++#!/usr/bin/env python3
++"""Tests for spu_call_reload.py (run: python tools/test_spu_call_reload.py)."""
++import os
++import re
++import sys
++import unittest
++
++sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
++import spu_call_reload as R  # noqa: E402
++
++
++def fn(name, body):
++    return f"void {name}(spu_context* ctx) {{\n" + "\n".join("        " + b for b in body) + "\n}\n"
++
++
++def seg(text, name):
++    s = text[text.index(f"void {name}("):]
++    return s[:s.index("\n}\n")].split("\n")
++
++
++def stores(line):
++    return sorted(int(x) for x in re.findall(r"ctx->gpr\[(\d+)\] = r_\1;", line))
++
++
++def reloads(line):
++    return sorted(int(x) for x in re.findall(r"\br_(\d+) = ctx->gpr\[\1\];", line))
++
++
++CALL = ("ctx->gpr[0] = spu_link(0x110); { int32_t _si = (int32_t)ctx->image_id; ctx->host_depth++; "
++        "m_spu_func_00000400(ctx); spu_drain_call(ctx, 0x110); ctx->host_depth--; spu_img_restore(ctx, _si); }")
++# a leaf that writes r5 and r6 and reads r3
++LEAF = fn("m_spu_func_00000400", [
++    "u128 r_3 = ctx->gpr[3]; u128 r_5 = ctx->gpr[5]; u128 r_6 = ctx->gpr[6];",
++    "r_5 = spu_ai(r_3, 1);",
++    "r_6 = spu_ai(r_3, 2);",
++    "ctx->gpr[5] = r_5; ctx->gpr[6] = r_6;",
++    "SPU_RET(ctx);"])
++ALLREG = "r_0 = ctx->gpr[0]; r_3 = ctx->gpr[3]; r_5 = ctx->gpr[5]; r_6 = ctx->gpr[6]; r_7 = ctx->gpr[7];"
++
++
++def caller(after):
++    return fn("m_spu_func_00000100", [
++        "u128 r_0 = ctx->gpr[0]; u128 r_3 = ctx->gpr[3]; u128 r_5 = ctx->gpr[5]; u128 r_6 = ctx->gpr[6]; "
++        "u128 r_7 = ctx->gpr[7];",
++        "r_3 = spu_il(4);",
++        "r_7 = spu_il(9);",
++        "ctx->gpr[3] = r_3; ctx->gpr[7] = r_7;",
++        CALL,
++        ALLREG] + after)
++
++
++class CallReload(unittest.TestCase):
++    def test_unread_results_not_reloaded(self):
++        a = caller(["r_3 = spu_ai(r_7, 1);",
++                    "ctx->gpr[0] = r_0; ctx->gpr[3] = r_3; ctx->gpr[5] = r_5; ctx->gpr[6] = r_6; ctx->gpr[7] = r_7;",
++                    "SPU_RET(ctx);"])
++        out, st = R.process(a + LEAF)
++        s = seg(out, "m_spu_func_00000100")
++        self.assertEqual(reloads(s[6]), [])           # r0/r5/r6 written by the call, r3/r7 by nobody
++        self.assertEqual(stores(s[8]), [3])           # only r3 changed since the call
++        self.assertEqual(stores(s[4]), [3, 7])        # stores before the call stay
++
++    def test_read_result_reloaded(self):
++        a = caller(["r_3 = spu_ai(r_5, 1);",
++                    "ctx->gpr[3] = r_3; ctx->gpr[5] = r_5;",
++                    "SPU_RET(ctx);"])
++        out, _ = R.process(a + LEAF)
++        s = seg(out, "m_spu_func_00000100")
++        self.assertEqual(reloads(s[6]), [5])
++        self.assertEqual(stores(s[8]), [3])
++
++    def test_merge_with_local_path_reloads(self):
++        # after the call r6 reaches a store both unchanged (ctx right) and redefined (local right): fine;
++        # r5 reaches a store from a path where it was never reloaded and one where it was defined: conflict.
++        a = caller(["if (r_7._u32[0] == 0) goto loc_00000140;",
++                    "r_5 = spu_il(1);",
++                    "loc_00000140:",
++                    "ctx->gpr[5] = r_5;",
++                    "SPU_RET(ctx);"])
++        out, _ = R.process(a + LEAF)
++        s = seg(out, "m_spu_func_00000100")
++        self.assertEqual(reloads(s[6]), [5])
++
++    def test_loop_back_to_entry(self):
++        # the call's results flow back to the loop head, where the entry path has ctx and local both right
++        a = fn("m_spu_func_00000100", [
++            "u128 r_0 = ctx->gpr[0]; u128 r_3 = ctx->gpr[3]; u128 r_5 = ctx->gpr[5]; u128 r_6 = ctx->gpr[6]; "
++            "u128 r_7 = ctx->gpr[7];",
++            "loc_00000100:",
++            "r_7 = spu_ai(r_7, -1);",
++            "ctx->gpr[7] = r_7;",
++            CALL,
++            ALLREG,
++            "if (r_7._u32[0] != 0) goto loc_00000100;",
++            "ctx->gpr[0] = r_0; ctx->gpr[5] = r_5; ctx->gpr[6] = r_6; ctx->gpr[7] = r_7;",
++            "SPU_RET(ctx);"])
++        out, _ = R.process(a + LEAF)
++        s = seg(out, "m_spu_func_00000100")
++        self.assertEqual(reloads(s[6]), [])
++        self.assertEqual(stores(s[4]), [7])
++        self.assertEqual(stores(s[8]), [])
++
++    def test_callee_outside_module_keeps_all(self):
++        a = caller(["SPU_RET(ctx);"]).replace("m_spu_func_00000400(ctx)", "x_spu_func_00000400(ctx)")
++        out, _ = R.process(a + LEAF)
++        s = seg(out, "m_spu_func_00000100")
++        self.assertEqual(reloads(s[6]), [0, 3, 5, 6, 7])
++
++    def test_callee_with_indirect_exit_keeps_all(self):
++        leaf = LEAF.replace("SPU_RET(ctx);", "ctx->pc = ctx->gpr[5]._u32[0]; g_spu_trampoline_fn = "
++                                             "spu_indirect_branch; return;")
++        a = caller(["r_3 = spu_ai(r_7, 1);", "ctx->gpr[3] = r_3;", "SPU_RET(ctx);"])
++        out, _ = R.process(a + leaf)
++        s = seg(out, "m_spu_func_00000100")
++        self.assertEqual(reloads(s[6]), [7])          # MOD everything: the r7 read after the call is reloaded
++        self.assertEqual(stores(s[8]), [3])
++
++    def test_hook_in_callee_writes_everything(self):
++        # a native-kernel hook changes registers behind the code: the callee's MOD is everything
++        leaf = LEAF.replace("r_6 = spu_ai(r_3, 2);",
++                            "r_6 = spu_ai(r_3, 2);\n        ctx->gpr[5] = r_5; ctx->gpr[6] = r_6;"
++                            "\n        if (gow3_edge_x(ctx)) { SPU_RET(ctx); }\n        r_5 = ctx->gpr[5]; r_6 = ctx->gpr[6];")
++        a = caller(["r_3 = spu_ai(r_7, 1);", "ctx->gpr[3] = r_3;", "SPU_RET(ctx);"])
++        out, _ = R.process(a + leaf)
++        s = seg(out, "m_spu_func_00000100")
++        self.assertEqual(reloads(s[6]), [7])
++
++    def test_hook_block_falls_through(self):
++        # `{ const int _k = hook(ctx); if (_k == 1) {...} }` continues on the next line when the hook says no
++        a = caller(["{ const int _k = gow3_edge_y(ctx); if (_k == 1) { SPU_RET(ctx); } }",
++                    "r_0 = ctx->gpr[0]; r_3 = ctx->gpr[3]; r_5 = ctx->gpr[5];",
++                    "r_3 = spu_ai(r_5, 1);", "ctx->gpr[3] = r_3;", "SPU_RET(ctx);"])
++        out, _ = R.process(a + LEAF)
++        s = seg(out, "m_spu_func_00000100")
++        self.assertEqual(stores(s[10]), [3])
++
++    def test_store_in_taken_branch_does_not_count(self):
++        # `if (c) { stores; halt }` stores r5 only when it halts; the call after still needs r5 stored
++        a = fn("m_spu_func_00000100", [
++            "u128 r_0 = ctx->gpr[0]; u128 r_3 = ctx->gpr[3]; u128 r_5 = ctx->gpr[5];",
++            "r_5 = spu_il(7);",
++            "if (r_3._u32[0] == 0) { ctx->gpr[5] = r_5; spu_halt(ctx); return; }",
++            "ctx->gpr[5] = r_5;",
++            CALL,
++            "r_0 = ctx->gpr[0]; r_3 = ctx->gpr[3]; r_5 = ctx->gpr[5];",
++            "SPU_RET(ctx);"])
++        out, _ = R.process(a + LEAF)
++        s = seg(out, "m_spu_func_00000100")
++        self.assertEqual(stores(s[4]), [5])
++
++
++if __name__ == "__main__":
++    unittest.main()
 diff --git a/tools/test_spu_float_inputs.py b/tools/test_spu_float_inputs.py
 new file mode 100644
 index 00000000..b1f01880
@@ -7286,6 +7965,113 @@ index 00000000..b1f01880
 +
 +if __name__ == "__main__":
 +    unittest.main()
+diff --git a/tools/test_spu_fuse_leaf.py b/tools/test_spu_fuse_leaf.py
+new file mode 100644
+index 00000000..93d4a99f
+--- /dev/null
++++ b/tools/test_spu_fuse_leaf.py
+@@ -0,0 +1,101 @@
++#!/usr/bin/env python3
++"""Tests for spu_fuse_leaf.py (run: python tools/test_spu_fuse_leaf.py)."""
++import os
++import sys
++import unittest
++
++sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
++import spu_fuse_leaf as F  # noqa: E402
++import spu_live_flush as LF  # noqa: E402
++from spu_reg_locals import localize_source  # noqa: E402
++
++P = "jobmod_912f_e0"
++
++
++def call(link, fn=f"{P}_spu_func_00004C48", link2=None):
++    return (f"        ctx->gpr[0] = spu_link({link}); {{ int32_t _si = (int32_t)ctx->image_id; ctx->host_depth++; "
++            f"{fn}(ctx); spu_drain_call(ctx, {link2 or link}); ctx->host_depth--; spu_img_restore(ctx, _si); }}")
++
++
++def leaf(body, name=f"{P}_spu_func_00004C48"):
++    return f"void {name}(spu_context* ctx) {{\n" + "\n".join("        " + b for b in body) + "\n}\n"
++
++
++LEAF = leaf(["ctx->gpr[20] = spu_il(0);", "loc_00004C4C:", "/* nop */;",
++             "ctx->gpr[5] = spu_fa(ctx->gpr[3], ctx->gpr[20]);",
++             "ctx->gpr[3] = spu_ls_read128(ctx, spu_and(ctx->gpr[5], 0x3FFF0));", "SPU_RET(ctx);"])
++
++
++def caller(mid):
++    return (f"void {P}_spu_func_00005000(spu_context* ctx) {{\n"
++            "        loc_00005000:\n"
++            "        ctx->gpr[3] = spu_ai(ctx->gpr[3], 1);\n" + mid + "\n"
++            "        ctx->gpr[4] = spu_ai(ctx->gpr[3], 2);\n"
++            "        if (spu_extract_u32(ctx->gpr[4], 0) != 0u) { SPU_DIRECT(ctx, 0x5000, "
++            f"{P}_spu_func_00005000); }}\n"
++            "        SPU_RET(ctx);\n}\n")
++
++
++class FuseLeaf(unittest.TestCase):
++    def test_straight_leaf_is_pasted(self):
++        out, st = F.fuse(LEAF + caller(call("0x5010")), ["4C48"])
++        self.assertEqual(st["fused"], 1)
++        c = out[out.index(f"void {P}_spu_func_00005000"):]
++        self.assertNotIn("spu_func_00004C48(ctx)", c)
++        self.assertIn("ctx->gpr[0] = spu_link(0x5010);\n        ctx->gpr[20] = spu_il(0);", c)
++        self.assertIn("SPU_INL_RET(ctx, 0x5010);", c)
++        self.assertNotIn("loc_00004C4C", c)                 # the leaf's labels do not come along
++        self.assertIn(f"void {P}_spu_func_00004C48(", out)   # the leaf itself stays
++
++    def test_leaf_writing_r0_is_refused(self):
++        bad = LEAF.replace("ctx->gpr[20] = spu_il(0);", "ctx->gpr[0] = spu_il(0);")
++        out, st = F.fuse(bad + caller(call("0x5010")), ["4C48"])
++        self.assertEqual(st["fused"], 0)
++        self.assertEqual(st["skipped"][0][1], "escreve r0")
++
++    def test_leaf_with_branch_or_ctx_call_is_refused(self):
++        for line in ["if (spu_extract_u32(ctx->gpr[5], 0) != 0u) goto loc_00004C4C;",
++                     "ctx->gpr[6] = spu_rdch(ctx, 3);",
++                     "spu_wrch(ctx, 16, ctx->gpr[5]);"]:
++            bad = LEAF.replace("/* nop */;", line)
++            _, st = F.fuse(bad + caller(call("0x5010")), ["4C48"])
++            self.assertEqual(st["fused"], 0, line)
++
++    def test_other_exits_are_refused(self):
++        bad = LEAF.replace("SPU_RET(ctx);", "SPU_DIRECT(ctx, 0x4D00, x);")
++        _, st = F.fuse(bad + caller(call("0x5010")), ["4C48"])
++        self.assertEqual(st["fused"], 0)
++
++    def test_mismatched_bracket_untouched(self):
++        out, st = F.fuse(LEAF + caller(call("0x5010", link2="0x5014")), ["4C48"])
++        self.assertEqual(st["fused"], 0)
++        self.assertIn("spu_func_00004C48(ctx)", out)
++
++    def test_module_prefix(self):
++        _, st = F.fuse(LEAF + caller(call("0x5010")), ["2be9:4C48"])
++        self.assertEqual(st["fused"], 0)
++        _, st = F.fuse(LEAF + caller(call("0x5010")), ["912f:4C48"])
++        self.assertEqual(st["fused"], 1)
++
++    def test_locals_see_no_escape(self):
++        # after spu_reg_locals the fused return stores and reloads nothing, and the loop stays in locals
++        out, _ = F.fuse(LEAF + caller(call("0x5010")), ["4C48"])
++        loc = localize_source(out)
++        c = loc[loc.index(f"void {P}_spu_func_00005000"):]
++        c = c[:c.index("\n}\n")]
++        ln = [x for x in c.split("\n") if "SPU_INL_RET" in x]
++        self.assertEqual(len(ln), 1)
++        self.assertEqual(ln[0].strip(), "SPU_INL_RET(ctx, 0x5010);")
++        i = c.split("\n").index(ln[0])
++        nxt = c.split("\n")[i + 1]
++        self.assertNotIn("= ctx->gpr[", nxt)                 # no reload after it
++        self.assertNotIn("ctx->gpr[", c.split("\n")[i - 1])  # no store before it
++
++    def test_live_flush_reads_nothing_at_inl_ret(self):
++        fn = LF.Fn("f", 0, ["SPU_INL_RET(ctx, 0x5010);"])
++        LF.analyse(fn)
++        self.assertEqual(fn.nodes[0][0], set())
++
++
++if __name__ == "__main__":
++    unittest.main()
 diff --git a/tools/test_spu_inline_fallthrough.py b/tools/test_spu_inline_fallthrough.py
 new file mode 100644
 index 00000000..01ba966c
@@ -7343,10 +8129,10 @@ index 00000000..01ba966c
 +    unittest.main()
 diff --git a/tools/test_spu_live_flush.py b/tools/test_spu_live_flush.py
 new file mode 100644
-index 00000000..1d348c24
+index 00000000..3a963680
 --- /dev/null
 +++ b/tools/test_spu_live_flush.py
-@@ -0,0 +1,137 @@
+@@ -0,0 +1,152 @@
 +#!/usr/bin/env python3
 +"""Tests for spu_live_flush.py (run: python tools/test_spu_live_flush.py)."""
 +import os
@@ -7481,6 +8267,21 @@ index 00000000..1d348c24
 +        self.assertEqual(stores(out, "m_spu_func_00000200"), [5, 6])
 +        self.assertEqual(stores(out, "m_spu_func_00000300"), [])
 +
++
++    def test_hook_block_keeps_stores(self):
++        # `{ const int _k = hook(ctx); if (_k == 1) { SPU_DIRECT } }` goes on when the hook declines: the stores in
++        # front of it are not cut to what the direct target reads
++        a = fn("m_spu_func_00000100", [
++            "u128 r_5 = ctx->gpr[5]; u128 r_6 = ctx->gpr[6];",
++            "r_5 = spu_il(1);",
++            "r_6 = spu_il(2);",
++            "ctx->gpr[5] = r_5; ctx->gpr[6] = r_6;",
++            "{ const int _k = gow3_edge_x(ctx); if (_k == 1) { SPU_DIRECT(ctx, 0x200, m_spu_func_00000200); } }",
++            "r_5 = ctx->gpr[5]; r_6 = ctx->gpr[6];",
++            "SPU_RET(ctx);"])
++        b = fn("m_spu_func_00000200", ["ctx->gpr[5] = spu_il(0);", "ctx->gpr[6] = spu_il(0);", "SPU_RET(ctx);"])
++        out, _ = L.process(a + b)
++        self.assertEqual(stores(out, "m_spu_func_00000100"), [5, 6])
 +
 +if __name__ == "__main__":
 +    unittest.main()

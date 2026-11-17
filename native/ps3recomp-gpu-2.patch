@@ -274,10 +274,10 @@ index 00000000..6d15f693
 +with the synchronized copy path enabled.
 diff --git a/gpu/bridge/ps3rsx.h b/gpu/bridge/ps3rsx.h
 new file mode 100644
-index 00000000..47bc6063
+index 00000000..9cd95c53
 --- /dev/null
 +++ b/gpu/bridge/ps3rsx.h
-@@ -0,0 +1,137 @@
+@@ -0,0 +1,147 @@
 +/* ps3rsx: RPCS3's RSX as a ps3recomp GPU backend (gpu/README.md).
 + *
 + * A plain C interface: the library behind it (ps3rsx.lib) is built with RPCS3,
@@ -357,6 +357,16 @@ index 00000000..47bc6063
 +    void (*rsx_thread_started)(unsigned long native_tid);
 +                                   /* the RSX thread's native id, once it runs
 +                                    * (the host counts its CPU); may be null */
++    void (*store_lock)(void);
++    void (*store_unlock)(unsigned ea, unsigned size);
++                                   /* both or neither: the RSX's stores of
++                                    * reports and labels into guest memory are
++                                    * made between them -- the host's lock-line
++                                    * lock, so a store cannot land inside an
++                                    * SPU's PUTLLC; store_unlock tells the
++                                    * reservations on the lines, then releases
++                                    * (rsx/Emu/RSX/ps3recomp_store.h). Then
++                                    * on_guest_write is not called for them */
 +} ps3rsx_params;
 +
 +/* Starts the RSX thread on guest memory set up by ps3rsx_init_memory. It then
@@ -2571,10 +2581,10 @@ index 00000000..d9cc719b
 +}
 diff --git a/gpu/bridge/ps3rsx_thread.cpp b/gpu/bridge/ps3rsx_thread.cpp
 new file mode 100644
-index 00000000..5483e3a1
+index 00000000..5295a148
 --- /dev/null
 +++ b/gpu/bridge/ps3rsx_thread.cpp
-@@ -0,0 +1,967 @@
+@@ -0,0 +1,974 @@
 +// RPCS3's RSX thread on ps3recomp's GCM state (ps3rsx.h). Built with RPCS3
 +// (MSVC), see gpu/rpcs3_build. GPL-2.0, like RPCS3.
 +//
@@ -2624,6 +2634,8 @@ index 00000000..5483e3a1
 +// gpu/patches
 +extern void (*g_ps3recomp_rsx_event_hook)(u64 data1, u64 event_flags, u64 data3);
 +extern void (*g_ps3recomp_rsx_write_hook)(u32 address, u32 size);
++extern void (*g_ps3recomp_rsx_store_lock)();
++extern void (*g_ps3recomp_rsx_store_unlock)(u32 address, u32 size);
 +extern bool (*g_ps3recomp_rsx_report_hold)(u32 arg, u64 waited_us);
 +extern void (*g_ps3recomp_rsx_report_hook)(u32 address, bool awaited);
 +extern int (*g_ps3recomp_perf_guest_text)(float fps, char* buf, unsigned size);void ps3recomp_init_cpu_profiler();
@@ -3070,6 +3082,11 @@ index 00000000..5483e3a1
 +    s_on_guest_write = p->on_guest_write;
 +    if (s_on_guest_write)
 +        g_ps3recomp_rsx_write_hook = [](u32 address, u32 size) { s_on_guest_write(address, size); };
++    if (p->store_lock && p->store_unlock)
++    {
++        g_ps3recomp_rsx_store_lock = p->store_lock;
++        g_ps3recomp_rsx_store_unlock = p->store_unlock;
++    }
 +    s_report_hold = p->report_hold;
 +    if (s_report_hold)
 +        g_ps3recomp_rsx_report_hold = [](u32 arg, u64 waited_us) { return s_report_hold(arg, waited_us) != 0; };
@@ -97231,10 +97248,10 @@ index 00000000..3c68ed4b
 +};
 diff --git a/gpu/shim/lv2_rsx.cpp b/gpu/shim/lv2_rsx.cpp
 new file mode 100644
-index 00000000..b78fda9e
+index 00000000..66fca4e0
 --- /dev/null
 +++ b/gpu/shim/lv2_rsx.cpp
-@@ -0,0 +1,227 @@
+@@ -0,0 +1,229 @@
 +// ps3recomp shim: the part of RPCS3's sys_rsx (Emu/Cell/lv2/sys_rsx.cpp) that
 +// the RSX itself calls back into. Under RPCS3 with an LLE libgcm the RSX
 +// reports flips, queued flips, vblanks and user commands through
@@ -97253,6 +97270,8 @@ index 00000000..b78fda9e
 +// Set by the host (gpu/bridge/ps3rsx_thread.cpp).
 +void (*g_ps3recomp_rsx_event_hook)(u64 data1, u64 event_flags, u64 data3) = nullptr;
 +void (*g_ps3recomp_rsx_write_hook)(u32 address, u32 size) = nullptr;
++void (*g_ps3recomp_rsx_store_lock)() = nullptr;                       // Emu/RSX/ps3recomp_store.h
++void (*g_ps3recomp_rsx_store_unlock)(u32 address, u32 size) = nullptr;
 +bool (*g_ps3recomp_rsx_report_hold)(u32 arg, u64 waited_us) = nullptr;
 +void (*g_ps3recomp_rsx_report_hook)(u32 address, bool awaited) = nullptr;
 +int (*g_ps3recomp_perf_guest_text)(float fps, char* buf, unsigned size) = nullptr;
