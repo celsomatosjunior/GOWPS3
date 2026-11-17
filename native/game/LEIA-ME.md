@@ -268,6 +268,25 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
 
 ## Ponto de retomada (atualizado a cada pausa)
 
+**17/11/2026: integração validada (`integra-17nov` aqui e no ps3recomp, autorização do Celso de 17/11).**
+- Conteúdo: `native-recomp` (recarga, padrão desde 15/11) + `ponte-lockline` (relatórios e labels do RSX dentro
+  do lock de linha) + `fusao-folha` (folha 912f:4C48 fundida por padrão; `--sem-fundir-folha` desliga) +
+  diagnóstico de saltos do FIFO (`PS3_RSX_FIFO_DIAG`, desligado por padrão). ps3recomp a90f632e; patches d9f6874.
+- **Exatidão** (`exe_i17` x `exe_pad16`, `EXCODE=454C00:4000:9FB4`): 512 x 512 jobs, 0 diferentes em
+  `jobcap208s` e `jobcap208c`.
+- **A/B** (`ab_exes.sh 12 i17 pad16 i17`, 12+12 cenas de 330 s alternadas, `logs\ab_i17.out`): us/job(60s)
+  +0,19% (erro padrão 0,71), us/job -0,13% (EP 0,68), q/s reais +5,6% (EP 4,3): **sem regressão** no agregado
+  (os ganhos da fusão eram por lista: lista 4 -6,4%, SPU total -2,5%). 24/24 cenas sem travada, sem desync,
+  0 divergências do executor Wws.
+- **Combate** (`combate.sh i17 600 comb_i17_<k>`, 2 x 600 s): 0 travadas, 0 desyncs; capturas até 570 s com o
+  Kratos lutando.
+- **Achado:** `GOW3_trabalho\gpu-build\ps3rsx.lib` é de 15/11 21:02 (logo depois do lock, bd87a475) e não foi
+  recompilado depois do 3b325623 (00:25 de 17/11). Portanto `exe_ff1` e `exe_i17` têm o lock mas **não** o
+  diagnóstico de saltos do FIFO; as caçadas de FIFO com `ff1` (0 desyncs em 100 cenas) não perderam captura, mas
+  a próxima precisa de `build_gpu.cmd` antes. A cópia limpa agora compila a própria ponte do RSX
+  (`limpo15\build_gpu_limpo.cmd` -> `limpo15\gpu-build`), com glslang f0bd0257 e asmjit 416f7356 (os patches
+  não levam submódulos).
+
 **15/11/2026: pacote fundido; fronteira das chamadas (ramos `tradutor-spu-2` aqui e no ps3recomp).**
 - **Fusão** (pedido do Celso): `native-recomp` da20e77 = merge do `tradutor-spu` (shufb-inv + `SPU_CFLT_INT` ligados,
   -1,3% us/job; LS espelhada e atalho de despacho desligados). Versão anterior nos ramos locais
