@@ -393,6 +393,13 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   antes, e a janela de 64 cabeçalhos só mostrou os NOPs. Próximo passo (ramo ps3recomp `fifo-desync`, 3b325623):
   o diagnóstico guarda também os 32 últimos saltos do get (JUMP, CALL, RET, reset de get/put, recuperação) com a
   memória na origem e no destino; nova caçada de 40 cenas com `exe_ff1`.
+  Com `exe_ff1`: 40 cenas, 0 desyncs; mais 60 cenas, 0 desyncs (2 em 180 no total). Mas a cena 30 da caçada de 60
+  (`cfifo3_30`) **travou com o lock ligado**, aos ~13 s: label 0x51 parado em **1** (esperava 2), e o dump mostrou
+  **0 consumos** do flag pelo kernel. É diferente das travadas antigas (label 0x63..0x6A7, consumos = relatórios - 1):
+  quem se perdeu foi o **primeiro** zero do flag. Em uma inicialização normal (`SPURS_FLAG_DBG=1`), o primeiro
+  0xFFFFFFFF -> 0 chega ~14 s após o início e é consumido no mesmo ms. Com o lock: 1 travada em ~200 cenas. Caçada
+  com inicializações de 26 s (`caca_boot.sh 200 ff1`, `SPURS_FLAG_DBG` + `SPU_FLAGGUARD` + `GOW3_FLAGWATCH`) para
+  ver quem leva o primeiro zero.
 - Comandos: `bash scripts_locais/build_exe.sh <rótulo> [--spu-recarga]`; reprodução `rodar_env.sh <rótulo> 300
   /dev/null "SPU_JOBREPLAY=<trabalho>\jobcap206s,3,0,512" SPU_JOBREPLAY_CODE=444600:4000:D97C` e
   `python scripts_locais/cmp_replay.py <base.log> <x.log>`.
