@@ -143,4 +143,4 @@ o ramo `gow3` já existe, então os ramos são `gow3-<correção>`:
 
 Ficaram de fora, porque o ps3kit já tem ou porque não mudariam nada lá: os atributos do Taskset2, o
 Task2, a tabela de offsets do GCM e as AUs retidas do vídeo. O resultado da build do GOW3 sobre o ps3kit está
-no LEIA-ME (`native/game/HISTORICO.md`, seção "Compilar sobre o ps3kit").
+no histórico (`native/game/HISTORICO.md`, seção "Compilar sobre o ps3kit").
