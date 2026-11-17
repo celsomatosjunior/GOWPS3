@@ -325,6 +325,58 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   ~1,9% de fronteira; exige exatidão nas duas capturas, A/B 12+12 e inicializações); (b) se o travamento da ponte
   (label 0x51) voltar, investigar o RsxSync (wid 11); (c) candidatos de 0,5-1% (MFC/canais, núcleo da 0x6C10)
   ficam para depois; (d) fusão do `tradutor-spu-2` no `native-recomp` só com o Celso.
+- **Autorização do Celso (15/11 à tarde):** fusão experimental da 0x4C48 em ramo separado (`fusao-folha`, desligada
+  por padrão), consolidar o A/B da recarga com todas as rodadas válidas, investigar o 0x51 sem atribuí-lo ao defeito
+  antigo só pela assinatura, testes longos (> 77 s) com combate.
+- **Combate longo** (`combate.sh`, 600 s, 6+6 alternados `base2`/`rec4`, `logs\rodar_comb15_<rótulo>_<k>.log`):
+  **nenhuma travada em 12 x 600 s** (último quadro aos ~598 s em todas), executor Wws 0 divergências. O us/job por
+  bloco de 10 s mostra **patamares** em que dobra (~30 -> ~45-80) por minutos e volta, nos dois exes, agrupados no
+  tempo (16:55-17:35: pares 4 e 5; início do `rec4_1`); a cena (jobs por quadro) não muda junto, e a fase começa
+  igual em todas (o roteiro é o mesmo até 100 s), então não é a cena. Nenhum evento do Windows no horário (Defender,
+  Sistema). Sem causa objetiva, nenhuma rodada foi excluída. Para as próximas, `scripts_locais\maquina.ps1` grava a
+  cada 10 s em `logs\maq_<rótulo>.txt` o CPU do jogo, o CPU total, o desempenho do processador (% da frequência) e
+  os 3 outros processos que mais usaram CPU (ligado em `combate.sh` e `rodar_env.sh`).
+- **Consolidação da recarga** (`scratch\consolida_rec.py`; mediana dos blocos por rodada, razão por par):
+  cena 330 s, 10 pares válidos (2 sem medida, causas acima: janela fechada de fora, travada aos 77 s): recarga
+  melhor em 9 de 10, -0,8% a -8,1%. Combate 600 s, 6 pares: +1,1, -1,2, +7,3, +49,4 (par 4 com patamar), -3,8,
+  +1,2% -> média +7,7% (erro-padrão 6,7%): **inconclusivo** (o percentil 20 dos blocos, menos sensível aos
+  patamares, dá +6,4% +- 7,2%, 3 de 6). **Todas as 16:** mediana -1,1%, recarga melhor em 11 de 16, média +1,1%
+  (erro-padrão 2,7%, puxada pelo par 4). Leitura: ganho na cena de referência confirmado; no combate não dá para
+  afirmar nem ganho nem perda enquanto os patamares não forem explicados. Antes de integrar a recarga ao
+  `native-recomp`, repetir o combate com o amostrador ligado.
+- **Fusão da folha 912f:0x4C48** (ramo `fusao-folha` aqui e no ps3recomp; `--spu-fundir-folha 912f:4C48`,
+  desligada por padrão; ps3recomp `tools/spu_fuse_leaf.py` + `SPU_INL_RET` em `spu_context.h`): o corpo reto da
+  folha entra no lugar das 10 chamadas (0x4FE8 x5, 0x5310 x2, 0x55E0 x3); a função original fica para os outros
+  caminhos (despacho, desvio indireto). `SPU_INL_RET` mantém do colchete `ctx->pc = L`, o `spu_jobcap_ret` da
+  captura/reprodução e a imagem do módulo; para (trap) se houver trampolim pendente. No código gerado não sobra
+  gravação nem releitura em volta. Ritmo da imagem 208 no jogo (`SPU_JOBTIME=208,DD70`, executor Wws desligado):
+  ~65 jobs/s de ~1,3 ms. **Duas capturas novas** (`SPU_JOBCAP_STRIDE=11`, `GOW3_WWS_EXEC=0`, base `exe_pad16`):
+  `jobcap208s` (cena, pula 1500) e `jobcap208c` (combate, ~100-190 s do `combate.sh`, pula 5000). **Reprodução
+  (512 jobs x 3, `SPU_JOBREPLAY_CODE=454C00:4000:9FB4`): `fus16` x `pad16` 0 diferenças nas duas** (gets, puts,
+  registradores, bytes de PUT, DMAs, faixas da LS, entradas no interpretador). Tempo na reprodução: mediana
+  890 -> 754 us/job (cena, -15%) e 1092 -> 905 (combate, -17%). Observação: na 208 a reprodução não bate com a
+  gravação nem na base (bytes de PUT diferentes em ~1/3 dos jobs, código automodificável indo ao interpretador,
+  `[spu-smc] microstep`); a comparação vale entre os dois exes com as mesmas entradas, como nas da 206.
+- **A/B da fusão no jogo** (`ab_exes.sh 12 fus pad16 fus16`, cena de 330 s, `logs\ab_fus.out`): o us/job das listas
+  EDGE deu +1,7% (EP 0,8%), mas **a 912f (imagem 208) não roda nas listas EDGE 8-10, e sim na lista 4**
+  (ModelServer), que o `edge_ms.py` não conta. Por lista, em ms de SPU por quadro (`scratch\wid_ms.py`, mediana dos
+  blocos por rodada, razão por par, 10 pares; 2 rodadas da base travaram, ver abaixo): **lista 4 -6,4%** (EP 1,8%,
+  fusão menor em 8 de 10), listas EDGE 8-10 -1,2% (EP 1,8%), **SPU total -2,5%** (EP 0,8%, 8 de 10). Tempo do próprio
+  job no jogo (`SPU_JOBTIME=208,DD70`, executor Wws desligado, 3+3 x 240 s): **1.224 -> 1.081 us/job (-11,7%,
+  3 de 3)**. Conclusão: a fusão é ganho no job que ela muda; o us/job das EDGE não serve de medida para ela.
+  Mesma lente na recarga (cena, 10 pares): lista 4 -9,5% (9 de 10); no total o ruído da cena pesa mais.
+  **Inicializações 10+10 alternadas (`boot.sh`, 55 s, blocos de 5): 0 travadas em cada** (`pad16` e `fus16`).
+  Pronta para ligar (`--spu-fundir-folha 912f:4C48`); ligar e fundir ramos é decisão do Celso.
+- **Patamares do us/job x `GOW3_PIN`** (`scripts_locais\ab_pin.sh 4 ll1 600`, combate de 600 s, alternado, com o
+  amostrador `maquina.ps1`): **nenhum patamar em 8 rodadas** (us/job ~29-30 do começo ao fim, com e sem o pin),
+  nenhuma travada; máquina tranquila (desempenho do processador ~125% estável, jogo ~8,5 núcleos, nenhum outro
+  processo acima de 0,33 núcleo). Os patamares das 16:55-17:35 não se repetiram, então o pin não pôde ser testado
+  contra eles; fica a referência do amostrador para a próxima vez que aparecerem.
+- **Travada do label 0x51 de novo, na base (`pad16`, sem a fusão):** `base_5` aos 17 s e `base_12` aos 87 s, mesma
+  assinatura (`semaphore_acquire timed out`, 0x2E200510 = 0x657, espera 0x658). O vigia `GOW3_STALL=5` gravou:
+  as threads do PPU em `sys_lwcond_wait`; depois da travada as listas 9, 10 e 11 (11 = RsxSync) nunca mais rodam e
+  as 1, 3, 4 e 7 giram sem trabalho, como no `var_1`. No `base_12` o bloco antes da travada teve ~3x mais execuções
+  nas listas 8-10. Investigação no ramo `ponte-lockline` (seção seguinte no LEIA-ME daquele ramo).
 - **Ramo `ponte-lockline` (15/11 noite; aqui e no ps3recomp, a partir do `tradutor-spu-2`): travada do label 0x51.**
   As travadas de 15/11 (`var_1` do A/B da recarga; `base_5` e `base_12` do A/B da fusão, ver o LEIA-ME do ramo
   `fusao-folha`) têm a mesma assinatura: label 0x51 (0x2E200510) parado um abaixo do esperado, RsxSync (lista 11) e as
