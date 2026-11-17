@@ -51,6 +51,28 @@ static int load_env_file()
 }
 static int s_env_loaded = load_env_file();
 
+/* Diagnóstico automático das duas falhas raras ainda abertas (17/11), ligado por padrão por ser barato:
+ * - PS3_RSX_FIFO_DIAG=1: no erro de FIFO, os últimos 64 cabeçalhos e 32 saltos do get (desync do FIFO);
+ * - GOW3_FLAGWATCH / SPU_FLAGGUARD = 70038CEC: os relatórios do RSX que zeram o workload flag do RsxSync
+ *   (spurs+0x6C) e as escritas de SPU que o tiram do zero (o primeiro zero perdido);
+ * - GOW3_STALL=20: se os flips pararem por 20 s, imprime uma vez os LRs do PS3, as pilhas, o SPURS e os
+ *   contadores acima, e segue (não fecha o jogo).
+ * Cada um só vale se ainda não estiver no ambiente nem no GOW3Native.env; GOW3_DIAG=0 desliga todos. */
+static int diag_defaults()
+{
+    const char* off = getenv("GOW3_DIAG");
+    if (off && *off == '0') return 0;
+    static const char* const defs[][2] = {
+        {"PS3_RSX_FIFO_DIAG", "1"}, {"GOW3_FLAGWATCH", "70038CEC"}, {"SPU_FLAGGUARD", "70038CEC"}, {"GOW3_STALL", "20"},
+    };
+    int n = 0;
+    for (const auto& d : defs)
+        if (!getenv(d[0])) { _putenv_s(d[0], d[1]); n++; }
+    if (n) fprintf(stderr, "[GOW3] diagnóstico automático: %d variáveis padrão (GOW3_DIAG=0 desliga)\n", n);
+    return n;
+}
+static int s_diag_defaults = (s_env_loaded, diag_defaults());
+
 /* GOW3_PPU_PRIO (padrão 1; 0 desliga): a thread do PPU principal (o main do host, onde o boot roda o jogo) com prioridade acima do
  * normal. Ela espera as SPUs e entrega os próximos jobs; com uns 12 threads ocupados, acordava atrasada. Ideia do
  * repositório público do Ascension (arnaldolima1/gow-ascension-pc, ascension_defaults.cpp: PS3_PPU_PRIO). */
