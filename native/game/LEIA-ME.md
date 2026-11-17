@@ -268,6 +268,242 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
 
 ## Ponto de retomada (atualizado a cada pausa)
 
+**17/11/2026: integração validada (`integra-17nov` aqui e no ps3recomp, autorização do Celso de 17/11).**
+- Conteúdo: `native-recomp` (recarga, padrão desde 15/11) + `ponte-lockline` (relatórios e labels do RSX dentro
+  do lock de linha) + `fusao-folha` (folha 912f:4C48 fundida por padrão; `--sem-fundir-folha` desliga) +
+  diagnóstico de saltos do FIFO (`PS3_RSX_FIFO_DIAG`, desligado por padrão). ps3recomp a90f632e; patches d9f6874.
+- **Exatidão** (`exe_i17` x `exe_pad16`, `EXCODE=454C00:4000:9FB4`): 512 x 512 jobs, 0 diferentes em
+  `jobcap208s` e `jobcap208c`.
+- **A/B** (`ab_exes.sh 12 i17 pad16 i17`, 12+12 cenas de 330 s alternadas, `logs\ab_i17.out`): us/job(60s)
+  +0,19% (erro padrão 0,71), us/job -0,13% (EP 0,68), q/s reais +5,6% (EP 4,3): **sem regressão** no agregado
+  (os ganhos da fusão eram por lista: lista 4 -6,4%, SPU total -2,5%). 24/24 cenas sem travada, sem desync,
+  0 divergências do executor Wws.
+- **Combate** (`combate.sh i17 600 comb_i17_<k>`, 2 x 600 s): 0 travadas, 0 desyncs; capturas até 570 s com o
+  Kratos lutando.
+- **Achado:** `GOW3_trabalho\gpu-build\ps3rsx.lib` é de 15/11 21:02 (logo depois do lock, bd87a475) e não foi
+  recompilado depois do 3b325623 (00:25 de 17/11). Portanto `exe_ff1` e `exe_i17` têm o lock mas **não** o
+  diagnóstico de saltos do FIFO; as caçadas de FIFO com `ff1` (0 desyncs em 100 cenas) não perderam captura, mas
+  a próxima precisa de `build_gpu.cmd` antes. A cópia limpa agora compila a própria ponte do RSX
+  (`limpo15\build_gpu_limpo.cmd` -> `limpo15\gpu-build`), com glslang f0bd0257 e asmjit 416f7356 (os patches
+  não levam submódulos).
+- **Correção:** esse diagnóstico nunca tinha sido compilado e não compilava (as strings do `fprintf` tinham quebras
+  de linha literais). Corrigido no ps3recomp 8287cda3 (`fifo-desync`), integrado em b9438a4e; patches b7bdc05.
+  Custo com o diagnóstico desligado: um `static bool` em cache por `set_get`, como o rastro de cabeçalhos já fazia.
+- **Cópia limpa** (`limpo15`: ps3recomp 4e8f3ca8 + os 3 patches, árvore igual a b9438a4e salvo CRLF; ponte do RSX
+  compilada da cópia; `build_limpo.sh` do ELF ao exe): compilou, folha fundida em 10 chamadas, runtime e
+  `ps3rsx.lib` todos de `limpo15`. No jogo (`exe_limpo17`, `combate.sh limpo17 600`): 0 travadas, 0 desyncs,
+  combate até ~540 s e a tela de morte do Kratos aos 570 s (o roteiro de botões não defende).
+- **Mesclado em `native-recomp`** (local; push só na terça, 24/11, aos dois repositórios; nunca ao origin do
+  ps3recomp). O ramo `novo-main` deve ser atualizado no dia do push, como antes.
+
+**15/11/2026: pacote fundido; fronteira das chamadas (ramos `tradutor-spu-2` aqui e no ps3recomp).**
+- **Fusão** (pedido do Celso): `native-recomp` da20e77 = merge do `tradutor-spu` (shufb-inv + `SPU_CFLT_INT` ligados,
+  -1,3% us/job; LS espelhada e atalho de despacho desligados). Versão anterior nos ramos locais
+  `native-recomp-antes-tradutor` (b5eb23f) e, no ps3recomp, `integra-rsx-wws-antes-tradutor` (a1862ee3).
+- **Cópia limpa** (`<Projetos>\limpo15`, `build_limpo.sh`): ps3recomp 4e8f3ca8 + os 3 patches. A primeira tentativa
+  parou no CMake: `gpu/ps3rsx.cmake` nunca tinha sido versionado (a regra `*.cmake` do `.gitignore` o escondia).
+  Corrigido (ps3recomp 2f2903e7, `ps3recomp-gpu-2.patch` em d66536b). Build completo (traduzir, projeto, compilar):
+  exe igual ao do diretório de trabalho (`exe_integ15`) menos os 2 bytes do carimbo de tempo do PE.
+- **Combate** (`scripts_locais\combate.sh <exe> <s> <prefixo>`: X nas telas iniciais, depois analógico para a frente
+  e quadrado/triângulo/X a cada 2 s, captura da janela a cada 30 s): `exe_integ15`, 330 s: us/job(60s) 30,6,
+  executor Wws 0 divergências, 14,1 q/s reais; luta na floresta, tela de carregamento aos 300 s.
+- **Custo comum a várias rotinas** (`scripts_locais\insn_det.py`, `fronteira.py` no perfil do jogo `logs\prof_ibf.log`):
+  **14,5% das amostras dos jobs são cópias de fronteira** entre `ctx->gpr` e a pilha (gravação antes de chamada ou
+  saída 8,3%, derramamento na entrada 3,1%, leitura do ctx 2,2%), espalhadas por ~12 funções. Caso típico: `brsl`
+  dentro de laço (912f:0x52A4 chama 0x4C48 a cada volta: 70 gravações + 70 releituras; a folha lê 14 registradores
+  e escreve r2-r77). `vpinsrd` (3,2%) é quase todo da 0x6C10 (fluxo de bits), não é comum.
+- **Proposta 3, `--spu-recarga`** (ps3recomp `tools/spu_call_reload.py`, testes `tools/test_spu_call_reload.py`):
+  depois de uma chamada só relê o que quem chama lê antes de redefinir; o que a chamada escreve fica valendo em
+  `ctx->gpr` e a gravação de volta do valor velho sai (dois conjuntos por linha: ctx certo / local certo). As
+  gravações antes da chamada ficam (só saem as já certas no ctx), então um retorno não local ainda acha tudo no ctx.
+  Estático no módulo 14561: releituras depois de chamadas 8.620 -> 919, 12.043 gravações a menos.
+  Duas falhas achadas e corrigidas antes da medida (primeiras reproduções: 512 de 512 jobs errados): gravações
+  dentro de `if (...) { ...; sai }` contavam no caminho que segue; ganchos de núcleo nativo (`gow3_edge_*(ctx)`)
+  mudam registradores sem `ctx->gpr[N] =` visível. **Reprodução (jobcap206s, 512 jobs x 3): 0 diferenças** contra a
+  base (gets, puts, registradores, bytes de PUT, DMAs). **Captura de combate** (`jobcap_comb`, 512 jobs logo depois
+  de um carregamento, luta com muitos inimigos; gravada com `GOW3_WWS_EXEC=0`: com o executor Wws o `SPU_JOBCAP` não
+  vê as entradas dos jobs): `rec3` x `integ15` 0 diferenças. Base nova `base2` (`spu_live_flush` corrigido) x
+  `integ15`: 0 diferenças nas duas capturas; `rec4` (recarga sobre a `base2`) x `base2`: 0 diferenças nas duas
+  (`scripts_locais\exatidao.sh <captura> <rótulos>`). A/B e inicializações no item seguinte.
+- **Fragilidade no padrão (`spu_live_flush`)**: o bloco `{ _k = gancho(ctx); if (_k == 1) {...} }` era tomado por
+  saída incondicional e as gravações antes dele eram cortadas (r0, r3, r80-r83, r126 nos dois pontos, 0xC158 e
+  0xC168 do 14561). Hoje não erra: esses registradores não mudam entre a última sincronização e o gancho
+  (`scratch\fronteira\ganchos_chk.py`). Corrigido no ps3recomp cc16df3a (ramo `tradutor-spu-2`), com teste; muda o
+  build padrão só nesses dois pontos (mais gravações); entra no padrão com a próxima validação.
+- **A/B no jogo** (`ab_exes.sh 12 rec base2 rec4`, 330 s, alternado; `logs\ab_rec.out`): us/job (execução inteira)
+  base 29,40 x recarga 28,75 em média, **-2,2%** (~2,6 erros-padrão), recarga à frente em 9 de 10 pares;
+  us/job(60s) -1,1% sem um ponto fora (34,2 na var_7; com ele, neutro). Executor Wws: 0 divergências em todas.
+  Duas execuções sem medida: `base_4`, janela fechada de fora aos 26 s (`[quit] requested (window closed)`; as
+  falhas de escrita no log são do encerramento) -- não é falha do exe; `var_1` (recarga), travamento conhecido da
+  ponte aos 77 s (`semaphore_acquire has timed out`, label 0x51 em 0x2E200510, o mesmo de 12/11, ~1%).
+  **Inicializações 10+10 alternadas (`boot.sh`, 55 s): 0 travadas em cada**, último quadro 53-54 s.
+  **Ligada por padrão no ramo `tradutor-spu-2`** (`--spu-recarga` padrão, `--no-spu-recarga` desliga; inclui a
+  correção do `spu_live_flush`); o build padrão sai igual ao `exe_rec4` (só o carimbo do PE). Não fundida no
+  `native-recomp` (decisão do Celso).
+- **Perfil depois da recarga** (`GOW3_PROF=100,40`, `fronteira.py`; logs `prof15_base2.log` / `prof15_rec4.log`):
+  fronteira 14,8% -> 13,0% das amostras dos jobs (912f 0x52A4: 111 -> 50; 2be9 0xA288: 58 -> 23). O maior item que
+  sobra é a saída da folha 912f 0x4C48 (66 amostras, ~1,1%): grava r2-r77 a cada volta, e a 0x52A4 relê só 22
+  deles. Não dá para cortar essas gravações dentro da folha: quem chama pode ser alcançado por despacho indireto
+  (retorno com tudo vivo) e, no laço, a última volta precisa dos valores. Só a fusão da folha na 0x52A4 (ou de
+  modo geral, folhas quentes em quem chama) tiraria o custo; o par soma ~1,9% das amostras dos jobs na fronteira.
+  **Fundir funções depende do Celso** (pedido de não fundir sem evidência nova; esta é a evidência).
+- **Item (5) medido e descartado:** gravações de valores que o ctx já tem em funções sem chamada: 8.795 no 14561,
+  12.274 no 912f e 17.613 no 2be9 (estático), mas **nenhuma nas funções quentes do perfil** -- peso ~0 no jogo.
+- **Fila** (em ordem): (a) decisão do Celso: fusão das folhas quentes em quem chama (912f 0x4C48 na 0x52A4,
+  ~1,9% de fronteira; exige exatidão nas duas capturas, A/B 12+12 e inicializações); (b) se o travamento da ponte
+  (label 0x51) voltar, investigar o RsxSync (wid 11); (c) candidatos de 0,5-1% (MFC/canais, núcleo da 0x6C10)
+  ficam para depois; (d) fusão do `tradutor-spu-2` no `native-recomp` só com o Celso.
+- **Autorização do Celso (15/11 à tarde):** fusão experimental da 0x4C48 em ramo separado (`fusao-folha`, desligada
+  por padrão), consolidar o A/B da recarga com todas as rodadas válidas, investigar o 0x51 sem atribuí-lo ao defeito
+  antigo só pela assinatura, testes longos (> 77 s) com combate.
+- **Combate longo** (`combate.sh`, 600 s, 6+6 alternados `base2`/`rec4`, `logs\rodar_comb15_<rótulo>_<k>.log`):
+  **nenhuma travada em 12 x 600 s** (último quadro aos ~598 s em todas), executor Wws 0 divergências. O us/job por
+  bloco de 10 s mostra **patamares** em que dobra (~30 -> ~45-80) por minutos e volta, nos dois exes, agrupados no
+  tempo (16:55-17:35: pares 4 e 5; início do `rec4_1`); a cena (jobs por quadro) não muda junto, e a fase começa
+  igual em todas (o roteiro é o mesmo até 100 s), então não é a cena. Nenhum evento do Windows no horário (Defender,
+  Sistema). Sem causa objetiva, nenhuma rodada foi excluída. Para as próximas, `scripts_locais\maquina.ps1` grava a
+  cada 10 s em `logs\maq_<rótulo>.txt` o CPU do jogo, o CPU total, o desempenho do processador (% da frequência) e
+  os 3 outros processos que mais usaram CPU (ligado em `combate.sh` e `rodar_env.sh`).
+- **Consolidação da recarga** (`scratch\consolida_rec.py`; mediana dos blocos por rodada, razão por par):
+  cena 330 s, 10 pares válidos (2 sem medida, causas acima: janela fechada de fora, travada aos 77 s): recarga
+  melhor em 9 de 10, -0,8% a -8,1%. Combate 600 s, 6 pares: +1,1, -1,2, +7,3, +49,4 (par 4 com patamar), -3,8,
+  +1,2% -> média +7,7% (erro-padrão 6,7%): **inconclusivo** (o percentil 20 dos blocos, menos sensível aos
+  patamares, dá +6,4% +- 7,2%, 3 de 6). **Todas as 16:** mediana -1,1%, recarga melhor em 11 de 16, média +1,1%
+  (erro-padrão 2,7%, puxada pelo par 4). Leitura: ganho na cena de referência confirmado; no combate não dá para
+  afirmar nem ganho nem perda enquanto os patamares não forem explicados. Antes de integrar a recarga ao
+  `native-recomp`, repetir o combate com o amostrador ligado.
+- **Fusão da folha 912f:0x4C48** (ramo `fusao-folha` aqui e no ps3recomp; `--spu-fundir-folha 912f:4C48`,
+  desligada por padrão; ps3recomp `tools/spu_fuse_leaf.py` + `SPU_INL_RET` em `spu_context.h`): o corpo reto da
+  folha entra no lugar das 10 chamadas (0x4FE8 x5, 0x5310 x2, 0x55E0 x3); a função original fica para os outros
+  caminhos (despacho, desvio indireto). `SPU_INL_RET` mantém do colchete `ctx->pc = L`, o `spu_jobcap_ret` da
+  captura/reprodução e a imagem do módulo; para (trap) se houver trampolim pendente. No código gerado não sobra
+  gravação nem releitura em volta. Ritmo da imagem 208 no jogo (`SPU_JOBTIME=208,DD70`, executor Wws desligado):
+  ~65 jobs/s de ~1,3 ms. **Duas capturas novas** (`SPU_JOBCAP_STRIDE=11`, `GOW3_WWS_EXEC=0`, base `exe_pad16`):
+  `jobcap208s` (cena, pula 1500) e `jobcap208c` (combate, ~100-190 s do `combate.sh`, pula 5000). **Reprodução
+  (512 jobs x 3, `SPU_JOBREPLAY_CODE=454C00:4000:9FB4`): `fus16` x `pad16` 0 diferenças nas duas** (gets, puts,
+  registradores, bytes de PUT, DMAs, faixas da LS, entradas no interpretador). Tempo na reprodução: mediana
+  890 -> 754 us/job (cena, -15%) e 1092 -> 905 (combate, -17%). Observação: na 208 a reprodução não bate com a
+  gravação nem na base (bytes de PUT diferentes em ~1/3 dos jobs, código automodificável indo ao interpretador,
+  `[spu-smc] microstep`); a comparação vale entre os dois exes com as mesmas entradas, como nas da 206.
+- **A/B da fusão no jogo** (`ab_exes.sh 12 fus pad16 fus16`, cena de 330 s, `logs\ab_fus.out`): o us/job das listas
+  EDGE deu +1,7% (EP 0,8%), mas **a 912f (imagem 208) não roda nas listas EDGE 8-10, e sim na lista 4**
+  (ModelServer), que o `edge_ms.py` não conta. Por lista, em ms de SPU por quadro (`scratch\wid_ms.py`, mediana dos
+  blocos por rodada, razão por par, 10 pares; 2 rodadas da base travaram, ver abaixo): **lista 4 -6,4%** (EP 1,8%,
+  fusão menor em 8 de 10), listas EDGE 8-10 -1,2% (EP 1,8%), **SPU total -2,5%** (EP 0,8%, 8 de 10). Tempo do próprio
+  job no jogo (`SPU_JOBTIME=208,DD70`, executor Wws desligado, 3+3 x 240 s): **1.224 -> 1.081 us/job (-11,7%,
+  3 de 3)**. Conclusão: a fusão é ganho no job que ela muda; o us/job das EDGE não serve de medida para ela.
+  Mesma lente na recarga (cena, 10 pares): lista 4 -9,5% (9 de 10); no total o ruído da cena pesa mais.
+  **Inicializações 10+10 alternadas (`boot.sh`, 55 s, blocos de 5): 0 travadas em cada** (`pad16` e `fus16`).
+  Pronta para ligar (`--spu-fundir-folha 912f:4C48`); ligar e fundir ramos é decisão do Celso.
+- **Patamares do us/job x `GOW3_PIN`** (`scripts_locais\ab_pin.sh 4 ll1 600`, combate de 600 s, alternado, com o
+  amostrador `maquina.ps1`): **nenhum patamar em 8 rodadas** (us/job ~29-30 do começo ao fim, com e sem o pin),
+  nenhuma travada; máquina tranquila (desempenho do processador ~125% estável, jogo ~8,5 núcleos, nenhum outro
+  processo acima de 0,33 núcleo). Os patamares das 16:55-17:35 não se repetiram, então o pin não pôde ser testado
+  contra eles; fica a referência do amostrador para a próxima vez que aparecerem.
+- **Travada do label 0x51 de novo, na base (`pad16`, sem a fusão):** `base_5` aos 17 s e `base_12` aos 87 s, mesma
+  assinatura (`semaphore_acquire timed out`, 0x2E200510 = 0x657, espera 0x658). O vigia `GOW3_STALL=5` gravou:
+  as threads do PPU em `sys_lwcond_wait`; depois da travada as listas 9, 10 e 11 (11 = RsxSync) nunca mais rodam e
+  as 1, 3, 4 e 7 giram sem trabalho, como no `var_1`. No `base_12` o bloco antes da travada teve ~3x mais execuções
+  nas listas 8-10. Investigação no ramo `ponte-lockline` (seção seguinte no LEIA-ME daquele ramo).
+- **Ramo `ponte-lockline` (15/11 noite; aqui e no ps3recomp, a partir do `tradutor-spu-2`): travada do label 0x51.**
+  As travadas de 15/11 (`var_1` do A/B da recarga; `base_5` e `base_12` do A/B da fusão, ver o LEIA-ME do ramo
+  `fusao-folha`) têm a mesma assinatura: label 0x51 (0x2E200510) parado um abaixo do esperado, RsxSync (lista 11) e as
+  listas 9-10 sem rodar depois. Achado no código: a ponte do RSX grava relatórios e labels na memória do PS3 **fora**
+  do `spu_lockline_lock` e só depois chama o gancho que avisa as reservas das SPUs. O caminho antigo (live draw) grava
+  com `vm_write32`, que passa pelo lock (`VM_WRITE_COH`): 0 travadas em 180 inicializações, contra ~1% da ponte.
+  Mudança: `ps3recomp_guest_store` (`gpu/rsx/Emu/RSX/ps3recomp_store.h`) faz a gravação entre os ganchos
+  `store_lock`/`store_unlock` do host (`gow3_rsx_rpcs3.cpp`: o lock de linha; o destrave avisa as reservas), nos
+  relatórios (`get_report`, `RSXThread`, `RSXZCULL`) e nos labels (`nv47_sync.hpp`, labels adiados do zcull).
+  `PS3_RSX_STORE_LOCK=0` volta ao antigo. **Não confirmado como causa:** o flag que dispara o RsxSync
+  (`spurs+0x6C`) é consumido pelo kernel do SPURS do host (`cellSpurs.c`, já sob o lock), e alargar a janela do
+  `PUTLLC` nas duas linhas do cabeçalho do SPURS (`SPU_PUTLLC_JANELA=50,70038C80,70039C80`, diagnóstico novo,
+  desligado por padrão) não reproduziu a travada nem mudou a velocidade (quase nenhum `PUTLLC` de SPU nessas linhas).
+  Inicializações de 55 s alternadas em blocos de 5 (`exe_ll1`): **0 em 30 com o lock, 0 em 30 sem** -- sem
+  informação. Próximo: rodadas longas com `GOW3_STALL=5` e `GOW3_PEEK` do flag (`+0x6C`), receptor (`+0x74`), prontos
+  (`+0x08`) e sinais (`+0x70`) das duas instâncias, para ver na próxima travada se o flag ficou em zero (RsxSync
+  marcado e não escalado: falha do kernel do host) ou em 0xFFFFFFFF (zero perdido ou RsxSync rodou e a cadeia parou
+  depois).
+  **Caçada 1 (16/11 madrugada, `scripts_locais\caca51.sh 20 ll1`, cena de 330 s alternando `PS3_RSX_STORE_LOCK`
+  1/0, `SPURS_FLAG_DBG=1`, vigia e PEEK):** **0 travadas em 40** (20 com o lock, 20 sem). O `[flagdbg]` confirma o
+  flag do RsxSync na instância 0x70038C80 (`+0x6C`, receptor 11, `maxcont=1`): se o contador `active` da lista 11
+  ficasse preso em 1 ela nunca mais seria escolhida -- candidato a conferir na próxima travada (a linha `[flagdbg]
+  wid=11 ... active=` mostra). Somando a noite: 0 em 60 inicializações, 0 em 8 combates de 600 s, 0 em 40 cenas;
+  contra 3 em 48 cenas do A/B da tarde (rec4 1, pad16 2). O `SPURS_FLAG_DBG` imprime a cada mudança do flag e pode
+  mudar o tempo; caçada 2 sem ele (`caca51b.sh`, logs `caca2_*`).
+  **Caçada 2 (03:35-07:15): 1 travada em 40, sem o lock** (`caca2_l0_7`, aos 92 s, label 0x6A7 esperando 0x6A8). No
+  retrato o flag do RsxSync (0x70038CEC) está em **0xFFFFFFFF** e o receptor em 11 (0x70038CF4 = 0x50B): não é a
+  lista 11 marcada e não escalada (o suspeito do `active` preso cai). Sobra: o zero do relatório se perdeu, ou o
+  RsxSync rodou e a cadeia parou depois. Para separar: `GOW3_FLAGWATCH=70038CEC` (`exe_ll2`) conta os relatórios do
+  RSX sobre o flag (e quantos o deixaram em zero) e os consumos pelo kernel do SPURS (ps3recomp 54554c80), com o
+  tempo desde o último de cada, na linha `[GOW3-FLAG]` do retrato. Em operação normal são iguais (1.673 = 1.673 aos
+  80 s). Caçada 3 com eles (`caca51c.sh`, logs `caca3_*`).
+  **Caçada 3 (07:30-11:13, `exe_ll2`): 0 travadas em 40** (20 com o lock, 20 sem). Total das caçadas: com o lock 0
+  em 60, sem 1 em 60; com as 3 em 48 da tarde (comportamento antigo), 4 em 108 sem o lock. A diferença ainda não é
+  significativa (p ~ 0,3 com 0 em 60). Caçada 4 só sem o lock (`caca51d.sh 40 ll2`, logs `caca4_*`) para pegar uma
+  travada com os contadores.
+  **Caçada 4 (11:15-14:55): 0 travadas em 40, todas sem o lock.** Nas cenas de 330 s das caçadas: sem o lock 1 em
+  100, com o lock 0 em 60 -- taxa ~1%, nada distinguível. Caçada 5 em inicializações de 60 s (mais baratas; a ponte
+  tinha 1 em 100 delas em 12/11, aos 13 s, na rajada de flips do carregamento), sem o lock (`caca51e.sh 160 ll2 0`,
+  guarda só os logs que param antes de 50 s ou têm `GOW3-STALL`, `caca5_*`).
+  **Caçada 5 (15:00-17:40): 1 travada em 160** (`caca5_l0_105`, aos 18 s). Contadores: **125 relatórios do RSX com
+  zero, 124 consumos pelo kernel**, o último relatório 32 ms depois do último consumo, e o flag em 0xFFFFFFFF -- o
+  último zero foi apagado sem o kernel vê-lo (o receptor só foi armado uma vez; o kernel só grava 0xFF consumindo e
+  contando). **Achado o apagador:** `SPU_FLAGGUARD=<ea>` (ps3recomp c116717d, diagnóstico desligado por padrão; conta
+  e registra toda escrita de SPU -- `PUT`, `PUTLLC`, `PUTLLUC` -- que tira a palavra do zero, com a cópia da reserva;
+  contador na linha `[GOW3-FLAG]`, GOWPS3 ae0f1f4; `exe_ll3`). Sempre o mesmo: **`PUTLLC` da spu0 (`pc=0x03050`) na
+  linha 0x70038C80, 0 -> 0xFFFFFFFF, com a reserva em 0xFFFFFFFF**: o zero do RSX caiu entre a comparação e a gravação
+  do `PUTLLC` e foi escrito por cima. **A/B (`guarda_ab.sh 10 ll3`, 120 s alternados): sem o lock 8 apagamentos em
+  10 rodadas (6 com algum), com o lock 0 em 10** (p ~ 0,004). Nem todo zero apagado trava (só quando é o que o RSX
+  espera a seguir), daí ~1% das rodadas. **Causa da travada do label 0x51 confirmada; o lock da ponte (padrão
+  neste ramo) a corrige.** Velocidade nas mesmas rodadas (quadros apresentados): -1,0% (EP 1,0) com o lock,
+  inconclusivo; A/B de velocidade próprio a seguir.
+  **A/B de velocidade (`ab_env.sh 10 lockvel ll3 "PS3_RSX_STORE_LOCK=0"`, cena de 330 s, base = com o lock):** sem o
+  lock -0,32% us/job (EP 0,54; 4/9 menores), 60 s -0,58% (EP 0,52) -- **o lock não custa velocidade mensurável.**
+  O par 7 ficou fora: `base_7` (com o lock) parou aos 66 s num **laço de "FIFO error: possible desync event"** (88
+  mil, `last cmd = 0x75807fa0`) e "Dead FIFO ... recovering anyway". Problema **diferente e anterior ao lock**:
+  desyncs isolados (o RSX lendo dado como comando, recuperado) aparecem em 9 logs antigos, com e sem o lock e em exes
+  sem ele (`rec_base_5`, `comb15_base2_4`, `pac_var_3`, `pin0_1`, caçadas 1 e 3), entre 28 e 67 s; só aqui a
+  recuperação não saiu do laço (1 em ~1.235 logs). Fica para investigar à parte (coerência do buffer de comandos
+  entre a PPU e o RSX).
+  **Caçada do desync (`caca_fifo.sh 40 ll3`, cenas de 330 s, `PS3_RSX_FIFO_DIAG=1`, 16-17/11):** 2 cenas com desync
+  (17 e 22), nenhuma travada. As duas são **idênticas**: o get do RSX estava andando NOPs (zeros) de io 0xFF24 a
+  0xFFFC, entrou no bloco de inicialização em io 0x10000 (estado padrão, `FEED0001` etc.), achou em 0x10040 o salto
+  antigo `0x25800300` e foi parar em io 0x5800300, onde o primeiro "comando" já é dado. Ou seja, não é leitura
+  adiantada de um comando ainda não escrito: o get **saltou para fora do anel** (put em 0xA4E800) em algum ponto
+  antes, e a janela de 64 cabeçalhos só mostrou os NOPs. Próximo passo (ramo ps3recomp `fifo-desync`, 3b325623):
+  o diagnóstico guarda também os 32 últimos saltos do get (JUMP, CALL, RET, reset de get/put, recuperação) com a
+  memória na origem e no destino; nova caçada de 40 cenas com `exe_ff1`.
+  Com `exe_ff1`: 40 cenas, 0 desyncs; mais 60 cenas, 0 desyncs (2 em 180 no total). Mas a cena 30 da caçada de 60
+  (`cfifo3_30`) **travou com o lock ligado**, aos ~13 s: label 0x51 parado em **1** (esperava 2), e o dump mostrou
+  **0 consumos** do flag pelo kernel. É diferente das travadas antigas (label 0x63..0x6A7, consumos = relatórios - 1):
+  quem se perdeu foi o **primeiro** zero do flag. Em uma inicialização normal (`SPURS_FLAG_DBG=1`), o primeiro
+  0xFFFFFFFF -> 0 chega ~14 s após o início e é consumido no mesmo ms. Com o lock: 1 travada em ~200 cenas. Caçada
+  com inicializações de 26 s (`caca_boot.sh 200 ff1`, `SPURS_FLAG_DBG` + `SPU_FLAGGUARD` + `GOW3_FLAGWATCH`) para
+  ver quem leva o primeiro zero. Resultado (17/11, 09h-11h17): **200/200 sem travada**, 0 escritas de SPU sobre
+  o zero (`SPU_FLAGGUARD`), 119-277 consumos por inicialização; o mecanismo da `cfifo3_30` não reapareceu (1 em
+  ~400 execuções com o lock, causa ainda não achada; sem evidência nova, não há o que corrigir agora).
+- **Classificação das travadas (17/11), por assinatura e não pelo label:**
+
+  | log | lock | assinatura | instante | último progresso |
+  |---|---|---|---|---|
+  | `rodar_rec_var_1` | fora (exe anterior ao lock) | label 0x51 = 0x5B7 (esperava 0x5B8), disparos > 0 | 77 s | fase |
+  | `rodar_fus_base_12` | fora (anterior ao lock) | label 0x51 = 0x657, disparos > 0 | 87 s | fase |
+  | `rodar_fus_base_5` | fora (anterior ao lock) | label 0x51 = 0x63, disparos > 0 | 17 s | início |
+  | `rodar_04nov_boot_ponte_rsx_14` | fora (anterior ao lock) | label 0x51 = 0xE, disparos > 0 | inicialização | primeiros relatórios |
+  | `caca5_l0_105` | fora | label 0x51 = 0x7C, relatórios 125 / consumos 124 | inicialização | primeiros relatórios |
+  | `caca2_l0_7` | fora | label 0x51 = 0x6A7, disparos > 0 | 92 s | fase |
+  | `ib_hist` | fora (anterior ao lock) | label 0x51 = 0x180, disparos > 0 | não registrado | fase |
+  | `cfifo3_30` | **dentro** | label 0x51 = **1**, 0 consumos, 0 disparos: **primeiro** zero perdido | ~13 s | antes do primeiro relatório |
+  | `rodar_lockvel_base_7` | dentro | **desync do FIFO** (get fora do anel, 88748 desyncs, "Dead FIFO") | cena | fase |
+
+  Os sete com o lock fora têm a assinatura compatível com o mecanismo antigo (zero do meio perdido, disparos > 0);
+  a causa só foi comprovada pelo guarda (8 contra 0) nas caçadas com `SPU_FLAGGUARD`, não em cada log antigo. Execuções que passaram
+  de 77 s: caca51 a caca51d 160/160 (330 s), caca_fifo1/2 80/80, caca_fifo3 59/60, guarda_ab 20/20 (120 s),
+  ab_lockvel 19/20. Com o lock: ~200 cenas longas + 200 inicializações, 1 travada de primeiro zero e 1 desync.
+- Comandos: `bash scripts_locais/build_exe.sh <rótulo> [--spu-recarga]`; reprodução `rodar_env.sh <rótulo> 300
+  /dev/null "SPU_JOBREPLAY=<trabalho>\jobcap206s,3,0,512" SPU_JOBREPLAY_CODE=444600:4000:D97C` e
+  `python scripts_locais/cmp_replay.py <base.log> <x.log>`.
+
 **13/11/2026 tarde: geração de código SPU (ramo `tradutor-spu` aqui e no ps3recomp; autorizado pelo Celso;
 a versão funcional segue em `integra-rsx-wws`/`native-recomp`).**
 - **Demonstração no código de máquina** (relatório local `<trabalho>\relatorio_tradutor_13nov.txt`; ferramenta
@@ -599,7 +835,7 @@ sx_longo.sh`, X a cada 15 s: o Kratos morre, volta pelo
   de novo pelo relógio de quadros). O contador de quadros do próprio jogo (0x649ED8, +1 por volta do laço
   principal) e o contador de flips do GCM (`[flip]`) dão exatamente a metade: os "~19 q/s" da v21 são ~10
   quadros reais por segundo. O RPCS3 (título da janela, que conta flips) faz ~21-23 na mesma luta. A/B entre
-  builds do live draw continuam válidos (o fator é o mesmo); para quadros reais, `GOW3_trabalhops_real.py`.
+  builds do live draw continuam válidos (o fator é o mesmo); para quadros reais, `GOW3_trabalho\fps_real.py`.
 - **Ponte do RSX do RPCS3** (ramo `rsx-rpcs3` aqui, `gow3-rsx` no ps3recomp; código do ps3kit de Arnaldo Lima,
   GPL-2.0): `gow3_build.py --rsx-rpcs3 <pasta do build de gpu/>` e rodar com `PS3_RSX=rpcs3`. Sem a variável o
   exe é o de sempre (live draw). Marcos: compila, o RSX inicia (Vulkan), primeiro quadro, abertura e fase com
