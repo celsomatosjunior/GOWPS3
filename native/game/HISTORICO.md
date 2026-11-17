@@ -299,6 +299,40 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   `logs\caca_fifo4.out`, 14h20-18h): 40/40 sem desync e sem travada. Total do desync: 2 em ~260 cenas. Caçada 5
   (mais 40, logs `cfifo5_<k>`) em seguida.
 
+**17/11/2026 noite: fila nova do Celso (FIFO até 2 dias, módulo 218, origens, LEIA-ME condensado, RPCS3).**
+- **LEIA-ME condensado:** estado, instalação, comandos e problemas conhecidos. O histórico foi para este arquivo.
+  Na conferência da instalação: os 3 patches já contêm o `ps3recomp-elfv1.patch`, que não deve ser aplicado à
+  parte.
+- **`native/docs/ORIGEM_COMPONENTES.md`:** repositório, commit, caminho, licença (conferida no commit de origem)
+  e adaptações de cada componente de terceiros. Os créditos já estavam nos arquivos.
+- **Pista para o desync do FIFO.**
+  - O `gpu/README.md` da ponte registra que, no Ascension, os PUTs de SPU precisavam copiar sob o
+    `reservation_lock` do RPCS3 (`ps3rsx_dma_put` por `g_spu_dma_put_copy_hook`). Sem isso, o leitor da FIFO via
+    blocos de comando meio trocados.
+  - O nosso runtime não instala esse gancho (`gow3_rsx_rpcs3.cpp` diz "por enquanto").
+  - Mas a ponte usa a busca direta (`PS3_RSX_FIFO` padrão "direct", `fast`), na qual o gancho não faz nada. Ele
+    só age nos modos "atomic"/"ordered".
+  - Hipótese a testar só com evidência do diagnóstico de saltos: um job SPU (o EDGE grava comandos do RSX por
+    PUT) escreve no anel enquanto o RSX lê.
+  - Teste possível: `PS3_RSX_FIFO=atomic` com o gancho instalado, que mede custo e taxa. Mas com 2 em ~300 cenas,
+    provar exige centenas de cenas.
+- **Módulo 218 do ascension-native** (`GOW3_trabalho\avaliacao_218.md`, `scripts_locais\corresp_218.py`).
+  - A correspondência foi medida por sequência de operações do lift: só 28% das operações das funções do 218 têm
+    par >= 0,8 no GOW3, todas em funções pequenas. As grandes e quentes não têm par.
+  - O que era compatível já está em uso (índices) ou já foi medido como neutro (empacotador 0x66F0, luz 0x9C48).
+  - A luz difusa 0x7ED8 equivale à nossa 0x9F90 (razão 0,82), mas usa o mesmo gancho que foi neutro no 0x9C48 e
+    a regra de float deles.
+  - As medidas do próprio Arnaldo mostram pouco ganho nos núcleos de job sozinhos (o glue e o chan, nada; pular o
+    0x73E0, -4,5%).
+  - **Não portar o 218.** O equivalente seria escrever o job EDGE do GOW3 nativo a partir das capturas (semanas).
+    A sensibilidade já é conhecida (-16% us/job deu +14% de quadros com o executor). É decisão do Celso.
+- **Roteiro da medida do RPCS3** (`GOW3_trabalho\roteiro_medida_rpcs3.md`, `scripts_locais\medida_justa.ps1`).
+  - RPCS3 e nativo alternados na mesma cena.
+  - Registra plano de energia (hoje "Equilibrado"), CPU, memória, Windows, driver, versão e config do RPCS3, e o
+    `maquina.ps1` a cada 5 s.
+  - Precisa do PC livre (toma o foco).
+  - Os patamares de 15/11 continuam sem causa: não há evidência de uso do PC.
+
 **15/11/2026: pacote fundido; fronteira das chamadas (ramos `tradutor-spu-2` aqui e no ps3recomp).**
 - **Fusão** (pedido do Celso): `native-recomp` da20e77 = merge do `tradutor-spu` (shufb-inv + `SPU_CFLT_INT` ligados,
   -1,3% us/job; LS espelhada e atalho de despacho desligados). Versão anterior nos ramos locais
