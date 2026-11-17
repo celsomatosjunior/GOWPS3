@@ -295,6 +295,9 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   combate até ~540 s e a tela de morte do Kratos aos 570 s (o roteiro de botões não defende).
 - **Mesclado em `native-recomp`** (local; push só na terça, 24/11, aos dois repositórios; nunca ao origin do
   ps3recomp). O ramo `novo-main` deve ser atualizado no dia do push, como antes.
+- **Caçada do FIFO 4** (`caca_fifo.sh 40 nr17`, `native-recomp` mesclado, agora COM o diagnóstico de saltos;
+  `logs\caca_fifo4.out`, 14h20-18h): 40/40 sem desync e sem travada. Total do desync: 2 em ~260 cenas. Caçada 5
+  (mais 40, logs `cfifo5_<k>`) em seguida.
 
 **15/11/2026: pacote fundido; fronteira das chamadas (ramos `tradutor-spu-2` aqui e no ps3recomp).**
 - **Fusão** (pedido do Celso): `native-recomp` da20e77 = merge do `tradutor-spu` (shufb-inv + `SPU_CFLT_INT` ligados,
