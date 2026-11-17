@@ -451,7 +451,27 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   quem se perdeu foi o **primeiro** zero do flag. Em uma inicialização normal (`SPURS_FLAG_DBG=1`), o primeiro
   0xFFFFFFFF -> 0 chega ~14 s após o início e é consumido no mesmo ms. Com o lock: 1 travada em ~200 cenas. Caçada
   com inicializações de 26 s (`caca_boot.sh 200 ff1`, `SPURS_FLAG_DBG` + `SPU_FLAGGUARD` + `GOW3_FLAGWATCH`) para
-  ver quem leva o primeiro zero.
+  ver quem leva o primeiro zero. Resultado (17/11, 09h-11h17): **200/200 sem travada**, 0 escritas de SPU sobre
+  o zero (`SPU_FLAGGUARD`), 119-277 consumos por inicialização; o mecanismo da `cfifo3_30` não reapareceu (1 em
+  ~400 execuções com o lock, causa ainda não achada; sem evidência nova, não há o que corrigir agora).
+- **Classificação das travadas (17/11), por assinatura e não pelo label:**
+
+  | log | lock | assinatura | instante | último progresso |
+  |---|---|---|---|---|
+  | `rodar_rec_var_1` | fora (exe anterior ao lock) | label 0x51 = 0x5B7 (esperava 0x5B8), disparos > 0 | 77 s | fase |
+  | `rodar_fus_base_12` | fora (anterior ao lock) | label 0x51 = 0x657, disparos > 0 | 87 s | fase |
+  | `rodar_fus_base_5` | fora (anterior ao lock) | label 0x51 = 0x63, disparos > 0 | 17 s | início |
+  | `rodar_04nov_boot_ponte_rsx_14` | fora (anterior ao lock) | label 0x51 = 0xE, disparos > 0 | inicialização | primeiros relatórios |
+  | `caca5_l0_105` | fora | label 0x51 = 0x7C, relatórios 125 / consumos 124 | inicialização | primeiros relatórios |
+  | `caca2_l0_7` | fora | label 0x51 = 0x6A7, disparos > 0 | 92 s | fase |
+  | `ib_hist` | fora (anterior ao lock) | label 0x51 = 0x180, disparos > 0 | não registrado | fase |
+  | `cfifo3_30` | **dentro** | label 0x51 = **1**, 0 consumos, 0 disparos: **primeiro** zero perdido | ~13 s | antes do primeiro relatório |
+  | `rodar_lockvel_base_7` | dentro | **desync do FIFO** (get fora do anel, 88748 desyncs, "Dead FIFO") | cena | fase |
+
+  Os sete com o lock fora têm a assinatura compatível com o mecanismo antigo (zero do meio perdido, disparos > 0);
+  a causa só foi comprovada pelo guarda (8 contra 0) nas caçadas com `SPU_FLAGGUARD`, não em cada log antigo. Execuções que passaram
+  de 77 s: caca51 a caca51d 160/160 (330 s), caca_fifo1/2 80/80, caca_fifo3 59/60, guarda_ab 20/20 (120 s),
+  ab_lockvel 19/20. Com o lock: ~200 cenas longas + 200 inicializações, 1 travada de primeiro zero e 1 desync.
 - Comandos: `bash scripts_locais/build_exe.sh <rótulo> [--spu-recarga]`; reprodução `rodar_env.sh <rótulo> 300
   /dev/null "SPU_JOBREPLAY=<trabalho>\jobcap206s,3,0,512" SPU_JOBREPLAY_CODE=444600:4000:D97C` e
   `python scripts_locais/cmp_replay.py <base.log> <x.log>`.
