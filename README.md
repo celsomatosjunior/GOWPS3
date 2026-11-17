@@ -75,7 +75,7 @@ Atualizado em 28/10/2026.
 
 **Parada atual:** a abertura lê `CINEMATICS/SMLOGO.M2V`, mas não chega ao decodificador de vídeo
 (`cellVdecOpenEx`). A thread principal espera uma `IntroLoaderThread` que, no RPCS3, nem é criada.
-Detalhes em [native/game/LEIA-ME.md](native/game/LEIA-ME.md#onde-está-28102026).
+Detalhes em [native/game/LEIA-ME.md](native/game/HISTORICO.md#onde-está-28102026).
 
 ---
 
