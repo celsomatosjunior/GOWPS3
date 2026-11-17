@@ -385,6 +385,14 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   sem ele (`rec_base_5`, `comb15_base2_4`, `pac_var_3`, `pin0_1`, caçadas 1 e 3), entre 28 e 67 s; só aqui a
   recuperação não saiu do laço (1 em ~1.235 logs). Fica para investigar à parte (coerência do buffer de comandos
   entre a PPU e o RSX).
+  **Caçada do desync (`caca_fifo.sh 40 ll3`, cenas de 330 s, `PS3_RSX_FIFO_DIAG=1`, 16-17/11):** 2 cenas com desync
+  (17 e 22), nenhuma travada. As duas são **idênticas**: o get do RSX estava andando NOPs (zeros) de io 0xFF24 a
+  0xFFFC, entrou no bloco de inicialização em io 0x10000 (estado padrão, `FEED0001` etc.), achou em 0x10040 o salto
+  antigo `0x25800300` e foi parar em io 0x5800300, onde o primeiro "comando" já é dado. Ou seja, não é leitura
+  adiantada de um comando ainda não escrito: o get **saltou para fora do anel** (put em 0xA4E800) em algum ponto
+  antes, e a janela de 64 cabeçalhos só mostrou os NOPs. Próximo passo (ramo ps3recomp `fifo-desync`, 3b325623):
+  o diagnóstico guarda também os 32 últimos saltos do get (JUMP, CALL, RET, reset de get/put, recuperação) com a
+  memória na origem e no destino; nova caçada de 40 cenas com `exe_ff1`.
 - Comandos: `bash scripts_locais/build_exe.sh <rótulo> [--spu-recarga]`; reprodução `rodar_env.sh <rótulo> 300
   /dev/null "SPU_JOBREPLAY=<trabalho>\jobcap206s,3,0,512" SPU_JOBREPLAY_CODE=444600:4000:D97C` e
   `python scripts_locais/cmp_replay.py <base.log> <x.log>`.
