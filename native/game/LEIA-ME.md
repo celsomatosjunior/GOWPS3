@@ -286,6 +286,15 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   a próxima precisa de `build_gpu.cmd` antes. A cópia limpa agora compila a própria ponte do RSX
   (`limpo15\build_gpu_limpo.cmd` -> `limpo15\gpu-build`), com glslang f0bd0257 e asmjit 416f7356 (os patches
   não levam submódulos).
+- **Correção:** esse diagnóstico nunca tinha sido compilado e não compilava (as strings do `fprintf` tinham quebras
+  de linha literais). Corrigido no ps3recomp 8287cda3 (`fifo-desync`), integrado em b9438a4e; patches b7bdc05.
+  Custo com o diagnóstico desligado: um `static bool` em cache por `set_get`, como o rastro de cabeçalhos já fazia.
+- **Cópia limpa** (`limpo15`: ps3recomp 4e8f3ca8 + os 3 patches, árvore igual a b9438a4e salvo CRLF; ponte do RSX
+  compilada da cópia; `build_limpo.sh` do ELF ao exe): compilou, folha fundida em 10 chamadas, runtime e
+  `ps3rsx.lib` todos de `limpo15`. No jogo (`exe_limpo17`, `combate.sh limpo17 600`): 0 travadas, 0 desyncs,
+  combate até ~540 s e a tela de morte do Kratos aos 570 s (o roteiro de botões não defende).
+- **Mesclado em `native-recomp`** (local; push só na terça, 24/11, aos dois repositórios; nunca ao origin do
+  ps3recomp). O ramo `novo-main` deve ser atualizado no dia do push, como antes.
 
 **15/11/2026: pacote fundido; fronteira das chamadas (ramos `tradutor-spu-2` aqui e no ps3recomp).**
 - **Fusão** (pedido do Celso): `native-recomp` da20e77 = merge do `tradutor-spu` (shufb-inv + `SPU_CFLT_INT` ligados,
