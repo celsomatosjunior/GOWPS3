@@ -434,6 +434,20 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
 - **A/B `fifo-rapido`** (`ab_exes.sh 8 fr sl18 fr18`, 8+8 cenas alternadas, `logs\ab_fr.out`): us/job(60s)
   +0,44 us na variante (dp 0,60, t ~2,1), q/s reais sem diferença; 16/16 sem travada, 0 divergências. **Neutro ou
   regressivo: não integrado** (ramo fica no ps3recomp). A varredura da FIFO custa ~1% e não é onde está o ganho.
+- **Os jobs EDGE não esperam** (ps3recomp `medida-espera`, `SPURS_PM_CPU=1`: ciclos de CPU da thread / ciclos de
+  parede por execução de workload): wids 8, 9 e 10 a 99,1-99,4% de CPU. O tempo de ntdll das SPUs fica entre jobs;
+  dentro do caminho crítico é só execução. Os três wids somam ~97% do tempo de parede, um de cada vez.
+- **Perfil só do caminho crítico** (`g_spurs_edge_tid` no cellSpurs + balde EDGE no `GOW3_PROF`, ramo `perfil-edge`;
+  `prof_jobfn.py <map> <log> N edge`; `logs\prof_pe18.log`, 12.764 amostras): job 14561 traduzido 43,5%, núcleos
+  nativos 13,9% + `gowa_decode_indexes_ls` 3,9%, desvio indireto/busca ~6,4%, lockline 2,4%, MFC/DMA ~4,5%,
+  coerência ~2,5%, canais ~3%, gerenciador traduzido 1,3%, fora do exe 10,9% (memcpy/memcmp; ntdll só 1%).
+  Funções: nenhuma acima de 3,3% (0x6C10, 0x9A68, 0x11310, 0xDD50, 0x6130, 0xFA78, 0x7D78, 0x11740, 0xF428...).
+- **Mapa PGO** (`--spu-pgo gerar`, `GOW3_PGO=100,160`, `scripts_locais\mapa_job.py`): ~275 entradas de função por
+  job; os laços 0x5D70/0x8058/0x7D78 dominam os contadores de bloco (89 iterações por job na 0x5D70), mas não o
+  tempo (0x5D70 = 1,5%). Contador de bloco não serve como peso.
+- Conclusão: o perfil plano confirma que o ganho tem de vir do job inteiro (controle, gerenciador, runtime e código
+  pequeno), não de mais núcleos por função -- a mesma conclusão do Arnaldo no Ascension. Próximo: reprodução do job
+  206 e o caminho direto no modelo de `gowa_drawcmd/direct.c` para a forma de draw mais comum.
 
 **18/11/2026 (fim de tarde): validação da instalação limpa (pasta `Projetos\instala18`).**
 - Clone do GitHub (GOWPS3 `native-recomp` 88ceab7) + ps3recomp 4e8f3ca8 + os 3 patches + glslang/asmjit nos commits
