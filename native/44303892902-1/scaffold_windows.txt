@@ -1,0 +1,5 @@
+     0  runtime/ppu/ppu_sysprx.cpp
+     0  runtime/ppu/tests/boot_main.cpp
+     0  templates/project/main.cpp
+     0  TOTAL
+[ppu-scaffold] OK -- no regression against the windows-clang-cl baseline
