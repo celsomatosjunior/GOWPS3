@@ -64,8 +64,8 @@ Atualizado em 18/11/2026.
 | Etapa | Situação |
 |---|---|
 | 1. Ferramentas compiladas | ✔ analisador, testes e orquestrador no CI do GitHub |
-| 2. Executável analisado | ✔ 11.060 funções PPU, 184 importações do firmware, 8 programas SPU |
-| 3. Código PPU recompilado | ✔ o jogo inteiro compila: `GOW3Native.exe`, 117 MB |
+| 2. Executável analisado | ✔ 11.482 funções PPU, 184 importações do firmware, 8 programas SPU |
+| 3. Código PPU recompilado | ✔ o jogo inteiro compila, sem instrução sem tradução |
 | 4. Código SPU recompilado | ✔ os 8 programas embutidos e o *policy module* Wws_Job |
 | 5. Runtime inicializado | ✔ |
 | 6. Primeiro quadro renderizado | ✔ com o RSX do RPCS3 (ponte `gpu/`, Vulkan) |
@@ -213,6 +213,38 @@ comparadas.
 - O laço de quadros chegou a ~80 flips/s, ainda com a tela preta.
 - O título BCES00510 passou a ser lido do PARAM.SFO.
 
+**15. Tela de boot e o SPURS do motor da Santa Monica (28/10, noite).**
+- A trava da tela de boot vinha do gabarito: o RPCS3 do autor tinha patches da comunidade ligados ("Skip
+  intro", "Disable MLAA"). Sem eles, o RPCS3 também cria a `IntroLoaderThread`, e a comparação passou a
+  ser feita sem patches.
+- Com o título certo e um save do usuário, a tela de boot termina sozinha aos ~13 s, como no RPCS3.
+- Entraram no SPURS as tarefas Task2 (as 5 tarefas MLAA) e o *workload flag*, com o receptor por troca
+  atômica e o kernel escalando o receptor como o RPCS3.
+
+**16. Primeira imagem, abertura e menu principal (29/10).**
+- O quadro passou a fechar: RsxSync, MLAA e Edge completam a volta, e o jogo sai da espera do buffer
+  triplo.
+- O vídeo do logo é decodificado inteiro pelo FFmpeg (LGPL), com as AUs retidas no `cellVdec` quando a
+  fila está cheia.
+- O *live draw* passou a ser o desenho padrão: aparecem o logo da Santa Monica e a abertura da história
+  com legendas em português.
+- **PR do Arnaldo Lima:** o fim do código passou a vir das seções executáveis do ELF. Antes, ~7.800 trechos
+  de dados eram lidos como funções; agora são 11.482 funções reais, executável de 58 MB e compilação de
+  ~3,5 min.
+- Comparação detalhada com o *ps3kit* ([native/docs/PS3KIT_COMPARACAO.md](native/docs/PS3KIT_COMPARACAO.md))
+  e cinco ramos de correção enviados ao ps3kit, um por correção.
+- Com o patch "Skip any videos with X" da comunidade do RPCS3 (autor: illusion), aplicado numa cópia local
+  do EBOOT, e o X apertado por script, **o menu principal aparece em português**.
+
+**17. Gameplay e velocidade (30/10 a 18/11).**
+- O RSX do RPCS3 entrou como renderizador, pela ponte `gpu/` do *ps3kit* do Arnaldo Lima (GPL-2.0): menus e
+  a fase do Poseidon com imagem completa.
+- Executor próprio das listas de jobs Wws, tradutor de SPU com reprodução exata dos jobs EDGE e núcleos
+  nativos medidos em A/B: de ~9,5 para ~12,5-13 quadros reais por segundo na fase.
+- Travadas do RsxSync e do label 0x51 corrigidas (relatórios do RSX dentro do lock de linha). A causa de um
+  desync raro da FIFO do RSX foi achada em 18/11 e a correção está em validação.
+- Detalhes, medidas e o que deu errado em [native/game/HISTORICO.md](native/game/HISTORICO.md).
+
 ---
 
 ## Resultados no God of War III
@@ -259,7 +291,7 @@ contêm o `ps3recomp-elfv1.patch`; não o aplique à parte). O passo a passo com
 está em [native/game/LEIA-ME.md](native/game/LEIA-ME.md#instalação).
 
 ```powershell
-python native\game\gow3_build.py --jogo "<pasta do jogo>" --ps3recomp <ps3recomp> --trabalho <pasta de trabalho>
+python native\game\gow3_build.py --jogo "<pasta do jogo>" --ps3recomp <ps3recomp> --trabalho <pasta de trabalho> --spu-dir <spu_dir> --lle-libsre <lle> --ffmpeg <ffmpeg> --rsx-rpcs3 <gpu-build> --pular-videos
 ```
 
 Os passos dos SPUs, do *policy module* e da libsre estão em
@@ -275,7 +307,7 @@ native/
   game/            GOW3 Native: orquestrador do jogo inteiro, SPUs, LLE da libsre, diagnóstico
   ppu_diff/        corpus PowerPC + QEMU: teste diferencial do ps3recomp (97/97)
   tools/           ferramentas (guarda contra dados do jogo, PRX, mapas, rastreio)
-  docs/            pesquisa do ecossistema
+  docs/            pesquisa do ecossistema, auditoria do ps3recomp, comparação com o ps3kit, origem dos componentes
   PS3RECOMP_COMMIT.txt, ps3recomp-elfv1.patch, ps3recomp-gow3.patch
 app/, cmake/, packaging/, tools/, docs/   GOW3 PS3 PC (o aplicativo sobre o RPCS3)
 .github/workflows/                         CI: analisador, recompilação, guarda de dados
