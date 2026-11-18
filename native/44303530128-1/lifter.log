@@ -1,0 +1,12 @@
+  Boundary recovery: split 1 merged function(s) via prologue scan
+  jump tables: 1 dispatchers, 10 case targets, 10 kept internal, +0 case funcs
+  fall-through repair: +6 tail function(s) for truncated bounds
+Lifting 25 functions...
+  parallel lift: 4 workers, 1 chunks of ~50
+  ... lifted 25/25 functions (100%) elapsed 0.0m eta 0.0m
+Writing single-file C source -> ppu_recomp.c ...
+  WARNING: func_10001EA8 has no continuation at 0x10001F68; emitting halt
+Wrote /home/runner/work/GOWPS3/GOWPS3/bundle/lifted/ppu_recomp.h
+Wrote ppu_recomp.c
+  25 functions lifted
+  2 unique call targets
