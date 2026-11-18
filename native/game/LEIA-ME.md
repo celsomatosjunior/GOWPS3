@@ -223,7 +223,8 @@ Os roteiros de teste usados no desenvolvimento ficam fora do repositório:
 | Nome dos saves novos com data errada (`BCES00510-18446743773817603022`) | sempre, no Windows | Corrigido em 18/11: a syscall 145 (`time()`) dava o tempo desde que o PC ligou, não a hora real |
 | Lista de saves na ordem alfabética do Windows: "Carregar" abria um save manual em vez do autosave | sempre | Corrigido em 18/11: a lista segue `sortType`/`sortOrder` e o foco (`focusPosition`) pedidos pelo jogo |
 | O diálogo de escolha de save do sistema não é desenhado (vale o foco inicial do jogo) | — | Aberto; `PS3_SAVEDATA_ESCOLHA` para testes |
-| Validação da instalação fora do ambiente de desenvolvimento; progressão além da Tumba de Ares | — | Na fila |
+| **Instalação só a partir do repositório roda lenta:** compila e joga (boot, menu, fase, autosave), mas a ~1 q/s | sempre (18/11) | Aberto. O caminho rápido usa dados gerados aqui e que não vão ao repositório: as sementes dos módulos de job (sem elas o job EDGE custa ~950 us, quase tudo no interpretador), `wws_exec\gow3_wws_const.h` (executor) e `edge_nativo\` (ganchos). Instalação limpa + sementes: 35,5 us/job, 9,9 q/s; + executor e ganchos: 29,0 us/job, 12,2 q/s (= o nosso). Falta um passo do build que os gere na máquina do usuário (rodar com `SPU_INTERP_PCLOG`, `jobmod_seeds.py`, geradores do executor e dos ganchos) |
+| Progressão além da Tumba de Ares | — | Na fila |
 
 Nada do que é gerado (código traduzido, executável, logs com endereços do jogo) deve ir para o GitHub. A guarda
 do repositório (`native/tools/check_no_game_data.py`) bloqueia.

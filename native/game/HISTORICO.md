@@ -413,6 +413,23 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   - Não feito: chegar a outro checkpoint a partir da Tumba de Ares (o roteiro de analógico às cegas não tira o
     Kratos do altar); fica para um roteiro guiado pela imagem.
 
+**18/11/2026 (fim de tarde): validação da instalação limpa (pasta `Projetos\instala18`).**
+- Clone do GitHub (GOWPS3 `native-recomp` 88ceab7) + ps3recomp 4e8f3ca8 + os 3 patches + glslang/asmjit nos commits
+  do LEIA-ME: patches aplicam, a ponte do RSX compila (MSVC), SPUs, policy module, libsre e o build passam.
+- Defeitos achados e corrigidos (GOWPS3 f18538f): `converte_sprx.py` esperava `.elf` (o RPCS3 grava `.prx` para
+  `.sprx`); o passo `elf` sem `--elf` importava o pipeline do analisador, que exige o `unicorn`; os passos dos SPUs
+  precisavam de `<trabalho>\EBOOT.ELF`, que agora o passo `elf` deixa; o LEIA-ME tinha a conversão da libsre e os
+  módulos de job vagos (agora com comandos). Libsre traduzida igual à nossa (imagem e stubs idênticos).
+- O jogo roda (boot, menu, Novo Jogo, fase, autosave), mas o caminho rápido depende de dados locais (cena de 330 s):
+
+  | Instalação limpa | us/job EDGE | q/s reais |
+  |---|---|---|
+  | só o repositório | ~950 | ~1,1 |
+  | + sementes dos módulos de job | 35,5 | 9,9 |
+  | + executor Wws (`gow3_wws_const.h`) e ganchos (`edge_nativo`) | 29,0 | 12,2 |
+
+- Pendência: gerar esses dados na máquina do usuário (passo do build), sem publicá-los.
+
 **15/11/2026: pacote fundido; fronteira das chamadas (ramos `tradutor-spu-2` aqui e no ps3recomp).**
 - **Fusão** (pedido do Celso): `native-recomp` da20e77 = merge do `tradutor-spu` (shufb-inv + `SPU_CFLT_INT` ligados,
   -1,3% us/job; LS espelhada e atalho de despacho desligados). Versão anterior nos ramos locais
