@@ -74,8 +74,8 @@ Atualizado em 18/11/2026.
 | 9. Salvamento e carregamento | ○ |
 | 10. Jogo completo | ○ |
 
-**Parada atual:** velocidade. O gargalo é a cadeia de jobs EDGE nas SPUs. Em validação no ramo
-`fifo-buraco`: a correção de um desync raro da FIFO do RSX. Estado, instalação, comandos e problemas
+**Parada atual:** velocidade. O gargalo é a cadeia de jobs EDGE nas SPUs. O desync raro da FIFO do RSX
+foi corrigido em 18/11. Estado, instalação, comandos e problemas
 conhecidos em [native/game/LEIA-ME.md](native/game/LEIA-ME.md); o histórico em
 [native/game/HISTORICO.md](native/game/HISTORICO.md).
 
@@ -241,8 +241,9 @@ comparadas.
   a fase do Poseidon com imagem completa.
 - Executor próprio das listas de jobs Wws, tradutor de SPU com reprodução exata dos jobs EDGE e núcleos
   nativos medidos em A/B: de ~9,5 para ~12,5-13 quadros reais por segundo na fase.
-- Travadas do RsxSync e do label 0x51 corrigidas (relatórios do RSX dentro do lock de linha). A causa de um
-  desync raro da FIFO do RSX foi achada em 18/11 e a correção está em validação.
+- Travadas do RsxSync e do label 0x51 corrigidas (relatórios do RSX dentro do lock de linha). Desync raro da
+  FIFO do RSX corrigido em 18/11: a SPU agora grava o salto-para-si de cada linha por último, como o DMA do
+  console (0 desyncs em 40 cenas de 330 s, antes ~2 em 60; custo no ruído).
 - Detalhes, medidas e o que deu errado em [native/game/HISTORICO.md](native/game/HISTORICO.md).
 
 ---
@@ -334,9 +335,8 @@ app/, cmake/, packaging/, tools/, docs/   GOW3 PS3 PC (o aplicativo sobre o RPCS
 
 1. **Velocidade:** a cadeia de jobs EDGE nas SPUs é o caminho crítico. Cada 1% a menos no job vira quase 1% a
    mais de quadros.
-2. **Desync da FIFO do RSX:** validar e integrar a correção do ramo `fifo-buraco`.
-3. **Progressão real, salvar e carregar**, e a instalação validada fora do ambiente de desenvolvimento.
-4. **Medida do RPCS3 na mesma cena**, com o estado da máquina registrado.
+2. **Progressão real, salvar e carregar**, e a instalação validada fora do ambiente de desenvolvimento.
+3. **Medida do RPCS3 na mesma cena**, com o estado da máquina registrado.
 
 ---
 
