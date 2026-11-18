@@ -332,6 +332,17 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
     `maquina.ps1` a cada 5 s.
   - Precisa do PC livre (toma o foco).
   - Os patamares de 15/11 continuam sem causa: não há evidência de uso do PC.
+- **Caçada do FIFO 5** (`caca_fifo.sh 40 nr17`, logs `cfifo5_<k>`, 18h-21h45): 40/40 sem desync e sem
+  travada. Total do desync: 2 em ~300 cenas; 0 em 80 desde que o diagnóstico de saltos compila.
+- **Diagnóstico automático** (ramo `diag-padrao`, mesclado em `native-recomp`).
+  - `gow3_diag.cpp` liga por padrão `PS3_RSX_FIFO_DIAG=1`, `GOW3_FLAGWATCH`/`SPU_FLAGGUARD=70038CEC` e
+    `GOW3_STALL=20`. `GOW3_DIAG=0` desliga.
+  - Custo medido num A/B 6+6 (`ab_exes.sh 6 dg nr17 dg17`):
+    - us/job(60s) -0,22% (EP 0,34);
+    - us/job -0,69% (EP 0,77);
+    - q/s reais +2,9% (EP 5,9).
+    É ruído. Wws com 0 divergências nas 12 cenas.
+  - As caçadas seguem com o exe padrão (`exe_dg17`, prefixo `cfifo6_`).
 
 **15/11/2026: pacote fundido; fronteira das chamadas (ramos `tradutor-spu-2` aqui e no ps3recomp).**
 - **Fusão** (pedido do Celso): `native-recomp` da20e77 = merge do `tradutor-spu` (shufb-inv + `SPU_CFLT_INT` ligados,

@@ -158,7 +158,16 @@ que deixa o X pular os vídeos, como no RPCS3.
 - **Mudanças de uma lista que não é EDGE** (por exemplo a fusão da folha, na lista 4): meça em ms de SPU por
   quadro por lista. O `us/job` das EDGE não as vê.
 
-### Diagnóstico (todos desligados por padrão)
+### Diagnóstico
+
+Desde 17/11, quatro diagnósticos baratos vêm ligados por padrão: `PS3_RSX_FIFO_DIAG=1`,
+`GOW3_FLAGWATCH=70038CEC`, `SPU_FLAGGUARD=70038CEC` e `GOW3_STALL=20`.
+
+- `GOW3_DIAG=0` desliga os quatro.
+- Uma variável definida no ambiente ou no `.env` prevalece sobre o padrão.
+- O custo foi medido num A/B de 6+6 cenas e ficou dentro do ruído: us/job(60s) -0,22% (EP 0,34).
+
+Os demais diagnósticos começam desligados.
 
 | Variável | O que mostra |
 |---|---|
