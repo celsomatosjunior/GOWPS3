@@ -1,0 +1,6 @@
+arquivo: ppu_diff_lifted.exe  tamanho: 206848  sha256: B67820BDB7D6CDD56F7C9BF229FA64D5F67C49ABFCE5AB0881A9CF82D43EBC08
+
+            8664 machine (x64)
+            6.00 subsystem version
+               3 subsystem (Windows CUI)
+
