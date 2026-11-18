@@ -1,0 +1,52 @@
+{
+ "elf": "D:\\a\\GOWPS3\\GOWPS3\\corpus\\ps3_test.elf",
+ "steps": {
+  "elf": {
+   "ok": true,
+   "seconds": 0
+  },
+  "carregar": {
+   "ok": true,
+   "seconds": 0
+  },
+  "traduzir": {
+   "ok": true,
+   "seconds": 27
+  },
+  "projeto": {
+   "ok": true,
+   "seconds": 24
+  },
+  "compilar": {
+   "ok": false,
+   "seconds": 122,
+   "error": "compilação falhou:\nFAILED: [code=4294967295] GOW3Native.exe \nlld-link: error: undefined symbol: g_spurs_flag_consumed_ms\nlld-link: error: undefined symbol: g_spurs_flag_consumed\nlld-link: error: undefined symbol: g_gow3_flag_report_ms\nlld-link: error: undefined symbol: g_gow3_flag_report_zero\nlld-link: error: undefined symbol: g_gow3_flag_reports\nlld-link: error: undefined symbol: g_spu_flagguard_ms\nlld-link: error: undefined symbol: g_spu_flagguard_hits"
+  }
+ },
+ "functions_json": "D:\\a\\GOWPS3\\GOWPS3\\jogo\\analise\\ps3_test.functions.json",
+ "imports_json": "D:\\a\\GOWPS3\\GOWPS3\\jogo\\analise\\ps3_test.imports.json",
+ "n_functions": 19,
+ "n_imports": 0,
+ "code_end": 269236975,
+ "toc": "0x100e7a00",
+ "recomp_dir": "D:\\a\\GOWPS3\\GOWPS3\\jogo\\recompiled",
+ "lifted_functions": 3482,
+ "lifted_files": 9,
+ "lifted_bytes": 107796333,
+ "lifted_lines": 1928564,
+ "lifter_todos": 44939,
+ "lift_seconds": 27,
+ "build_dir": "D:\\a\\GOWPS3\\GOWPS3\\jogo\\build",
+ "spu": null,
+ "build_seconds": 121,
+ "build_errors": [
+  "FAILED: [code=4294967295] GOW3Native.exe ",
+  "lld-link: error: undefined symbol: g_spurs_flag_consumed_ms",
+  "lld-link: error: undefined symbol: g_spurs_flag_consumed",
+  "lld-link: error: undefined symbol: g_gow3_flag_report_ms",
+  "lld-link: error: undefined symbol: g_gow3_flag_report_zero",
+  "lld-link: error: undefined symbol: g_gow3_flag_reports",
+  "lld-link: error: undefined symbol: g_spu_flagguard_ms",
+  "lld-link: error: undefined symbol: g_spu_flagguard_hits"
+ ]
+}

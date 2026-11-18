@@ -1,0 +1,200 @@
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(486,64): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(488,27): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  488 |         prof_thread* t = &s_prof[i];
+      |                           ^~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(488,27): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(498,58): warning: function 'fprintf' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  498 |             if (th && SUCCEEDED(gtd(th, &w)) && w && *w) fprintf(stderr, "[GOW3-PROF]   nome %ls\n", w);
+      |                                                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(498,102): note: string argument is not guaranteed to be null-terminated
+  498 |             if (th && SUCCEEDED(gtd(th, &w)) && w && *w) fprintf(stderr, "[GOW3-PROF]   nome %ls\n", w);
+      |                                                                                                      ^
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(502,42): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  502 |         for (int k = 0; k < PROF_MODS && t->modn[k]; k++) {
+      |                                          ^~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(502,42): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(504,17): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  504 |             if (t->mod[k]) GetModuleFileNameA(t->mod[k], nome, sizeof nome);
+      |                 ^~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(504,17): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(504,47): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  504 |             if (t->mod[k]) GetModuleFileNameA(t->mod[k], nome, sizeof nome);
+      |                                               ^~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(504,47): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(505,29): warning: function 'strrchr' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  505 |             const char* b = strrchr(nome, '\\');
+      |                             ^~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(506,13): warning: function 'fprintf' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  506 |             fprintf(stderr, "[GOW3-PROF]   modulo %s %u\n", b ? b + 1 : nome, t->modn[k]);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(506,61): note: string argument is not guaranteed to be null-terminated
+  506 |             fprintf(stderr, "[GOW3-PROF]   modulo %s %u\n", b ? b + 1 : nome, t->modn[k]);
+      |                                                             ^~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(506,65): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  506 |             fprintf(stderr, "[GOW3-PROF]   modulo %s %u\n", b ? b + 1 : nome, t->modn[k]);
+      |                                                                 ^
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(506,65): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(506,79): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  506 |             fprintf(stderr, "[GOW3-PROF]   modulo %s %u\n", b ? b + 1 : nome, t->modn[k]);
+      |                                                                               ^~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(506,79): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(512,21): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  512 |                 if (t->key[k] && t->n[k]) ord[m++] = (uint64_t)t->n[k] << 32 | k;
+      |                     ^~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(512,21): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(512,34): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  512 |                 if (t->key[k] && t->n[k]) ord[m++] = (uint64_t)t->n[k] << 32 | k;
+      |                                  ^~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(512,34): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(512,43): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  512 |                 if (t->key[k] && t->n[k]) ord[m++] = (uint64_t)t->n[k] << 32 | k;
+      |                                           ^~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(512,43): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(512,64): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  512 |                 if (t->key[k] && t->n[k]) ord[m++] = (uint64_t)t->n[k] << 32 | k;
+      |                                                                ^~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(512,64): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(513,13): warning: function 'qsort' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  513 |             qsort(ord, m, sizeof ord[0], [](const void* a, const void* b) {
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  514 |                 const uint64_t x = *(const uint64_t*)a, y = *(const uint64_t*)b; return x < y ? 1 : x > y ? -1 : 0; });
+      |                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(516,50): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  516 |                 const uint32_t best = (uint32_t)(ord[r] >> 32), o = t->key[(uint32_t)ord[r]] - 1;
+      |                                                  ^~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(516,50): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(516,69): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  516 |                 const uint32_t best = (uint32_t)(ord[r] >> 32), o = t->key[(uint32_t)ord[r]] - 1;
+      |                                                                     ^~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(516,69): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(516,86): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  516 |                 const uint32_t best = (uint32_t)(ord[r] >> 32), o = t->key[(uint32_t)ord[r]] - 1;
+      |                                                                                      ^~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(516,86): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(531,15): warning: function 'sscanf' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  531 |     if (!e || sscanf(e, "%d,%d,%d", &start, &secs, &s_prof_stack) < 1) return 0;
+      |               ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(564,15): warning: function 'sscanf' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  564 |     if (!e || sscanf(e, "%d,%d", &a, &b) != 2) return 0;
+      |               ^~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(588,38): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  588 |         if (a >= s_watch_page && a < s_watch_page + 0x1000) {
+      |                                      ^~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(588,38): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(604,32): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  604 |             const uint8_t* p = vm_base + at;
+      |                                ^~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(604,32): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(605,62): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  605 |             uint32_t v = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+      |                                                              ^
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(605,62): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(605,87): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  605 |             uint32_t v = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+      |                                                                                       ^
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(605,87): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(605,100): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  605 |             uint32_t v = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+      |                                                                                                    ^
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(605,100): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(632,18): warning: function 'strcmp' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  632 |     s_watch_ea = strcmp(e, "ctrl") == 0 ? cellGcm_control_guest_addr() : (uint32_t)strtoul(e, NULL, 16);
+      |                  ^~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(632,84): warning: function 'strtoul' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  632 |     s_watch_ea = strcmp(e, "ctrl") == 0 ? cellGcm_control_guest_addr() : (uint32_t)strtoul(e, NULL, 16);
+      |                                                                                    ^~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(635,20): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  635 |     s_watch_page = vm_base + (s_watch_ea & ~0xFFFu);
+      |                    ^~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(635,20): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(642,26): warning: function 'atoi' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  642 |         Sleep(d ? (DWORD)atoi(d) : 300);
+      |                          ^~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(688,101): warning: unsafe pointer arithmetic [-Wunsafe-buffer-usage]
+  688 |             PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX e = (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX)(buf + off);
+      |                                                                                                     ^~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(688,101): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(690,17): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  690 |                 core_mask[n_cores++] = e->Processor.GroupMask[0].Mask;
+      |                 ^~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(690,17): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(709,71): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  709 |                 int seen = 0; for (int i = 0; i < ndone; i++) seen |= done[i] == te.th32ThreadID;
+      |                                                                       ^~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(709,71): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(714,52): warning: function 'wcscmp' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  714 |                 if (SUCCEEDED(gtd(th, &w)) && w && wcscmp(w, want ? L"spurs pm" : L"ppu main") == 0) {
+      |                                                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(716,35): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  716 |                     KAFFINITY m = core_mask[core];
+      |                                   ^~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(716,35): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(719,21): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+  719 |                     done[ndone++] = te.th32ThreadID;
+      |                     ^~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(719,21): note: pass -fsafe-buffer-usage-suggestions to receive code hardening suggestions
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(720,21): warning: function 'fprintf' is unsafe [-Wunsafe-buffer-usage-in-libc-call]
+  720 |                     fprintf(stderr, "[gow3-pin] %ls tid %lu -> núcleo %d (máscara 0x%llX)\n", w, te.th32ThreadID, core, (unsigned long long)m);
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp(720,97): note: string argument is not guaranteed to be null-terminated
+  720 |                     fprintf(stderr, "[gow3-pin] %ls tid %lu -> núcleo %d (máscara 0x%llX)\n", w, te.th32ThreadID, core, (unsigned long long)m);
+      |                                                                                               ^
+387 warnings generated.
+[179/182] Building CXX object CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_007.cpp.obj
+[180/182] Building CXX object CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_006.cpp.obj
+[181/182] Linking CXX executable GOW3Native.exe
+FAILED: [code=4294967295] GOW3Native.exe 
+C:\Windows\system32\cmd.exe /C "cd . && "C:\Program Files\CMake\bin\cmake.exe" -E vs_link_exe --msvc-ver=1951 --intdir=CMakeFiles\GOW3Native.dir --rc="C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\rc.exe" --mt="C:\Program Files\LLVM\bin\llvm-mt.exe" --manifests  -- "C:\Program Files\LLVM\bin\lld-link.exe" /nologo CMakeFiles\GOW3Native.dir\main.cpp.obj CMakeFiles\GOW3Native.dir\stubs.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_hle.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_fs.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_sysprx.cpp.obj CMakeFiles\GOW3Native.dir\ppu_hle_nids.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_000.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_001.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_002.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_003.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_004.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_005.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_006.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_007.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_table.cpp.obj CMakeFiles\GOW3Native.dir\generated_spu\spu_workloads.c.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\ps3recomp\runtime\spu\spu_dispatch_mt.c.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\gow3\native\game\gow3_wws_exec.c.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\gow3\native\game\gow3_rsx.cpp.obj  /out:GOW3Native.exe /implib:GOW3Native.lib /pdb:GOW3Native.pdb /version:0.0 /machine:x64 /INCREMENTAL:NO /subsystem:console /MAP  ps3recomp_sdk\ps3recomp_runtime.lib  dbghelp.lib  user32.lib  gdi32.lib  winmm.lib  ws2_32.lib  ole32.lib  bcrypt.lib  kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib && cd ."
+LINK: command "C:\Program Files\LLVM\bin\lld-link.exe /nologo CMakeFiles\GOW3Native.dir\main.cpp.obj CMakeFiles\GOW3Native.dir\stubs.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_loader.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_hle.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_fs.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\ps3recomp\runtime\ppu\ppu_sysprx.cpp.obj CMakeFiles\GOW3Native.dir\ppu_hle_nids.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_000.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_001.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_002.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_003.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_004.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_005.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_006.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_007.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\jogo\recompiled\ppu_recomp_table.cpp.obj CMakeFiles\GOW3Native.dir\generated_spu\spu_workloads.c.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\ps3recomp\runtime\spu\spu_dispatch_mt.c.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\gow3\native\game\gow3_wws_exec.c.obj CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\gow3\native\game\gow3_rsx.cpp.obj /out:GOW3Native.exe /implib:GOW3Native.lib /pdb:GOW3Native.pdb /version:0.0 /machine:x64 /INCREMENTAL:NO /subsystem:console /MAP ps3recomp_sdk\ps3recomp_runtime.lib dbghelp.lib user32.lib gdi32.lib winmm.lib ws2_32.lib ole32.lib bcrypt.lib kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST:EMBED,ID=1" failed (exit code 1) with the following output:
+lld-link: error: undefined symbol: g_spurs_flag_consumed_ms
+
+>>> referenced by CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp.obj:(void __cdecl dump(struct HINSTANCE__*, int))
+
+>>> referenced by CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp.obj:(void __cdecl dump(struct HINSTANCE__*, int))
+
+
+
+lld-link: error: undefined symbol: g_spurs_flag_consumed
+
+>>> referenced by CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp.obj:(void __cdecl dump(struct HINSTANCE__*, int))
+
+>>> referenced by CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp.obj:(void __cdecl dump(struct HINSTANCE__*, int))
+
+
+
+lld-link: error: undefined symbol: g_gow3_flag_report_ms
+
+>>> referenced by CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp.obj:(void __cdecl dump(struct HINSTANCE__*, int))
+
+>>> referenced by CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp.obj:(void __cdecl dump(struct HINSTANCE__*, int))
+
+>>> referenced by CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp.obj:(void __cdecl dump(struct HINSTANCE__*, int))
+
+
+
+lld-link: error: undefined symbol: g_gow3_flag_report_zero
+
+>>> referenced by CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp.obj:(void __cdecl dump(struct HINSTANCE__*, int))
+
+
+
+lld-link: error: undefined symbol: g_gow3_flag_reports
+
+>>> referenced by CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp.obj:(void __cdecl dump(struct HINSTANCE__*, int))
+
+
+
+lld-link: error: undefined symbol: g_spu_flagguard_ms
+
+>>> referenced by CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp.obj:(void __cdecl dump(struct HINSTANCE__*, int))
+
+>>> referenced by CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp.obj:(void __cdecl dump(struct HINSTANCE__*, int))
+
+
+
+lld-link: error: undefined symbol: g_spu_flagguard_hits
+
+>>> referenced by CMakeFiles\GOW3Native.dir\D_\a\GOWPS3\GOWPS3\gow3\native\game\gow3_diag.cpp.obj:(void __cdecl dump(struct HINSTANCE__*, int))
+
+ninja: build stopped: subcommand failed.
+(código 4294967295)
