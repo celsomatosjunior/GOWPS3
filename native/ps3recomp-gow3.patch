@@ -5669,7 +5669,7 @@ index 195c75e3..95b4c5b8 100644
          u128 x = spu_shufb(a, b, c), y = spu_shufb_ref(a, b, c);
          if (memcmp(&x, &y, 16)) {
 diff --git a/runtime/syscalls/sys_timer.c b/runtime/syscalls/sys_timer.c
-index 3a022815..6cc72dfa 100644
+index 3a022815..57e838c2 100644
 --- a/runtime/syscalls/sys_timer.c
 +++ b/runtime/syscalls/sys_timer.c
 @@ -182,6 +182,16 @@ int64_t sys_timer_usleep(ppu_context* ctx)
@@ -5689,6 +5689,31 @@ index 3a022815..6cc72dfa 100644
              for (int k = 0; k < 8; k++) {
                int best = -1;
                for (int j = 0; j < pt_used; j++)
+@@ -359,14 +369,16 @@ int64_t sys_time_get_current_time(ppu_context* ctx)
+     uint64_t sec, nsec;
+ 
+ #ifdef _WIN32
+-    ensure_qpc_init();
+-    LARGE_INTEGER now;
+-    QueryPerformanceCounter(&now);
+-
+-    /* Convert QPC to seconds + nanoseconds */
+-    sec  = (uint64_t)(now.QuadPart / s_qpc_freq.QuadPart);
+-    uint64_t remainder = (uint64_t)(now.QuadPart % s_qpc_freq.QuadPart);
+-    nsec = (remainder * 1000000000ULL) / (uint64_t)s_qpc_freq.QuadPart;
++    /* LV2 145 is the wall clock (seconds since 1970), like CLOCK_REALTIME below -- not the monotonic QPC
++     * clock that mftb and sys_time_get_system_time share. With QPC, games that build names or dates from
++     * time()+localtime() (GOW3's new save directories, "%s-%012llu" of YYMMDDhhmmss) got the PC's uptime as
++     * a date in January 1970. FILETIME counts 100 ns since 1601-01-01. */
++    FILETIME ft;
++    GetSystemTimePreciseAsFileTime(&ft);
++    uint64_t t100 = ((uint64_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
++    t100 -= 116444736000000000ULL;
++    sec  = t100 / 10000000ULL;
++    nsec = (t100 % 10000000ULL) * 100ULL;
+ #else
+     struct timespec ts;
+     clock_gettime(CLOCK_REALTIME, &ts);
 diff --git a/templates/project/main.cpp b/templates/project/main.cpp
 index f1f3243b..74d19a3c 100644
 --- a/templates/project/main.cpp

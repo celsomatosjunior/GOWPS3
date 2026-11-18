@@ -130,6 +130,11 @@ que deixa o X pular os vídeos, como no RPCS3.
 
 - **Save:** o jogo lê `BCES00510-USERDATA` em `<trabalho>/gamedata/dev_hdd0/home/00000001/savedata/`. Copie-o do
   RPCS3. Sem ele, o boot segue o caminho de "primeira vez". O save é do usuário e fica só no PC dele.
+- **Carregar e salvar** funcionam (testado em 18/11 com saves do RPCS3 da Tumba de Ares): menu "Carregar", ponto
+  de save com R1, um save novo `BCES00510-AAMMDDhhmmss`, e ele carrega de volta. Os saves do RPCS3
+  (`BCES00510-<data>`) podem ser copiados para a mesma pasta.
+  - Não há a tela de escolha do sistema: carregar pega o primeiro save da lista, e salvar sempre cria um save
+    novo (não sobrescreve). Para carregar outro, deixe só ele na pasta.
 - **Cache:** o runtime guarda `/dev_hdd1` em `<pasta do jogo>\cache`. Um cache FIOS incompleto, deixado por uma
   execução interrompida, faz o jogo reabrir `cache.idx` sem parar. Para começar limpo, tire essa pasta dali.
 
@@ -198,7 +203,9 @@ Os roteiros de teste usados no desenvolvimento ficam fora do repositório:
 | **"Patamares" de us/job ~2x**, agrupados no tempo, nos dois executáveis de um A/B (15/11) | não se repetiram | Causa desconhecida. `maquina.ps1` agora registra o estado da máquina durante as medidas |
 | O Kratos morre em testes longos sem comando ("Estás morto") | — | É o jogo, não um erro |
 | `--passos compilar` falha ("PAROU") se o exe ainda estiver aberto | — | Feche o exe e repita |
-| Validação da instalação fora do ambiente de desenvolvimento; progressão real e salvar/carregar | — | Na fila |
+| Nome dos saves novos com data errada (`BCES00510-18446743773817603022`) | sempre, no Windows | Corrigido em 18/11: a syscall 145 (`time()`) dava o tempo desde que o PC ligou, não a hora real |
+| Sem a tela de escolha de save (carregar pega o primeiro; salvar cria sempre um novo) | — | Aberto |
+| Validação da instalação fora do ambiente de desenvolvimento; progressão além da Tumba de Ares | — | Na fila |
 
 Nada do que é gerado (código traduzido, executável, logs com endereços do jogo) deve ir para o GitHub. A guarda
 do repositório (`native/tools/check_no_game_data.py`) bloqueia.

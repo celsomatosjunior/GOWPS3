@@ -377,6 +377,24 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   conferida). O diagnóstico automático segue ligado e as caçadas continuam com o executável padrão: 40 cenas
   limpas não provam sozinhas a ausência (antes eram ~2 em 60 a 340).
 
+**18/11/2026 (tarde): carregar e salvar com saves reais; hora do sistema no Windows.**
+- O Celso deu saves do RPCS3 (4 manuais na Tumba de Ares, um por dificuldade, 13-16 min de jogo). Copiados para
+  `GOW3_trabalho\gamedata\...\savedata` (os nossos ficaram em `logs\savedata_backup_1118`).
+- Roteiro guiado pela tela (`scripts_locais\guia_menu.ps1` + `carregar.sh`, locais): copia a janela a cada ~1 s,
+  compara com uma captura do menu e aperta pelo `PAD_FILE` com toques curtos (o toque de 40 leituras do
+  `PAD_SCRIPT` repete o movimento no menu). Um X a cada 4 s pula os vídeos até o menu aparecer.
+- **Carregar:** menu -> Carregar -> `ListLoad2` -> `LOAD dir='BCES00510-211127001352'`. O jogo abre na Tumba de
+  Ares, no ponto de save: **primeira área além da fase do Poseidon no executável nativo.**
+- **Salvar:** R1 no ponto de save -> `ListSave2` -> save novo. O nome saiu `BCES00510-18446743773817603022`.
+  - O jogo monta o nome com `time()` + `localtime()` (EBOOT 0x23F22C/0x26B4B8, formato `%s-%012llu` de
+    AAMMDDhhmmss). `time()` é a syscall 145 (`sys_time_get_current_time`).
+  - No Windows o ps3recomp respondia com o QPC (tempo desde que o PC ligou): 8/1/1970, menos 2000 anos.
+  - Correção (ps3recomp `relogio` 45b6f809, em `integra-17nov`): `GetSystemTimePreciseAsFileTime`, como o
+    `CLOCK_REALTIME` do Linux. O mftb e o `sys_time_get_system_time` seguem no relógio monotônico.
+  - Depois: `BCES00510-261118160007`, e esse save carrega de volta (só ele na pasta).
+  - 2 cenas de 330 s com a correção: 0 desync, 0 travada, us/job(60s) 29,1, 12,0 q/s reais.
+- Limitação: sem a tela de escolha do sistema, carregar pega o primeiro save listado e salvar sempre cria um novo.
+
 **15/11/2026: pacote fundido; fronteira das chamadas (ramos `tradutor-spu-2` aqui e no ps3recomp).**
 - **Fusão** (pedido do Celso): `native-recomp` da20e77 = merge do `tradutor-spu` (shufb-inv + `SPU_CFLT_INT` ligados,
   -1,3% us/job; LS espelhada e atalho de despacho desligados). Versão anterior nos ramos locais
