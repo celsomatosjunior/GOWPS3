@@ -24,6 +24,8 @@ extern "C" void cellGcm_rsx_event(unsigned events, unsigned user_arg);
 extern "C" void spu_lockline_lock(void);
 extern "C" void spu_lockline_unlock(void);
 extern "C" void spu_coh_notify_write(uint32_t ea);
+extern "C" void spu_put_fifo_map(uint32_t ea, uint32_t io, uint32_t size);
+extern "C" void spu_put_fifo_unmap(uint32_t io, uint32_t size);
 extern "C" int g_gow3_rsx_external;
 
 struct CellGcmRsxHooks {
@@ -105,8 +107,21 @@ static int rpcs3_rsx_start(uint32_t context_addr, uint32_t local_size)
 
 static int rpcs3_rsx_flip(uint32_t id) { return ps3rsx_flip(id); }
 
+// The io-mapped ranges also go to the SPU PUT path: the GOW3 SPUs write the RSX command stream there, over
+// "jump to self" holes, and a PUT that fills one stores the hole last (ps3recomp spu_put_copy).
+static void rpcs3_rsx_iomap(unsigned ea, unsigned io, unsigned size)
+{
+    spu_put_fifo_map(ea, io, size);
+    ps3rsx_iomap(ea, io, size);
+}
+static void rpcs3_rsx_iounmap(unsigned io, unsigned size)
+{
+    spu_put_fifo_unmap(io, size);
+    ps3rsx_iounmap(io, size);
+}
+
 static const CellGcmRsxHooks s_rpcs3_hooks = {
-    rpcs3_rsx_start, ps3rsx_iomap, ps3rsx_iounmap, ps3rsx_set_display_buffer, rpcs3_rsx_flip,
+    rpcs3_rsx_start, rpcs3_rsx_iomap, rpcs3_rsx_iounmap, ps3rsx_set_display_buffer, rpcs3_rsx_flip,
 };
 
 #ifdef _WIN32
