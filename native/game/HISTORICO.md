@@ -431,6 +431,9 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   Etapas: (1) mapa dinâmico do job (contagens por função, `--spu-pgo gerar` + `GOW3_PGO`); (2) controle nativo de
   cima para baixo chamando o traduzido, reprodução idêntica (`jobcap206s`/`jobcap_comb`); (3) partes nativas; (4)
   o job sem LS, lendo e gravando a memória principal.
+- **A/B `fifo-rapido`** (`ab_exes.sh 8 fr sl18 fr18`, 8+8 cenas alternadas, `logs\ab_fr.out`): us/job(60s)
+  +0,44 us na variante (dp 0,60, t ~2,1), q/s reais sem diferença; 16/16 sem travada, 0 divergências. **Neutro ou
+  regressivo: não integrado** (ramo fica no ps3recomp). A varredura da FIFO custa ~1% e não é onde está o ganho.
 
 **18/11/2026 (fim de tarde): validação da instalação limpa (pasta `Projetos\instala18`).**
 - Clone do GitHub (GOWPS3 `native-recomp` 88ceab7) + ps3recomp 4e8f3ca8 + os 3 patches + glslang/asmjit nos commits
