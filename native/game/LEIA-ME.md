@@ -18,10 +18,14 @@ O histórico completo (decisões, medidas, experimentos descartados e seus motiv
 [HISTORICO.md](HISTORICO.md). A origem e a licença de cada componente de terceiros estão em
 [../docs/ORIGEM_COMPONENTES.md](../docs/ORIGEM_COMPONENTES.md).
 
-## Estado atual (17/11/2026)
+## Estado atual (18/11/2026)
 
 - **Roda:** abertura, menus e a fase do Poseidon com combate, com imagem completa. Testes de 600 s em combate
-  rodam sem travar.
+  rodam sem travar. Carregar (o autosave no topo da lista, como o jogo pede), salvar no ponto de save, continuar
+  depois de morrer e reabrir funcionam; um save do RPCS3 abre a Tumba de Ares.
+- **Missão (18/11):** 60 q/s reais, com 30 e 45 como marcos. Fila: (1) o job EDGE inteiro nativo (`jobmod_14561`),
+  em etapas verificadas pela reprodução; (2) o PPU (~44 ms/quadro ocupado) quando o EDGE cair abaixo dele;
+  (3) geradores dos dados locais para a instalação a partir do repositório. Detalhes no HISTORICO (18/11, noite).
 - **Velocidade:** ~12,5-13 quadros reais/s na fase. O RPCS3 faz ~22 na mesma cena, então o nativo está em
   ~57-60% dele.
   - O gargalo é a cadeia serial das listas EDGE (wids 8-10) nas SPUs, a ~29,5 us por job.

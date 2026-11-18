@@ -413,6 +413,25 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   - Não feito: chegar a outro checkpoint a partir da Tumba de Ares (o roteiro de analógico às cegas não tira o
     Kratos do altar); fica para um roteiro guiado pela imagem.
 
+**18/11/2026 (noite): missão 60 q/s -- perfil da versão funcional e escolha do alvo.**
+- Meta do Celso (18/11): 60 q/s reais sustentados, com 30 e 45 como marcos; sem contagem dupla nem tela leve como
+  prova; exatidão, A/B alternado, estabilidade e progressão antes de integrar.
+- Perfil (`exe_sl18`, `GOW3_PROF=100,40`, `logs\prof_p18.*`): EDGE 76 ms/quadro (2.452 jobs x 30,4 us) de ~83 ms.
+  - SPU das EDGE (mais ocupada): código traduzido dos jobs 45,5% do total, ntdll (espera) 22,7%, despacho 7,6%,
+    núcleos nativos 6,2%, VCRUNTIME 4,6%, DMA 3,9%, coerência 3,2%, canais 2,4%. `spu_fifo_hole` 1,0% (a
+    correção da FIFO de hoje; otimizada em ps3recomp `fifo-rapido` 770f19c6, A/B em curso).
+  - PPU principal: 53% ocupado (~44 ms/quadro), 47% esperando; `vmx_vmaddfp` 5,2%, `func_0022F1CC` 8,9%.
+- Conta: 30 q/s = 33 ms. O EDGE precisa de ~12 us/job (2,4x) e o PPU de ~1,35x. O EDGE é serial (uma lista por
+  vez; `maxContention=1`, como no PS3), então o ganho tem de vir do tempo por job.
+- O que já se sabe: núcleos nativos por função foram neutros (chamadas curtas, perfil plano); ~6 milhões de entradas
+  de função por segundo na cadeia EDGE, quase todas por desvio indireto (a fusão de folhas cobre ~2%).
+- **Alvo escolhido: o job EDGE inteiro nativo** (`jobmod_14561`, entrada 0xD200, 965 funções traduzidas, 60 KB), no
+  modelo do caminho direto do Arnaldo no Ascension (`ps3kit/libs/spu_hle/gowa_drawcmd`: -31% de ciclos por job;
+  lá as listas são paralelas e o fps quase não mudou; aqui a cadeia é serial e o EDGE é 92% do quadro).
+  Etapas: (1) mapa dinâmico do job (contagens por função, `--spu-pgo gerar` + `GOW3_PGO`); (2) controle nativo de
+  cima para baixo chamando o traduzido, reprodução idêntica (`jobcap206s`/`jobcap_comb`); (3) partes nativas; (4)
+  o job sem LS, lendo e gravando a memória principal.
+
 **18/11/2026 (fim de tarde): validação da instalação limpa (pasta `Projetos\instala18`).**
 - Clone do GitHub (GOWPS3 `native-recomp` 88ceab7) + ps3recomp 4e8f3ca8 + os 3 patches + glslang/asmjit nos commits
   do LEIA-ME: patches aplicam, a ponte do RSX compila (MSVC), SPUs, policy module, libsre e o build passam.
