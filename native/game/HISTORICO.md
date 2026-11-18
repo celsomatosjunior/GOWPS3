@@ -346,6 +346,31 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
 - **Caçada do FIFO 6** (`caca_fifo.sh 40 dg17`, 22h55-02h35 de 18/11): 40/40 sem desync e sem travada. Total do
   desync: 2 em ~340 cenas; 0 em 120 desde que o diagnóstico de saltos compila. Caçada 7 (60 cenas, `cfifo7_`) em seguida.
 
+**18/11/2026: causa do desync da FIFO encontrada (ramos `fifo-buraco` aqui e no ps3recomp).**
+- **Caçada 7** (`caca_fifo.sh 60 dg17`, 02h40-08h10): 2 desyncs, nas cenas 23 e 57 (logs `cfifo7_23_guardado`,
+  `cfifo7_57_guardado`).
+  - O mesmo padrão nos dois: o RSX parado num salto-para-si (`0x20000000|io`) viu a palavra trocada por um
+    comando e leu, 0x20 e 0x4C bytes adiante, cabeçalhos inválidos (`0xC09A2311`, `0x60403FA4`).
+  - No dump, logo depois, essas posições já eram comandos válidos: o leitor viu a palavra nova e o resto velho.
+- **`SPU_HOLEGUARD=70000000`** (diagnóstico novo, desligado por padrão) conta as escritas de SPU que trocam um
+  salto-para-si.
+  - Os segmentos da FIFO vêm de PUTs de SPU de um job (img 0x10A00001, pc 0x0F24C), de 256 a 368 bytes, ~11
+    milhões de buracos em 200 s.
+  - O GOW3 deixa um salto-para-si no início de cada linha de 128 bytes ainda não escrita e no fim do segmento
+    anterior. No hardware o DMA grava a linha inteira; o nosso `memcpy` grava a primeira palavra antes.
+  - Os carimbos de reserva que o leitor da FIFO confere por linha não são atualizados por nenhuma escrita do
+    nosso runtime.
+- **Correção** (`spu_put_copy`): nas faixas mapeadas em IO (registradas pelo iomap do host), um pedaço do PUT
+  que começa num salto-para-si é copiado com a primeira palavra por último, depois de uma barreira.
+  - Os bytes são os mesmos, só a ordem muda. Nenhum label forçado, nenhum comando pulado.
+  - `SPU_PUT_HOLE_ORDER=0` desliga.
+- **Prova** com atraso de teste entre as duas escritas (`SPU_PUT_HOLE_DELAY`, cenas de 150 s):
+  - ordem antiga: 13 desyncs com atraso 20 (travou aos 13 s) e 2 com atraso 3 (travou aos 28 s);
+  - ordem nova: 0 com atrasos 20 e 100.
+- A exatidão da reprodução não é afetada: a reprodução não registra faixas de IO, e a memória final é a mesma.
+- Resumo para o Arnaldo: `GOW3_trabalho\resumo_fifo_arnaldo.md`.
+- Em seguida: A/B de custo 6+6 (`ab_exes.sh 6 fb dg17 fb18`) e caçada 8 (40 cenas, `fb18`, sem atraso).
+
 **15/11/2026: pacote fundido; fronteira das chamadas (ramos `tradutor-spu-2` aqui e no ps3recomp).**
 - **Fusão** (pedido do Celso): `native-recomp` da20e77 = merge do `tradutor-spu` (shufb-inv + `SPU_CFLT_INT` ligados,
   -1,3% us/job; LS espelhada e atalho de despacho desligados). Versão anterior nos ramos locais
