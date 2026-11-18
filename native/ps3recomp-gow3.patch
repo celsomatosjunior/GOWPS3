@@ -878,6 +878,174 @@ index 07a3d2e4..42cb7c8d 100644
  s32 cellSpursTasksetAttributeSetName(CellSpursTasksetAttribute* attr,
                                        const char* name);
  
+diff --git a/libs/system/cellSaveData.c b/libs/system/cellSaveData.c
+index 1fb1b120..f221397a 100644
+--- a/libs/system/cellSaveData.c
++++ b/libs/system/cellSaveData.c
+@@ -394,6 +394,65 @@ static s32 dispatch_func_stat_full(uint32_t func_opd, int is_new, const char* di
+  * `selected` receives the chosen directory ("" when none): the first listed
+  * entry, else the new-save name, else the focus name. For a save with nothing
+  * listed the new-save name wins -- headless, there is no user to pick. */
++/* Last write time of <save root>/<dir>/PARAM.SFO (rewritten on every save of that directory), 0 when absent. */
++static uint64_t savedata_mtime(const char* dir)
++{
++    char p[1100];
++    snprintf(p, sizeof p, "%s/%s/PARAM.SFO", s_save_root, dir);
++#ifdef _WIN32
++    WIN32_FILE_ATTRIBUTE_DATA a;
++    if (!GetFileAttributesExA(p, GetFileExInfoStandard, &a)) return 0;
++    return ((uint64_t)a.ftLastWriteTime.dwHighDateTime << 32) | a.ftLastWriteTime.dwLowDateTime;
++#else
++    struct stat st;
++    return stat(p, &st) == 0 ? (uint64_t)st.st_mtime : 0;
++#endif
++}
++
++/* The list the system dialog would show: sorted as the title asked in CellSaveDataSetList (sortType: modified
++ * time or subtitle; sortOrder: descending or ascending). The directory listing order is the host's (NTFS:
++ * alphabetical), which put "BCES00510-2111..." checkpoint saves above GOW3's AUTOSAVE. */
++static void sort_save_dirs(CellSaveDataDirList* dirList, u32 n, u32 sortType, u32 sortOrder);
++
++/* The player's pick in a load list. Headless, the dialog's initial focus stands in for the player (focusPosition,
++ * read from the title's CellSaveDataListSet). PS3_SAVEDATA_ESCOLHA=<directory name, or its suffix after the
++ * '-', or a 0-based index in the sorted list> makes another choice, like a player moving the cursor. */
++static int savedata_pick_listed(const CellSaveDataDirList* dirList, uint32_t listed, uint32_t focus_pos,
++                                uint32_t focus_name_ea)
++{
++    if (!listed) return -1;
++    const char* e = getenv("PS3_SAVEDATA_ESCOLHA");
++    if (e && *e) {
++        char* end; long k = strtol(e, &end, 10);
++        if (!*end && k >= 0 && (uint32_t)k < listed) return (int)k;
++        for (uint32_t i = 0; i < listed; i++) {
++            const char* d = dirList[i].dirName; const char* dash = strchr(d, '-');
++            if (!strcmp(d, e) || (dash && !strcmp(dash + 1, e))) return (int)i;
++        }
++        printf("[cellSaveData] PS3_SAVEDATA_ESCOLHA='%s' não está na lista; fica o foco do título%c", e, 10);
++    }
++    switch (focus_pos) {
++    case CELL_SAVEDATA_FOCUSPOS_LISTTAIL: return (int)listed - 1;
++    case CELL_SAVEDATA_FOCUSPOS_LATEST:
++    case CELL_SAVEDATA_FOCUSPOS_OLDEST: {
++        int best = 0; uint64_t bt = savedata_mtime(dirList[0].dirName);
++        for (uint32_t i = 1; i < listed; i++) {
++            uint64_t t = savedata_mtime(dirList[i].dirName);
++            if (focus_pos == CELL_SAVEDATA_FOCUSPOS_LATEST ? t > bt : t < bt) { bt = t; best = (int)i; }
++        }
++        return best; }
++    case CELL_SAVEDATA_FOCUSPOS_DIRNAME:
++        if (focus_name_ea) {
++            char fn[64]; int i;
++            for (i = 0; i < 63; i++) { fn[i] = (char)vm_read8(focus_name_ea + (uint32_t)i); if (!fn[i]) break; }
++            fn[63] = 0;
++            for (uint32_t j = 0; j < listed; j++) if (!strcmp(dirList[j].dirName, fn)) return (int)j;
++        }
++        return 0;
++    default: return 0;   /* LISTHEAD, NEWDATA without new data */
++    }
++}
++
+ static s32 dispatch_func_select(uint32_t func_opd, const CellSaveDataDirList* dirList,
+                                 uint32_t dirCount, uint32_t setBuf_ea, int is_save,
+                                 uint32_t userdata_ea, const char* who, char selected[64])
+@@ -429,10 +488,18 @@ static s32 dispatch_func_select(uint32_t func_opd, const CellSaveDataDirList* di
+     const uint32_t fixed_n = vm_read32(set_ea + 8), fixed = vm_read32(set_ea + 12);
+     const uint32_t newd = vm_read32(set_ea + 16), focus = vm_read32(set_ea + 4);
+     const uint32_t new_name = newd ? vm_read32(newd + 4) : 0;
++    const uint32_t focus_pos = vm_read32(set_ea + 0);
+     uint32_t pick = 0;
+     if (is_save && new_name && fixed_n == 0) pick = new_name;
+     else if (fixed_n && fixed)               pick = fixed;
+     else if (new_name)                       pick = new_name;
++    else if (!is_save && listed) {
++        /* A load list: the player picks from the title's list; headless, the initial focus (or the
++         * PS3_SAVEDATA_ESCOLHA stand-in for the cursor). The listed entries are already in the guest buffer. */
++        int k = savedata_pick_listed(dirList, listed, focus_pos, focus);
++        if (k >= 0) pick = buf_ea + (uint32_t)k * 48u;
++        printf("[cellSaveData] %s: focusPosition=%u, escolhido %d de %u%c", who, focus_pos, k, listed, 10);
++    }
+     else if (focus)                          pick = focus;
+     if (pick) {
+         for (int i = 0; i < 63; i++) {
+@@ -1007,6 +1074,42 @@ static s32 savedata_execute_run(const char* dirName, int is_save,
+  * API implementations
+  * -----------------------------------------------------------------------*/
+ 
++static void sort_save_dirs(CellSaveDataDirList* dirList, u32 n, u32 sortType, u32 sortOrder)
++{
++    if (n < 2) return;
++    uint64_t* t = (uint64_t*)calloc(n, sizeof *t);
++    char (*sub)[CELL_SAVEDATA_SYSP_SUBTITLE_SIZE] = calloc(n, sizeof *sub);
++    if (!t || !sub) { free(t); free(sub); return; }
++    for (u32 i = 0; i < n; i++) {
++        t[i] = savedata_mtime(dirList[i].dirName);
++        if (sortType == CELL_SAVEDATA_SORTTYPE_SUBTITLE) {
++            char path[1100]; CellSaveDataSystemFileParam p;
++            snprintf(path, sizeof path, "%s/%s", s_save_root, dirList[i].dirName);
++            read_param_sfo(path, &p);
++            memcpy(sub[i], p.subTitle, sizeof sub[i]);
++        }
++    }
++    /* insertion sort (a few dozen entries at most), stable */
++    for (u32 i = 1; i < n; i++) {
++        CellSaveDataDirList d = dirList[i]; uint64_t ti = t[i]; char si[CELL_SAVEDATA_SYSP_SUBTITLE_SIZE];
++        memcpy(si, sub[i], sizeof si);
++        u32 j = i;
++        while (j > 0) {
++            int c = sortType == CELL_SAVEDATA_SORTTYPE_SUBTITLE ? strcmp(sub[j - 1], si)
++                                                                : (t[j - 1] > ti) - (t[j - 1] < ti);
++            if (sortOrder == CELL_SAVEDATA_SORTORDER_DESCENT) c = -c;
++            if (c <= 0) break;
++            dirList[j] = dirList[j - 1]; t[j] = t[j - 1]; memcpy(sub[j], sub[j - 1], sizeof si);
++            j--;
++        }
++        dirList[j] = d; t[j] = ti; memcpy(sub[j], si, sizeof si);
++    }
++    printf("[cellSaveData] lista (sortType=%u sortOrder=%u):", sortType, sortOrder);
++    for (u32 i = 0; i < n; i++) printf(" %s", dirList[i].dirName);
++    printf("%c", 10);
++    free(t); free(sub);
++}
++
+ s32 cellSaveDataListSave2(u32 version, CellSaveDataSetList* setList,
+                            CellSaveDataSetBuf* setBuf,
+                            CellSaveDataListCallback funcList,
+@@ -1033,6 +1136,8 @@ s32 cellSaveDataListSave2(u32 version, CellSaveDataSetList* setList,
+         savedata_host_str((const char*)(uintptr_t)vm_read32((u32)(uintptr_t)setList + 8)) ?
+             savedata_host_str((const char*)(uintptr_t)vm_read32((u32)(uintptr_t)setList + 8)) : "",
+         dirList, dir_max);
++    sort_save_dirs(dirList, dirCount < dir_max ? dirCount : dir_max, vm_read32((u32)(uintptr_t)setList + 0),
++                   vm_read32((u32)(uintptr_t)setList + 4));
+ 
+     /* Call list callback */
+     CellSaveDataCBResult cbResult;
+@@ -1094,6 +1199,8 @@ s32 cellSaveDataListLoad2(u32 version, CellSaveDataSetList* setList,
+         savedata_host_str((const char*)(uintptr_t)vm_read32((u32)(uintptr_t)setList + 8)) ?
+             savedata_host_str((const char*)(uintptr_t)vm_read32((u32)(uintptr_t)setList + 8)) : "",
+         dirList, dir_max);
++    sort_save_dirs(dirList, dirCount < dir_max ? dirCount : dir_max, vm_read32((u32)(uintptr_t)setList + 0),
++                   vm_read32((u32)(uintptr_t)setList + 4));
+ 
+     CellSaveDataCBResult cbResult;
+     memset(&cbResult, 0, sizeof(cbResult));
+@@ -1162,6 +1269,7 @@ static s32 savedata_fixed(int is_save, CellSaveDataSetList* setList,
+     u32 prefix = vm_read32((u32)(uintptr_t)setList + 8);
+     u32 count = enumerate_save_dirs(prefix ? (char*)vm_base + prefix : "", dirs, dir_max);
+     u32 listed = count < dir_max ? count : dir_max;
++    sort_save_dirs(dirs, listed, vm_read32((u32)(uintptr_t)setList + 0), vm_read32((u32)(uintptr_t)setList + 4));
+     scratch_reset();
+     u32 cb = scratch_alloc(SAVEDATA_CBRESULT_SIZE);
+     u32 get = scratch_alloc(0x4C); /* dirNum, dirListNum, dirList, reserved[64] */
+@@ -1176,6 +1284,9 @@ static s32 savedata_fixed(int is_save, CellSaveDataSetList* setList,
+     free(dirs);
+     g_ps3_guest_caller((u32)(uintptr_t)funcFixed, cb, get, set, 0, 0, 0, 0, 0);
+     s32 result = marshal_cbresult_read_result(cb);
++    { u32 sel = vm_read32(set);
++      printf("[cellSaveData] funcFixed (%s) cbresult=%d dirName='%s'%c", is_save ? "save" : "load", result,
++             sel ? (const char*)vm_base + sel : "", 10); }
+     if (result == CELL_SAVEDATA_CBRESULT_OK_LAST ||
+         result == CELL_SAVEDATA_CBRESULT_OK_LAST_NOCONFIRM) return CELL_OK;
+     if (result != CELL_SAVEDATA_CBRESULT_OK_NEXT) {
 diff --git a/libs/video/cellGcmSys.c b/libs/video/cellGcmSys.c
 index 298ee7de..6ee8119a 100644
 --- a/libs/video/cellGcmSys.c

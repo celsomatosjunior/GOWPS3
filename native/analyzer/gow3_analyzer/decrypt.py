@@ -225,8 +225,9 @@ def decrypt_with_rpcs3(self_path: Path, rpcs3: Path, work: Path, progress=lambda
     dst_dir.mkdir(parents=True)
     copy = dst_dir / self_path.name
     shutil.copy2(self_path, copy)
-    out_elf = copy.with_suffix(".elf")
-    progress(f"Gerando o EBOOT.ELF com o seu RPCS3 ({rpcs3})...")
+    # O RPCS3 grava <nome>.elf para um SELF (EBOOT.BIN) e <nome>.prx para um SPRX do firmware (libsre.sprx).
+    out_elf = copy.with_suffix(".prx" if self_path.suffix.lower() == ".sprx" else ".elf")
+    progress(f"Gerando o {out_elf.name} com o seu RPCS3 ({rpcs3})...")
     cmd = [str(rpcs3), "--no-gui", "--decrypt", str(copy)]
     log_path = rpcs3.parent / "log" / "RPCS3.log"
     running_before = rpcs3_running()

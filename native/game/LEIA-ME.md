@@ -99,8 +99,13 @@ e não percebe uma ponte velha.
    python native\game\lift_pm.py <trabalho>\EBOOT.ELF --ps3recomp ps3recomp --ea 0x49FF80 --size 12032 --fp 0x7AE3FE49074DF128 --name pm_wwsjob --out <trabalho>\spu_pm
    python native\game\monta_spu_dir.py --programas <trabalho>\spu --pms <trabalho>\spu_pm --out <trabalho>\spu_dir
    ```
-3. Módulos de job Wws (24, nativos): `ps3recomp\tools\lift_jobmods.py --engine-elf <EBOOT.ELF> --base-zero
-   --out <trabalho>\spu_jobs`, com as sementes de `native/tools/jobmod_seeds.py` (ver HISTORICO, 29/10).
+3. Módulos de job Wws (24, nativos):
+   ```powershell
+   python ps3recomp\tools\lift_jobmods.py --engine-elf <trabalho>\EBOOT.ELF --base-zero --out <trabalho>\spu_jobs --register <trabalho>\spu_jobs\jobmods_register.c
+   ```
+   Opcional: sementes por módulo (`--module-funcs`), tiradas dos pcs que o interpretador SPU recebe numa execução
+   com `SPU_INTERP_PCLOG` e divididas por `native/tools/jobmod_seeds.py` (ver HISTORICO, 29/10). Elas tiram do
+   interpretador as entradas alcançadas só por salto indireto; o jogo roda sem elas.
 
 ### libsre (LLE seletivo da LFQueue)
 
@@ -108,9 +113,15 @@ O ps3recomp não tem `_cellSpursLFQueuePushBody`, e o consumidor da fila é o c�
 do firmware do usuário é recompilada e só a LFQueue é ligada a ela:
 
 ```powershell
-# 1. o RPCS3 do usuário converte uma cópia de dev_flash\sys\external\libsre.sprx (gera libsre.prx)
-python ps3recomp\tools\lift_prx.py libsre.prx --base 0x30000000 --output <trabalho>\firmware\libsre_lle
-#    (converter libsre_imports.json para a lista [{library,nid,stub}] de --hle-stubs)
+# <lle> = <trabalho>\firmware\libsre_lle
+# 1. o RPCS3 do usuário converte uma cópia da libsre do firmware (gera <trabalho>\firmware\rpcs3_conversao\libsre.prx)
+copy <RPCS3>\dev_flash\sys\external\libsre.sprx <trabalho>\firmware\
+python native\tools\converte_sprx.py <trabalho>\firmware\libsre.sprx <RPCS3>\rpcs3.exe
+# 2. imagem, funções e importações
+python ps3recomp\tools\lift_prx.py <trabalho>\firmware\rpcs3_conversao\libsre.prx --base 0x30000000 --output <lle>
+# 3. as importações viram a lista [{library,nid,stub}] de --hle-stubs
+python -c "import json,sys; d=json.load(open(sys.argv[1])); json.dump([{'library':l,'nid':n,'stub':s} for l,m in d.items() for n,s in m.items()], open(sys.argv[2],'w'))" <lle>\libsre_imports.json <lle>\libsre_hle_stubs.json
+# 4. tradução
 python ps3recomp\tools\ppu_lifter.py <lle>\libsre_image.bin --raw --base 0x30000000 --toc 0x30039AB0 --functions <lle>\libsre_functions.json --hle-stubs <lle>\libsre_hle_stubs.json --symbol-prefix libsre_ --single-file --header-name libsre_recomp.h --source-name libsre_recomp.cpp --output <lle>\lifted
 ```
 
@@ -130,11 +141,17 @@ que deixa o X pular os vídeos, como no RPCS3.
 
 - **Save:** o jogo lê `BCES00510-USERDATA` em `<trabalho>/gamedata/dev_hdd0/home/00000001/savedata/`. Copie-o do
   RPCS3. Sem ele, o boot segue o caminho de "primeira vez". O save é do usuário e fica só no PC dele.
-- **Carregar e salvar** funcionam (testado em 18/11 com saves do RPCS3 da Tumba de Ares): menu "Carregar", ponto
-  de save com R1, um save novo `BCES00510-AAMMDDhhmmss`, e ele carrega de volta. Os saves do RPCS3
-  (`BCES00510-<data>`) podem ser copiados para a mesma pasta.
-  - Não há a tela de escolha do sistema: carregar pega o primeiro save da lista, e salvar sempre cria um save
-    novo (não sobrescreve). Para carregar outro, deixe só ele na pasta.
+- **Saves do jogo** (validado em 18/11 com cópias dos saves do RPCS3 do Celso; os do RPCS3, `BCES00510-<data>`,
+  podem ser copiados para a mesma pasta, com `cp -p`/`robocopy /COPY:DAT` para manter as datas):
+  - O GOW3 pede a lista por data de modificação, decrescente, com o foco no topo. O primeiro item é o
+    `BCES00510-AUTOSAVE`, que o próprio jogo atualiza a cada checkpoint ("(Guardar Automaticamente) <área>").
+  - **Carregar** mostra essa lista para o jogador escolher. Aqui o runtime não desenha o diálogo do sistema e vale
+    o foco inicial pedido pelo jogo (o autosave). `PS3_SAVEDATA_ESCOLHA=<diretório, sufixo da data ou índice>`
+    simula outra escolha nos testes; não substitui a escolha pela interface.
+  - **Morrer e "Reiniciar a partir do último ponto de verificação"** volta ao checkpoint sem ler arquivo (o jogo
+    o guarda na memória).
+  - **Salvar manualmente** é no ponto de save (R1), como no console: cria `BCES00510-AAMMDDhhmmss`.
+  - O log mostra a lista ordenada, o foco, o diretório carregado (`LOAD dir=`) e o atualizado (`SAVE dir=`).
 - **Cache:** o runtime guarda `/dev_hdd1` em `<pasta do jogo>\cache`. Um cache FIOS incompleto, deixado por uma
   execução interrompida, faz o jogo reabrir `cache.idx` sem parar. Para começar limpo, tire essa pasta dali.
 
@@ -204,7 +221,8 @@ Os roteiros de teste usados no desenvolvimento ficam fora do repositório:
 | O Kratos morre em testes longos sem comando ("Estás morto") | — | É o jogo, não um erro |
 | `--passos compilar` falha ("PAROU") se o exe ainda estiver aberto | — | Feche o exe e repita |
 | Nome dos saves novos com data errada (`BCES00510-18446743773817603022`) | sempre, no Windows | Corrigido em 18/11: a syscall 145 (`time()`) dava o tempo desde que o PC ligou, não a hora real |
-| Sem a tela de escolha de save (carregar pega o primeiro; salvar cria sempre um novo) | — | Aberto |
+| Lista de saves na ordem alfabética do Windows: "Carregar" abria um save manual em vez do autosave | sempre | Corrigido em 18/11: a lista segue `sortType`/`sortOrder` e o foco (`focusPosition`) pedidos pelo jogo |
+| O diálogo de escolha de save do sistema não é desenhado (vale o foco inicial do jogo) | — | Aberto; `PS3_SAVEDATA_ESCOLHA` para testes |
 | Validação da instalação fora do ambiente de desenvolvimento; progressão além da Tumba de Ares | — | Na fila |
 
 Nada do que é gerado (código traduzido, executável, logs com endereços do jogo) deve ir para o GitHub. A guarda

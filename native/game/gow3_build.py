@@ -152,13 +152,31 @@ def aplica_patches_rpcs3(args, elf: Path, work: Path, state: dict, progress) -> 
     return out
 
 
+def localiza_executavel(path: Path) -> Path:
+    """Como o pipeline.locate do analisador: EBOOT.BIN, um ELF, USRDIR, PS3_GAME ou a pasta do jogo; um EBOOT.ELF
+    preparado pelo usuário ao lado do EBOOT.BIN tem preferência."""
+    nomes = ("EBOOT.ELF", "EBOOT.elf", "eboot.elf", "EBOOT.BIN.elf", "EBOOT.BIN.ELF")
+    if path.is_dir():
+        for base in (path, path / "USRDIR", path / "PS3_GAME" / "USRDIR"):
+            for nome in nomes + ("EBOOT.BIN",):
+                if (base / nome).is_file():
+                    return base / nome
+        raise StepError(f"nenhum EBOOT.BIN ou EBOOT.ELF encontrado em {path}")
+    if path.name.upper() == "EBOOT.BIN":
+        for nome in nomes:
+            if (path.parent / nome).is_file():
+                return path.parent / nome
+    return path
+
+
 def step_elf(args, work: Path, state: dict, progress):
     if args.elf:
         elf = Path(args.elf).resolve()
     else:
         sys.path.insert(0, str(ANALYZER))
-        from gow3_analyzer import decrypt, formats, pipeline  # noqa: E402
-        exe, _notes = pipeline.locate(Path(args.jogo))
+        # Só decrypt e formats: o pipeline do analisador puxa a captura e a referência, que exigem o unicorn.
+        from gow3_analyzer import decrypt, formats  # noqa: E402
+        exe = localiza_executavel(Path(args.jogo))
         ident = formats.identify(exe)
         if ident.get("format") == "ELF":
             elf = exe
@@ -173,6 +191,13 @@ def step_elf(args, work: Path, state: dict, progress):
                 decrypt.store_elf(ident["sha256"], elf)
     if not elf.is_file():
         raise StepError(f"{elf} não existe")
+    # Uma cópia sem patches em <trabalho>\EBOOT.ELF: os passos dos SPUs (build_spu_workloads, lift_pm,
+    # lift_jobmods) leem o EBOOT.ELF da pasta de trabalho.
+    plano = work / "EBOOT.ELF"
+    if elf.resolve() != plano.resolve() and (not plano.is_file() or plano.stat().st_size != elf.stat().st_size
+                                            or plano.read_bytes() != elf.read_bytes()):
+        shutil.copy2(elf, plano)
+        progress(f"Cópia do EBOOT.ELF em {plano}")
     if args.pular_videos:
         elf = aplica_pular_videos(elf, work)
     if args.patch_rpcs3:

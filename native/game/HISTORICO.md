@@ -393,7 +393,25 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
     `CLOCK_REALTIME` do Linux. O mftb e o `sys_time_get_system_time` seguem no relógio monotônico.
   - Depois: `BCES00510-261118160007`, e esse save carrega de volta (só ele na pasta).
   - 2 cenas de 330 s com a correção: 0 desync, 0 travada, us/job(60s) 29,1, 12,0 q/s reais.
-- Limitação: sem a tela de escolha do sistema, carregar pega o primeiro save listado e salvar sempre cria um novo.
+- **Correção da leitura acima (observação do Celso):** no GOW3 o primeiro item da lista é o autosave (último
+  checkpoint), e "Carregar" deixa o jogador escolher. O teste acima provou que um save carrega, mas não que o
+  autosave era escolhido: o runtime ignorava `sortType`/`sortOrder`/`focusPosition` e listava em ordem alfabética,
+  então pegou um save manual (`2111...` vem antes de `AUTOSAVE`).
+- **Correção** (ps3recomp `savedata-lista` d26b19ed + 25050d6c, em `integra-17nov`): as listas (ListSave2,
+  ListLoad2 e as fixed) seguem a ordem pedida, pelo PARAM.SFO (data de escrita ou subtítulo); numa carga sem
+  fixedList nem newData vale o foco pedido; `PS3_SAVEDATA_ESCOLHA` simula outra escolha; o log mostra lista,
+  foco, escolhido e a resposta do funcFixed. O GOW3 pede `sortType=0` (data), `sortOrder=0` (decrescente),
+  `focusPosition=1` (topo). No boot, o `ListAutoLoad` passa a lista ao `funcFixed`, que só a examina (OK_LAST).
+- **Validação** (`exe_sl18`, saves copiados com as datas originais):
+  1. Carregar sem escolha: `escolhido 0` -> `BCES00510-AUTOSAVE`.
+  2. Escolha de outro (`PS3_SAVEDATA_ESCOLHA=211127004312`): `escolhido 4 de 7` -> esse save; R1 no altar ->
+     save manual `BCES00510-261118164007`.
+  3. Novo Jogo: o autosave é regravado nos 2 checkpoints de Gaia ("(Guardar Automaticamente) Gaia", 0:02:11).
+  4. Executável fechado e reaberto: Carregar -> `BCES00510-AUTOSAVE` -> volta ao checkpoint de Gaia.
+  5. Morte ("Estás morto") -> X em "Reiniciar a partir do último ponto de verificação" -> volta ao checkpoint
+     (sem leitura de arquivo).
+  - Não feito: chegar a outro checkpoint a partir da Tumba de Ares (o roteiro de analógico às cegas não tira o
+    Kratos do altar); fica para um roteiro guiado pela imagem.
 
 **15/11/2026: pacote fundido; fronteira das chamadas (ramos `tradutor-spu-2` aqui e no ps3recomp).**
 - **Fusão** (pedido do Celso): `native-recomp` da20e77 = merge do `tradutor-spu` (shufb-inv + `SPU_CFLT_INT` ligados,
