@@ -193,7 +193,7 @@ Os roteiros de teste usados no desenvolvimento ficam fora do repositório:
 
 | Problema | Taxa | Estado |
 |---|---|---|
-| **Desync do FIFO do RSX:** o get salta para fora do anel, anda por NOPs e pelo bloco de inicialização, e executa dados | 2 em ~300 cenas de 330 s; 1 virou travada ("Dead FIFO") | Aberto. `PS3_RSX_FIFO_DIAG=1` registra os saltos. Hipótese a testar: escritas de SPU no anel durante a leitura (a ponte usa a busca direta, sem o lock das SPUs) |
+| **Desync do FIFO do RSX:** o leitor da FIFO via a primeira palavra nova de uma linha (um salto-para-si trocado) e o resto ainda velho | Antes: 2 em ~340 cenas, depois 2 em 60 (caçada 7); 1 virou travada ("Dead FIFO") | Corrigido em 18/11: o PUT de SPU em memória mapeada para o RSX grava o salto-para-si da linha por último (`spu_put_copy`; `SPU_PUT_HOLE_ORDER=0` desliga). 0 em 40 cenas + 12 do A/B. O diagnóstico automático continua ligado |
 | **Primeiro zero do flag do RsxSync perdido** (label 0x51 parado em 1, ~13 s) | 1 em ~400 execuções com o lock; 0 em 200 inicializações seguidas | Aberto, com diagnóstico automático. **Não** é o mecanismo antigo do label 0x51, já corrigido pelo lock |
 | **"Patamares" de us/job ~2x**, agrupados no tempo, nos dois executáveis de um A/B (15/11) | não se repetiram | Causa desconhecida. `maquina.ps1` agora registra o estado da máquina durante as medidas |
 | O Kratos morre em testes longos sem comando ("Estás morto") | — | É o jogo, não um erro |

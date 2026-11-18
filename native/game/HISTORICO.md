@@ -369,7 +369,13 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   - ordem nova: 0 com atrasos 20 e 100.
 - A exatidão da reprodução não é afetada: a reprodução não registra faixas de IO, e a memória final é a mesma.
 - Resumo para o Arnaldo: `GOW3_trabalho\resumo_fifo_arnaldo.md`.
-- Em seguida: A/B de custo 6+6 (`ab_exes.sh 6 fb dg17 fb18`) e caçada 8 (40 cenas, `fb18`, sem atraso).
+- **A/B de custo 6+6** (`ab_exes.sh 6 fb dg17 fb18`, 330 s, `logsb_fb.out`): us/job(60s) +1,2% (EP ~1,0;
+  o par 4 puxa sozinho, +1,6 us), us/job da cena +0,5%; q/s reais iguais no ruído. Executor Wws 0 divergências.
+  **Custo no ruído.**
+- **Caçada 8** (`caca_fifo.sh 40 fb18`, sem atraso): **0 desync e 0 travada em 40 cenas** (mais 0 nas 12 do A/B).
+- **Integrada ao `native-recomp`** (ps3recomp `integra-17nov` 90d6a584, patches regenerados; cópia limpa limpo15
+  conferida). O diagnóstico automático segue ligado e as caçadas continuam com o executável padrão: 40 cenas
+  limpas não provam sozinhas a ausência (antes eram ~2 em 60 a 340).
 
 **15/11/2026: pacote fundido; fronteira das chamadas (ramos `tradutor-spu-2` aqui e no ps3recomp).**
 - **Fusão** (pedido do Celso): `native-recomp` da20e77 = merge do `tradutor-spu` (shufb-inv + `SPU_CFLT_INT` ligados,
