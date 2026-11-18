@@ -40,7 +40,7 @@ O histórico completo (decisões, medidas, experimentos descartados e seus motiv
 
 - **Versão funcional:** o ramo `native-recomp`. O ps3recomp de trabalho é o ramo local `integra-17nov`; o
   que vai para o repositório são os patches.
-- **Envio:** às terças, para os dois repositórios. O próximo é em 24/11.
+- **Envio:** aos dois repositórios. O último foi em 18/11; o próximo regular, em 24/11.
 
 ## Instalação
 

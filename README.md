@@ -7,9 +7,10 @@ Projeto de fã, idealizado e conduzido pelo **Dr. Celso Matos Junior**, desenvol
 Claude, a IA da Anthropic.
 
 > [!WARNING]
-> **Experimento em andamento: ainda não dá para jogar.** O jogo inteiro já é traduzido e compilado
-> para um executável de PC, que inicializa, carrega dados e chega ao laço de quadros, mas a tela
-> ainda é preta. Veja [Onde estamos](#onde-estamos).
+> **Experimento em andamento: ainda não é uma versão para jogar.** O jogo inteiro é traduzido e compilado
+> para um executável de PC, que roda a abertura, os menus e a fase do Poseidon com combate e imagem
+> completa, a ~12,5-13 quadros por segundo (o RPCS3 faz ~22 na mesma cena). Salvar, carregar e a progressão
+> além da primeira fase ainda não foram validados. Veja [Onde estamos](#onde-estamos).
 
 > [!IMPORTANT]
 > **Nenhum arquivo do jogo, firmware ou chave está neste repositório.** Você precisa da sua própria
@@ -58,7 +59,7 @@ O repositório tem duas partes:
 
 ## Onde estamos
 
-Atualizado em 28/10/2026.
+Atualizado em 18/11/2026.
 
 | Etapa | Situação |
 |---|---|
@@ -66,16 +67,17 @@ Atualizado em 28/10/2026.
 | 2. Executável analisado | ✔ 11.060 funções PPU, 184 importações do firmware, 8 programas SPU |
 | 3. Código PPU recompilado | ✔ o jogo inteiro compila: `GOW3Native.exe`, 117 MB |
 | 4. Código SPU recompilado | ✔ os 8 programas embutidos e o *policy module* Wws_Job |
-| 5. Runtime inicializado | ◐ inicializa, descompacta dados, cria as threads de áudio e os jobs |
-| 6. Primeiro quadro renderizado | ◐ laço de quadros a ~80 flips/s, ainda com tela preta |
-| 7. Menu principal | ○ |
-| 8. Gameplay | ○ |
+| 5. Runtime inicializado | ✔ |
+| 6. Primeiro quadro renderizado | ✔ com o RSX do RPCS3 (ponte `gpu/`, Vulkan) |
+| 7. Menu principal | ✔ |
+| 8. Gameplay | ◐ a fase do Poseidon com combate, a ~12,5-13 quadros/s; 600 s em combate sem travar |
 | 9. Salvamento e carregamento | ○ |
 | 10. Jogo completo | ○ |
 
-**Parada atual:** a abertura lê `CINEMATICS/SMLOGO.M2V`, mas não chega ao decodificador de vídeo
-(`cellVdecOpenEx`). A thread principal espera uma `IntroLoaderThread` que, no RPCS3, nem é criada.
-Detalhes em [native/game/LEIA-ME.md](native/game/HISTORICO.md#onde-está-28102026).
+**Parada atual:** velocidade. O gargalo é a cadeia de jobs EDGE nas SPUs. Em validação no ramo
+`fifo-buraco`: a correção de um desync raro da FIFO do RSX. Estado, instalação, comandos e problemas
+conhecidos em [native/game/LEIA-ME.md](native/game/LEIA-ME.md); o histórico em
+[native/game/HISTORICO.md](native/game/HISTORICO.md).
 
 ---
 
@@ -250,9 +252,11 @@ Detalhes: [native/analyzer/LEIA-ME.txt](native/analyzer/LEIA-ME.txt).
 
 ### GOW3 Native (o jogo inteiro)
 
-Pré-requisitos: Visual Studio 2022 Build Tools com clang-cl, CMake, Ninja, Python 3.12 e o
-ps3recomp no commit de [native/PS3RECOMP_COMMIT.txt](native/PS3RECOMP_COMMIT.txt), com os patches
-`native/ps3recomp-elfv1.patch` e `native/ps3recomp-gow3.patch`.
+Pré-requisitos: Visual Studio 2022 Build Tools com clang-cl, CMake, Ninja, Python 3.12, Vulkan SDK e o
+ps3recomp no commit de [native/PS3RECOMP_COMMIT.txt](native/PS3RECOMP_COMMIT.txt), com os três patches
+`native/ps3recomp-gow3.patch`, `native/ps3recomp-gpu-1.patch` e `native/ps3recomp-gpu-2.patch` (eles já
+contêm o `ps3recomp-elfv1.patch`; não o aplique à parte). O passo a passo completo, com a ponte do RSX,
+está em [native/game/LEIA-ME.md](native/game/LEIA-ME.md#instalação).
 
 ```powershell
 python native\game\gow3_build.py --jogo "<pasta do jogo>" --ps3recomp <ps3recomp> --trabalho <pasta de trabalho>
@@ -296,14 +300,11 @@ app/, cmake/, packaging/, tools/, docs/   GOW3 PS3 PC (o aplicativo sobre o RPCS
 
 ## Próximos passos
 
-1. **Passar da abertura:** descobrir quem liga o byte em `TOC-0x6C70` (a `IntroLoaderThread`) e
-   chegar ao `cellVdecOpenEx`, o vídeo de abertura.
-2. **Colaboração com o God of War: Ascension:** usar as correções do *ps3kit* (SPURS2, LFQueue,
-   tasksets, Edge Zlib, cellGcm, coerência dos SPUs) e a ponte com o **RSX do RPCS3** como
-   renderizador, para sair da tela preta.
-3. **Primeiro quadro, menu e gameplay**, conferindo o caminho com o RPCS3 como gabarito.
-4. **Desempenho**, como no Ascension: compilação AVX2, registradores em variáveis locais e cada SPU
-   fixo num núcleo.
+1. **Velocidade:** a cadeia de jobs EDGE nas SPUs é o caminho crítico. Cada 1% a menos no job vira quase 1% a
+   mais de quadros.
+2. **Desync da FIFO do RSX:** validar e integrar a correção do ramo `fifo-buraco`.
+3. **Progressão real, salvar e carregar**, e a instalação validada fora do ambiente de desenvolvimento.
+4. **Medida do RPCS3 na mesma cena**, com o estado da máquina registrado.
 
 ---
 
