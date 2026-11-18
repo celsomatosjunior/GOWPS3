@@ -343,6 +343,8 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
     - q/s reais +2,9% (EP 5,9).
     É ruído. Wws com 0 divergências nas 12 cenas.
   - As caçadas seguem com o exe padrão (`exe_dg17`, prefixo `cfifo6_`).
+- **Caçada do FIFO 6** (`caca_fifo.sh 40 dg17`, 22h55-02h35 de 18/11): 40/40 sem desync e sem travada. Total do
+  desync: 2 em ~340 cenas; 0 em 120 desde que o diagnóstico de saltos compila. Caçada 7 (60 cenas, `cfifo7_`) em seguida.
 
 **15/11/2026: pacote fundido; fronteira das chamadas (ramos `tradutor-spu-2` aqui e no ps3recomp).**
 - **Fusão** (pedido do Celso): `native-recomp` da20e77 = merge do `tradutor-spu` (shufb-inv + `SPU_CFLT_INT` ligados,
