@@ -22,6 +22,8 @@ extern "C" uint8_t* vm_base;
 extern "C" void* rsx_null_backend_get_hwnd(void);
 extern "C" void cellGcm_rsx_event(unsigned events, unsigned user_arg);
 extern "C" void spu_lockline_lock(void);
+extern "C" int spu_lockline_held_by_me(void);   // ps3recomp spu_coherency.c
+extern "C" int spu_lockline_trylock(void);
 extern "C" void spu_lockline_unlock(void);
 extern "C" void spu_coh_notify_write(uint32_t ea);
 extern "C" void spu_put_fifo_map(uint32_t ea, uint32_t io, uint32_t size);
@@ -97,7 +99,12 @@ static int rpcs3_rsx_start(uint32_t context_addr, uint32_t local_size)
     {
         const char* sl = getenv("PS3_RSX_STORE_LOCK");
         if (!sl || strcmp(sl, "0")) { p.store_lock = spu_lockline_lock; p.store_unlock = rpcs3_rsx_store_unlock; }
-        fprintf(stderr, "[ps3rsx] reports and labels stored %s the lock-line lock\n", p.store_lock ? "inside" : "outside");
+        // PS3_RSX_STORE_SERVE=0: the RSX waits for that lock without serving flush requests (the 19/11 deadlock:
+        // a PPU faulted inside the lock on a page the RSX watches, waiting for this thread to serve its flush)
+        const char* sv = getenv("PS3_RSX_STORE_SERVE");
+        if (p.store_lock && (!sv || strcmp(sv, "0"))) p.store_trylock = spu_lockline_trylock;
+        fprintf(stderr, "[ps3rsx] reports and labels stored %s the lock-line lock%s\n", p.store_lock ? "inside" : "outside",
+                p.store_trylock ? ", serving flush requests while waiting for it" : "");
     }
     if (const char* e = getenv("PS3_PERF_OVERLAY")) p.perf_overlay = atoi(e);
     fprintf(stderr, "[ps3rsx] starting RPCS3's RSX (%s), context 0x%08X, local 0x%X\n",
@@ -132,6 +139,23 @@ static LONG WINAPI vm_rsx_veh(EXCEPTION_POINTERS* ep)
     if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION) return EXCEPTION_CONTINUE_SEARCH;
     const ULONG_PTR kind = ep->ExceptionRecord->ExceptionInformation[0];
     const void* addr = (const void*)ep->ExceptionRecord->ExceptionInformation[1];
+    // A fault taken inside the lock-line lock: RPCS3's handler may wait on the RSX thread, which stores
+    // reports and labels under that lock -- the deadlock of 19/11 (ps3recomp spu_coh_prefault_* touch the
+    // pages before the lock). Counted, and the first few named, so a run shows whether any still happen.
+    if (spu_lockline_held_by_me()) {
+        static volatile long nl = 0;
+        const long k = InterlockedIncrement(&nl);
+        if (k <= 8 || (k & (k - 1)) == 0) {
+            const uintptr_t a = (uintptr_t)addr, base = (uintptr_t)vm_base;
+            fprintf(stderr, "[ps3rsx] falta dentro do lock de linha #%ld: %s guest 0x%08llX rip %p (exe+0x%llX) tid %lu\n", k,
+                    kind == 1 ? "escrita" : "leitura",
+                    (unsigned long long)(a >= base && a - base < 0x100000000ull ? a - base : 0xFFFFFFFFull),
+                    ep->ExceptionRecord->ExceptionAddress,
+                    (unsigned long long)((uintptr_t)ep->ExceptionRecord->ExceptionAddress - (uintptr_t)GetModuleHandleW(NULL)),
+                    GetCurrentThreadId());
+            fflush(stderr);
+        }
+    }
     if (ps3rsx_handle_fault(addr, kind == 1)) return EXCEPTION_CONTINUE_EXECUTION;
     // not the RSX's: name the first few (guest address, read/write, module, rva and callers for the .map)
     static volatile long n = 0;

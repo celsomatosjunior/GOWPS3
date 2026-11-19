@@ -39751,10 +39751,10 @@ index 00000000..29e46179
 +};
 diff --git a/gpu/rsx/Emu/RSX/GL/GLGSRender.cpp b/gpu/rsx/Emu/RSX/GL/GLGSRender.cpp
 new file mode 100644
-index 00000000..13e6b50f
+index 00000000..eb3cc899
 --- /dev/null
 +++ b/gpu/rsx/Emu/RSX/GL/GLGSRender.cpp
-@@ -0,0 +1,1553 @@
+@@ -0,0 +1,1561 @@
 +#include "stdafx.h"
 +#include "../Overlays/overlay_compile_notification.h"
 +#ifndef PS3RECOMP_RSX_ONLY // ps3recomp: the host shows shader loading (rsx::shader_loading_dialog)
@@ -41105,6 +41105,14 @@ index 00000000..13e6b50f
 +	}
 +}
 +
++bool GLGSRender::ps3recomp_serve_flush_requests()
++{
++	// ps3recomp: see VKGSRender::ps3recomp_serve_flush_requests
++	if (work_queue.empty()) return false;
++	do_local_task(rsx::FIFO::state::lock_wait);
++	return true;
++}
++
 +void GLGSRender::on_semaphore_acquire_wait()
 +{
 +	if (!work_queue.empty() ||
@@ -41310,10 +41318,10 @@ index 00000000..13e6b50f
 +}
 diff --git a/gpu/rsx/Emu/RSX/GL/GLGSRender.h b/gpu/rsx/Emu/RSX/GL/GLGSRender.h
 new file mode 100644
-index 00000000..357635c1
+index 00000000..11b99242
 --- /dev/null
 +++ b/gpu/rsx/Emu/RSX/GL/GLGSRender.h
-@@ -0,0 +1,238 @@
+@@ -0,0 +1,239 @@
 +#pragma once
 +#include "Emu/RSX/GSRender.h"
 +#include "GLTextureCache.h"
@@ -41551,6 +41559,7 @@ index 00000000..357635c1
 +	void on_invalidate_memory_range(const utils::address_range32 &range, rsx::invalidation_cause cause) override;
 +	void notify_tile_unbound(u32 tile) override;
 +	void on_semaphore_acquire_wait() override;
++	bool ps3recomp_serve_flush_requests() override;
 +};
 diff --git a/gpu/rsx/Emu/RSX/GL/GLHelpers.cpp b/gpu/rsx/Emu/RSX/GL/GLHelpers.cpp
 new file mode 100644
@@ -88668,10 +88677,10 @@ index 00000000..0de96bb8
 +}
 diff --git a/gpu/rsx/Emu/RSX/RSXThread.cpp b/gpu/rsx/Emu/RSX/RSXThread.cpp
 new file mode 100644
-index 00000000..46093634
+index 00000000..35181281
 --- /dev/null
 +++ b/gpu/rsx/Emu/RSX/RSXThread.cpp
-@@ -0,0 +1,4101 @@
+@@ -0,0 +1,4129 @@
 +#include "stdafx.h"
 +
 +// ps3recomp: see nv47_sync.hpp
@@ -88681,6 +88690,34 @@ index 00000000..46093634
 +#include "RSXThread.h"
 +// ps3recomp: wakes the RSX thread's report hold (gpu/bridge/ps3rsx_thread.cpp)
 +extern "C" void ps3rsx_hold_kick(void);
++
++// ps3recomp: the store lock taken with the trylock hook, serving the flush requests pending while it waits
++// (ps3recomp_store.h). The spin is the host lock's own (a pause, a yield every 4096); the requests are checked
++// every 256. Off the RSX thread it only spins.
++void ps3recomp_rsx_store_lock_serving()
++{
++	unsigned spins = 0;
++	while (!g_ps3recomp_rsx_store_trylock())
++	{
++		utils::pause();
++		if ((++spins & 255u) == 0)
++		{
++			auto* rsx = rsx::get_current_renderer();
++			if (rsx && rsx->is_current_thread() && rsx->ps3recomp_serve_flush_requests())
++			{
++				static std::atomic<u64> s_served{0};
++				const u64 k = ++s_served;
++				if (k <= 8 || (k & (k - 1)) == 0)
++				{
++					std::fprintf(stderr, "[ps3rsx] flush request served while waiting for the store lock #%llu\n",
++						static_cast<unsigned long long>(k));
++					std::fflush(stderr);
++				}
++			}
++			if (spins >= 4096) { spins = 0; std::this_thread::yield(); }
++		}
++	}
++}
 +
 +#include "Capture/rsx_capture.h"
 +#include "Common/surface_store.h"
@@ -92775,10 +92812,10 @@ index 00000000..46093634
 +} // namespace rsx
 diff --git a/gpu/rsx/Emu/RSX/RSXThread.h b/gpu/rsx/Emu/RSX/RSXThread.h
 new file mode 100644
-index 00000000..fd8baef5
+index 00000000..123d0cbe
 --- /dev/null
 +++ b/gpu/rsx/Emu/RSX/RSXThread.h
-@@ -0,0 +1,498 @@
+@@ -0,0 +1,503 @@
 +#pragma once
 +
 +#include <queue>
@@ -93228,6 +93265,11 @@ index 00000000..fd8baef5
 +		 * Notify to check internal state during semaphore wait
 +		 */
 +		virtual void on_semaphore_acquire_wait() {}
++
++		/**
++		 * ps3recomp: serve the flush requests other threads wait on, and nothing else (ps3recomp_store.h)
++		 */
++		virtual bool ps3recomp_serve_flush_requests() { return false; }
 +
 +		/**
 +		 * Load an image from memory with optional scaling and rotation.
@@ -101923,10 +101965,10 @@ index 00000000..ea798df1
 +}
 diff --git a/gpu/rsx/Emu/RSX/VK/VKGSRender.cpp b/gpu/rsx/Emu/RSX/VK/VKGSRender.cpp
 new file mode 100644
-index 00000000..c4b2448b
+index 00000000..0102b91e
 --- /dev/null
 +++ b/gpu/rsx/Emu/RSX/VK/VKGSRender.cpp
-@@ -0,0 +1,4340 @@
+@@ -0,0 +1,4349 @@
 +#include "Emu/RSX/VK/vkutils/descriptors.h"
 +#include "stdafx.h"
 +#include <cstdio>
@@ -103484,6 +103526,15 @@ index 00000000..c4b2448b
 +
 +		vk::unmap_dma(range.start, range.length());
 +	}
++}
++
++bool VKGSRender::ps3recomp_serve_flush_requests()
++{
++	// ps3recomp: the flush part of do_local_task alone (ps3recomp_store.h): a label store may be inside the ZCULL
++	// update, which on_semaphore_acquire_wait would run again
++	if (!m_flush_requests.pending() || (m_queue_status & flush_queue_state::flushing)) return false;
++	do_local_task(rsx::FIFO::state::lock_wait);
++	return true;
 +}
 +
 +void VKGSRender::on_semaphore_acquire_wait()
@@ -106269,10 +106320,10 @@ index 00000000..c4b2448b
 +}
 diff --git a/gpu/rsx/Emu/RSX/VK/VKGSRender.h b/gpu/rsx/Emu/RSX/VK/VKGSRender.h
 new file mode 100644
-index 00000000..d8aa4639
+index 00000000..c1caa204
 --- /dev/null
 +++ b/gpu/rsx/Emu/RSX/VK/VKGSRender.h
-@@ -0,0 +1,357 @@
+@@ -0,0 +1,358 @@
 +#pragma once
 +
 +#include "upscalers/upscaling.h"
@@ -106629,6 +106680,7 @@ index 00000000..d8aa4639
 +#endif
 +	void on_invalidate_memory_range(const utils::address_range32 &range, rsx::invalidation_cause cause) override;
 +	void on_semaphore_acquire_wait() override;
++	bool ps3recomp_serve_flush_requests() override;
 +};
 diff --git a/gpu/rsx/Emu/RSX/VK/VKGSRenderTypes.hpp b/gpu/rsx/Emu/RSX/VK/VKGSRenderTypes.hpp
 new file mode 100644
@@ -136976,10 +137028,10 @@ index 00000000..05423496
 +}
 diff --git a/gpu/rsx/Emu/RSX/ps3recomp_store.h b/gpu/rsx/Emu/RSX/ps3recomp_store.h
 new file mode 100644
-index 00000000..36b652c4
+index 00000000..f56f856e
 --- /dev/null
 +++ b/gpu/rsx/Emu/RSX/ps3recomp_store.h
-@@ -0,0 +1,31 @@
+@@ -0,0 +1,40 @@
 +#pragma once
 +
 +// ps3recomp: a store the RSX makes into guest memory (a report, a semaphore label) on a line the host's SPUs may
@@ -136996,13 +137048,22 @@ index 00000000..36b652c4
 +extern void (*g_ps3recomp_rsx_write_hook)(u32 address, u32 size);
 +extern void (*g_ps3recomp_rsx_store_lock)();
 +extern void (*g_ps3recomp_rsx_store_unlock)(u32 address, u32 size);
++extern int (*g_ps3recomp_rsx_store_trylock)();
++
++// While the RSX thread waits for that lock, its holder may be a thread that faulted on a page the RSX's caches
++// watch, inside the lock (a PPU store into io-mapped memory the RSX reads), and that thread waits for this one to
++// serve its flush request (VKGSRender::on_access_violation): with the trylock hook set, the wait serves the flush
++// requests pending, as a semaphore wait does (RSXThread.cpp). God of War III, 19/11: the PPU in
++// on_access_violation inside the lock, the RSX spinning on it for a label, every SPU behind them.
++void ps3recomp_rsx_store_lock_serving();
 +
 +template <typename F>
 +inline void ps3recomp_guest_store(u32 address, u32 size, F&& store)
 +{
 +	if (g_ps3recomp_rsx_store_lock)
 +	{
-+		g_ps3recomp_rsx_store_lock();
++		if (g_ps3recomp_rsx_store_trylock) ps3recomp_rsx_store_lock_serving();
++		else g_ps3recomp_rsx_store_lock();
 +		store();
 +		g_ps3recomp_rsx_store_unlock(address, size);
 +		return;

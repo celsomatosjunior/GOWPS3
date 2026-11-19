@@ -518,6 +518,17 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   (GETLLAR, PUTLLC, PUTLLUC, conjuntos de tarefas); `SPU_COH_PREFAULT=0` desliga. Diagnóstico (967cc919 + GOWPS3):
   o lock guarda o id do dono e o `vm_rsx_veh` conta e nomeia as faltas tomadas dentro dele
   (`[ps3rsx] falta dentro do lock de linha`). A/B com e sem a pré-falta em curso (`logs\ab_pf.out`).
+- **A pré-falta só estreita a janela; a correção é o RSX atender o flush enquanto espera o lock (INTEGRADAS,
+  `integra-17nov` d7e63e1f).** A/B 6 pares com/sem pré-falta: faltas dentro do lock em 2/6 rodadas dos dois lados,
+  custo nenhum (27,7 x 27,9 us/job). Caça com ela ligada (6 rodadas): 1 travada, mesma assinatura; o ponto é sempre
+  `vm_write16+0xCE` (o `VM_WRITE_COH` do `ppu_loader.cpp`), escrita em guest 0x70A702Fx, memória IO do GCM
+  (0x70000000, 0x4C00000 bytes) que o RSX lê e volta a proteger enquanto a PPU espera o lock, entre o toque e o
+  `memcpy`. Correção (ps3recomp `rsx-atende` d7e63e1f): gancho `store_trylock` em `ps3rsx_params`
+  (`spu_lockline_trylock`); a gravação de relatório/label do RSX (`ps3recomp_guest_store`) toma o lock tentando e, a
+  cada 256 voltas, atende só os pedidos de flush pendentes (`ps3recomp_serve_flush_requests`, a parte de flush do
+  `do_local_task` no VK e no GL; o ZCULL não roda de novo). GOWPS3 `gow3_rsx_rpcs3.cpp` liga; `PS3_RSX_STORE_SERVE=0`
+  desliga. A/B 6 pares com/sem: atendimentos em todas as 6 rodadas com (1 a 8 por rodada), 0 travadas em 12,
+  velocidade igual (+0,22 us/job, t 1,2, ruído). A pré-falta fica (custo zero, reduz as faltas no lock).
 
 **18/11/2026 (fim de tarde): validação da instalação limpa (pasta `Projetos\instala18`).**
 - Clone do GitHub (GOWPS3 `native-recomp` 88ceab7) + ps3recomp 4e8f3ca8 + os 3 patches + glslang/asmjit nos commits
