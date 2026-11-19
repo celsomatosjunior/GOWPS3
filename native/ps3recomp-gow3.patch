@@ -152,6 +152,21 @@ index 7e222c92..33b21296 100644
      return rc;
  }
  
+diff --git a/libs/filesystem/cellFs.c b/libs/filesystem/cellFs.c
+index 4d916ac7..7c21f5d7 100644
+--- a/libs/filesystem/cellFs.c
++++ b/libs/filesystem/cellFs.c
+@@ -527,6 +527,10 @@ s32 cellFsRead(CellFsFd fd, void* buf, u64 nbytes, u64* nread)
+          * which made this look handled -- but the file contents were being read
+          * to a raw guest address interpreted as a host one, so nothing the
+          * title loaded ever landed in guest memory. */
++        /* user-mode writes first (sys_fs.c): a write-protected page faults here, not inside the kernel */
++        if (nbytes) { volatile u8* t = (volatile u8*)gptr(buf);
++                      for (u64 o = 0; o < nbytes; o += 0x1000) t[o] = t[o];
++                      t[nbytes - 1] = t[nbytes - 1]; }
+         bytes_read = (u64)fread(gptr(buf), 1, (size_t)nbytes, s_files[fd].host_fp);
+     }
+ 
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
 index 82ea66c6..6e0a77d6 100644
 --- a/libs/spurs/cellSpurs.c
@@ -2503,10 +2518,10 @@ index 00000000..4b9d97a2
 +    return failures != 0;
 +}
 diff --git a/runtime/memory/vm.h b/runtime/memory/vm.h
-index bde031ae..d344d3c4 100644
+index bde031ae..7b7adf63 100644
 --- a/runtime/memory/vm.h
 +++ b/runtime/memory/vm.h
-@@ -304,8 +304,18 @@ static inline int32_t vm_commit(uint32_t addr, uint32_t size)
+@@ -304,8 +304,19 @@ static inline int32_t vm_commit(uint32_t addr, uint32_t size)
      size = VM_ALIGN_UP(size, VM_PAGE_SIZE);
  
  #ifdef _WIN32
@@ -2519,7 +2534,8 @@ index bde031ae..d344d3c4 100644
 +        for (uint64_t a = addr, end = (uint64_t)addr + size; a < end; ) {
 +            MEMORY_BASIC_INFORMATION mi;
 +            if (!VirtualQuery(vm_base + a, &mi, sizeof mi) || mi.State != MEM_COMMIT
-+                || !(mi.Protect & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE)))
++                || !(mi.Protect & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE | PAGE_READONLY)))   /* read-only: watched
++                 * by a fault handler (the RSX's caches, the SPU code slots' sources); a write lifts it */
 +                return CELL_ENOMEM;
 +            a = (uint64_t)((uint8_t*)mi.BaseAddress + mi.RegionSize - vm_base);
 +        }
@@ -2527,6 +2543,18 @@ index bde031ae..d344d3c4 100644
  #else
      if (vm__mprotect_pages(addr, size, PROT_READ | PROT_WRITE) != 0)
          return CELL_ENOMEM;
+diff --git a/runtime/ppu/ppu_fs.cpp b/runtime/ppu/ppu_fs.cpp
+index f73907c2..13d36e63 100644
+--- a/runtime/ppu/ppu_fs.cpp
++++ b/runtime/ppu/ppu_fs.cpp
+@@ -961,6 +961,7 @@ static void cellFsAioRead(ppu_context* ctx)
+          * could land between the two, and the next cellFsRead continued from
+          * wherever the AIO stopped. Hold the stream lock across seek, read
+          * and the seek back (stdio's own calls take the same lock). */
++        fs_prefault(buf, size);   /* user-mode writes first: a page protected for its contents faults here, not in the kernel */
+         HOST_LOCKFILE(f);
+         const int64_t pos = (int64_t)HOST_FTELL64(f);
+         if (HOST_FSEEK64(f, offset) == 0)
 diff --git a/runtime/ppu/ppu_vmx.h b/runtime/ppu/ppu_vmx.h
 index 35052c67..b059c9ef 100644
 --- a/runtime/ppu/ppu_vmx.h
@@ -2631,7 +2659,7 @@ index 35052c67..b059c9ef 100644
  #define VMX_FUN(name, expr, flush_in, nanmode) \
  VMX_INL void name(VMX_D, VMX_B, uint32_t vscr) { const uint8_t* b = (const uint8_t*)b_; uint8_t r[16]; \
 diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
-index 5fc50208..80bc067e 100644
+index 5fc50208..3b6374c4 100644
 --- a/runtime/spu/spu_channels.c
 +++ b/runtime/spu/spu_channels.c
 @@ -23,6 +23,7 @@
@@ -3090,10 +3118,244 @@ index 5fc50208..80bc067e 100644
      static int64_t s_g = -2;
      if (s_g == -2) { const char* e = getenv("SPU_LOCKGUARD"); s_g = e ? (int64_t)strtoul(e, 0, 16) : -1; }
      if (s_g < 0 || !vm_base) return;
-@@ -2129,21 +2430,76 @@ void spu_lockguard_check(spu_context* ctx, uint32_t ea, const uint8_t* src, uint
+@@ -2129,21 +2430,319 @@ void spu_lockguard_check(spu_context* ctx, uint32_t ea, const uint8_t* src, uint
                  ea, size, os, on, ns, nn); }
  }
  
++/* SPU_OVL_PROT (default on with SPU_OVL_INCREMENTAL, 0 = off; Windows): a verified resident slot whose
++ * re-sends were found equal to their source gets the whole pages of both sides write-protected -- the slot
++ * in local store and the module's source in guest memory -- and a re-send inside those pages then needs no
++ * compare: nothing wrote either side since they were last compared under protection. Any write to them
++ * (an SPU store, a GET loading another module, a PPU or DMA write to the source, a file read into it) faults
++ * into spu_ovl_prot_veh, which lifts the protection and bumps the side's generation; the next re-sends
++ * compare again, as before. Generations, not flags, so a write that lands while protection is being set up
++ * is never lost. A source that faults is left unprotected for a second (a file read touches its pages
++ * before the kernel writes them); one that faults more than 64 times in 10 s, and a slot that does, rest
++ * for 10 s (a slot faults each time another module is loaded into it: that is normal).
++ * Every 256th skipped compare is made anyway (audit): a difference is reported and turns the slot off.
++ * God of War III's Wws PM re-sends each EDGE job's code with every job: ~2 GB/s of compares. */
++#ifdef _WIN32
++#define SPU_OVL_PROT_LS_MAX 128
++#define SPU_OVL_PROT_FAULTS_MAX 64
++typedef struct { volatile LONG prot, gen, faults, off; uint32_t ea0, ea1; volatile ULONGLONG quiet_until, win_t; } spu_ovl_psrc;
++typedef struct {
++    spu_context* ctx; unsigned slot; int image, src; uint32_t base, size, source_ea;
++    uintptr_t p0, p1;                 /* the protected host range of the slot (whole pages) */
++    uint32_t c0, c1;                  /* the LS range both sides protect */
++    volatile LONG prot, lsgen, faults, off, tries;
++    volatile LONG valid, ls_ok, src_ok;   /* valid: compared equal at generations ls_ok/src_ok */
++    volatile ULONGLONG quiet_until, win_t;   /* faults are counted per 10 s window */
++} spu_ovl_pls;
++static spu_ovl_psrc s_psrc[SPU_OVL_SRC_MAX];
++static spu_ovl_pls s_pls[SPU_OVL_PROT_LS_MAX];
++static volatile LONG s_pls_n;
++static SRWLOCK s_prot_lock = SRWLOCK_INIT;
++static volatile LONG64 s_prot_skips, s_prot_audits, s_prot_audit_bad, s_prot_fault_src, s_prot_fault_ls,
++                       s_prot_setups, s_prot_partial;
++static SPU_THREAD_LOCAL spu_ovl_pls* t_pls_last;
++
++static int spu_ovl_prot_on(void)
++{
++    static int s = -1;
++    if (s < 0) { const char* e = getenv("SPU_OVL_PROT"); s = !(e && e[0] == '0'); }
++    return s;
++}
++
++static LONG CALLBACK spu_ovl_prot_veh(EXCEPTION_POINTERS* ep)
++{
++    if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION ||
++        ep->ExceptionRecord->ExceptionInformation[0] != 1) return EXCEPTION_CONTINUE_SEARCH;
++    const uintptr_t a = (uintptr_t)ep->ExceptionRecord->ExceptionInformation[1];
++    int hit = 0;
++    AcquireSRWLockExclusive(&s_prot_lock);
++    if (vm_base && a >= (uintptr_t)vm_base && a - (uintptr_t)vm_base < 0x100000000ull) {
++        const uint32_t ea = (uint32_t)(a - (uintptr_t)vm_base);
++        for (unsigned i = 0; i < SPU_OVL_SRC_MAX; i++) {
++            spu_ovl_psrc* s = &s_psrc[i];
++            if (!s->prot || ea < s->ea0 || ea >= s->ea1) continue;
++            DWORD old;
++            VirtualProtect(vm_base + s->ea0, s->ea1 - s->ea0, PAGE_READWRITE, &old);
++            s->prot = 0;
++            InterlockedIncrement(&s->gen);
++            s->quiet_until = GetTickCount64() + 1000;
++            { const ULONGLONG now = GetTickCount64();
++              if (now - s->win_t > 10000) { s->win_t = now; s->faults = 0; }
++              if (++s->faults > SPU_OVL_PROT_FAULTS_MAX) s->quiet_until = now + 10000; }
++            InterlockedIncrement64(&s_prot_fault_src);
++            hit = 1;
++        }
++    }
++    const LONG n = s_pls_n;
++    for (LONG i = 0; i < n; i++) {
++        spu_ovl_pls* e = &s_pls[i];
++        if (!e->prot || a < e->p0 || a >= e->p1) continue;
++        DWORD old;
++        VirtualProtect((void*)e->p0, e->p1 - e->p0, PAGE_READWRITE, &old);
++        e->prot = 0;
++        InterlockedIncrement(&e->lsgen);
++        { const ULONGLONG now = GetTickCount64();   /* a slot that faults too often in a window rests */
++          if (now - e->win_t > 10000) { e->win_t = now; e->faults = 0; }
++          if (++e->faults > SPU_OVL_PROT_FAULTS_MAX) e->quiet_until = now + 10000; }
++        InterlockedIncrement64(&s_prot_fault_ls);
++        hit = 1;
++    }
++    ReleaseSRWLockExclusive(&s_prot_lock);
++    return hit ? EXCEPTION_CONTINUE_EXECUTION : EXCEPTION_CONTINUE_SEARCH;
++}
++
++static void spu_ovl_prot_stats(void)
++{
++    static int st = -1; static volatile LONG64 last;
++    if (st < 0) { const char* e = getenv("SPU_OVL_STATS"); st = e ? atoi(e) : 0; }
++    if (st <= 0) return;
++    const LONG64 now = (LONG64)(GetTickCount64() / 1000), l = last;
++    if (!l) { InterlockedCompareExchange64(&last, now, 0); return; }
++    if (now - l < st || InterlockedCompareExchange64(&last, now, l) != l) return;
++    fprintf(stderr, "[ovl-prot] %ds: comparações puladas %lld (parciais %lld), auditorias %lld (diferentes %lld), "
++            "faltas origem %lld LS %lld, proteções %lld\n", st,
++            (long long)InterlockedExchange64(&s_prot_skips, 0), (long long)InterlockedExchange64(&s_prot_partial, 0),
++            (long long)InterlockedExchange64(&s_prot_audits, 0), (long long)s_prot_audit_bad,
++            (long long)InterlockedExchange64(&s_prot_fault_src, 0), (long long)InterlockedExchange64(&s_prot_fault_ls, 0),
++            (long long)InterlockedExchange64(&s_prot_setups, 0));
++}
++
++/* The entry of (ctx, slot), created on first use; entries live as long as the process. */
++static spu_ovl_pls* spu_ovl_prot_entry(spu_context* ctx, unsigned slot, int create)
++{
++    spu_ovl_pls* e = t_pls_last;
++    if (e && e->ctx == ctx && e->slot == slot) return e;
++    const LONG n = s_pls_n;
++    for (LONG i = 0; i < n; i++)
++        if (s_pls[i].ctx == ctx && s_pls[i].slot == slot) return t_pls_last = &s_pls[i];
++    if (!create) return NULL;
++    AcquireSRWLockExclusive(&s_prot_lock);
++    e = NULL;
++    for (LONG i = 0; i < s_pls_n; i++) if (s_pls[i].ctx == ctx && s_pls[i].slot == slot) e = &s_pls[i];
++    if (!e && s_pls_n < SPU_OVL_PROT_LS_MAX) {
++        e = &s_pls[s_pls_n];
++        memset(e, 0, sizeof *e);
++        e->ctx = ctx; e->slot = slot; e->image = -1;
++        InterlockedIncrement(&s_pls_n);
++    }
++    ReleaseSRWLockExclusive(&s_prot_lock);
++    return e ? (t_pls_last = e) : NULL;
++}
++
++static int spu_ovl_prot_range_rw(const void* p, size_t n)
++{
++    const uint8_t* q = (const uint8_t*)p; const uint8_t* end = q + n;
++    while (q < end) {
++        MEMORY_BASIC_INFORMATION mi;
++        if (!VirtualQuery(q, &mi, sizeof mi) || mi.State != MEM_COMMIT || mi.Protect != PAGE_READWRITE) return 0;
++        q = (const uint8_t*)mi.BaseAddress + mi.RegionSize;
++    }
++    return 1;
++}
++
++/* After a re-send compared equal: protect both sides and compare the protected range once, so later re-sends
++ * inside it can skip their compare. Cheap to call: it gives up at once when the slot is already set up. */
++static void spu_ovl_prot_setup(spu_context* ctx, unsigned slot)
++{
++    const uint32_t base = ctx->resident_code[slot].lsa, size = ctx->resident_code[slot].size;
++    const uint32_t sea = ctx->resident_code[slot].source_ea;
++    const int image = ctx->resident_code[slot].image_id, src = ctx->resident_code[slot].source_index;
++    if (src < 0 || src >= SPU_OVL_SRC_MAX || !vm_base) return;
++    spu_ovl_pls* e = spu_ovl_prot_entry(ctx, slot, 1);
++    if (!e || e->off) return;
++    spu_ovl_psrc* s = &s_psrc[src];
++    const int same = e->image == image && e->src == src && e->base == base && e->size == size && e->source_ea == sea;
++    if (same && e->valid && e->prot && e->ls_ok == e->lsgen && s->prot && e->src_ok == s->gen) return;
++    { const ULONGLONG now = GetTickCount64(); if (s->off || now < s->quiet_until || now < e->quiet_until) return; }
++    /* a slot that keeps losing its setup tries less and less often */
++    const LONG t = InterlockedIncrement(&e->tries);
++    if (t > 32 && (t & 255)) return;
++    const uintptr_t lsb = (uintptr_t)ctx->ls;
++    const uintptr_t p0 = (lsb + base + 4095) & ~(uintptr_t)4095, p1 = (lsb + base + size) & ~(uintptr_t)4095;
++    const uint32_t ea0 = (sea + 4095u) & ~4095u, ea1 = (uint32_t)(((uint64_t)sea + size) & ~4095ull);
++    if (p1 <= p0 || ea1 <= ea0) return;
++    uint32_t c0 = (uint32_t)(p0 - lsb), c1 = (uint32_t)(p1 - lsb);
++    const uint32_t d0 = base + (ea0 - sea), d1 = base + (ea1 - sea);
++    if (d0 > c0) c0 = d0;
++    if (d1 < c1) c1 = d1;
++    if (c1 < c0 + 4096) return;
++    static volatile LONG s_veh;
++    if (!s_veh && !InterlockedExchange(&s_veh, 1)) AddVectoredExceptionHandler(1, spu_ovl_prot_veh);
++    LONG lg, sg;
++    AcquireSRWLockExclusive(&s_prot_lock);
++    e->valid = 0;
++    if (e->prot && (e->p0 != p0 || e->p1 != p1)) {   /* a different slot span: drop the old range */
++        DWORD old; VirtualProtect((void*)e->p0, e->p1 - e->p0, PAGE_READWRITE, &old);
++        e->prot = 0; InterlockedIncrement(&e->lsgen);
++    }
++    e->image = image; e->src = src; e->base = base; e->size = size; e->source_ea = sea;
++    e->p0 = p0; e->p1 = p1; e->c0 = c0; e->c1 = c1;
++    int ok = 1;
++    if (!s->prot) {
++        if (s->ea0 && (s->ea0 != ea0 || s->ea1 != ea1)) ok = 0;   /* one source, one range */
++        else if (!spu_ovl_prot_range_rw(vm_base + ea0, ea1 - ea0)) { s->off = 1; ok = 0; }
++        else {
++            DWORD old;
++            s->ea0 = ea0; s->ea1 = ea1;
++            ok = VirtualProtect(vm_base + ea0, ea1 - ea0, PAGE_READONLY, &old) != 0;
++            if (ok) s->prot = 1; else s->off = 1;
++        }
++    }
++    if (ok && !e->prot) {
++        if (!spu_ovl_prot_range_rw((const void*)p0, p1 - p0)) { e->off = 1; ok = 0; }
++        else {
++            DWORD old;
++            ok = VirtualProtect((void*)p0, p1 - p0, PAGE_READONLY, &old) != 0;
++            if (ok) e->prot = 1; else e->off = 1;
++        }
++    }
++    lg = e->lsgen; sg = s->gen;
++    ReleaseSRWLockExclusive(&s_prot_lock);
++    if (!ok) return;
++    /* Both sides are protected from here on: a write after this point bumps a generation. */
++    if (memcmp(ctx->ls + c0, vm_base + sea + (c0 - base), c1 - c0)) return;
++    e->ls_ok = lg; e->src_ok = sg;
++    MemoryBarrier();
++    e->valid = 1;
++    InterlockedIncrement64(&s_prot_setups);
++}
++
++/* How many leading bytes of this re-send are known equal without comparing the protected part: head when the
++ * whole GET is, 0 when the protection does not apply (the caller then compares as before). */
++static int spu_ovl_prot_skip(spu_context* ctx, unsigned slot, uint32_t lsa, const uint8_t* ls, const uint8_t* src,
++                             uint32_t head)
++{
++    spu_ovl_pls* e = spu_ovl_prot_entry(ctx, slot, 0);
++    if (!e || !e->valid || !e->prot || e->ls_ok != e->lsgen) return 0;
++    const spu_ovl_psrc* s = &s_psrc[e->src];
++    if (!s->prot || e->src_ok != s->gen) return 0;
++    if (e->image != ctx->resident_code[slot].image_id || e->src != ctx->resident_code[slot].source_index ||
++        e->base != ctx->resident_code[slot].lsa || e->size != ctx->resident_code[slot].size ||
++        e->source_ea != ctx->resident_code[slot].source_ea) return 0;
++    const uint32_t a = lsa, b = lsa + head;
++    if (b <= e->c0 || a >= e->c1) return 0;   /* nothing of it protected */
++    int same = 1, partial = 0;
++    if (a < e->c0) { partial = 1; same = !memcmp(ls, src, e->c0 - a); }
++    if (same && b > e->c1) { partial = 1; const uint32_t x = e->c1 - a; same = !memcmp(ls + x, src + x, b - e->c1); }
++    if (!same) return -1;
++    const LONG64 k = InterlockedIncrement64(&s_prot_skips);
++    if (partial) InterlockedIncrement64(&s_prot_partial);
++    if (!(k & 255)) {   /* audit */
++        InterlockedIncrement64(&s_prot_audits);
++        if (memcmp(ls, src, head)) {
++            const LONG64 bad = InterlockedIncrement64(&s_prot_audit_bad);
++            if (bad <= 20)
++                fprintf(stderr, "[ovl-prot] AUDITORIA: image %d LS 0x%05X ea 0x%08X size 0x%X diferente com a proteção "
++                        "valendo (geração LS %ld/%ld, origem %ld/%ld)\n", ctx->resident_code[slot].image_id, lsa,
++                        (unsigned)(src - vm_base), head, (long)e->ls_ok, (long)e->lsgen, (long)e->src_ok, (long)s->gen);
++            e->off = 1; e->valid = 0;
++            return -1;
++        }
++    }
++    spu_ovl_prot_stats();
++    return 1;
++}
++#endif
++
 +/* SPU_OVL_INCREMENTAL=1, before the copy: a GET that re-sends bytes already in local store, inside a verified
 + * resident code slot loaded from that same source, changes nothing -- not the code, not the job's data, not
 + * the slot -- so it can skip both the copy and spu_overlay_note_get. One compare instead of a copy plus the
@@ -3116,6 +3378,15 @@ index 5fc50208..80bc067e 100644
 +        if (head != size && (!s_part || head < 128)) continue;
 +        if (ctx->resident_code[slot].verify_state != SPU_OVERLAY_VERIFIED ||
 +            ea != ctx->resident_code[slot].source_ea + (lsa - base)) return 0;
++#ifdef _WIN32
++        if (spu_ovl_prot_on()) {
++            const int r = spu_ovl_prot_skip(ctx, slot, lsa, ls, src, head);
++            if (r) return r > 0 ? head : 0;
++            if (memcmp(ls, src, head)) return 0;
++            spu_ovl_prot_setup(ctx, slot);
++            return head;
++        }
++#endif
 +        return memcmp(ls, src, head) == 0 ? head : 0;
 +    }
 +    return 0;
@@ -3169,7 +3440,7 @@ index 5fc50208..80bc067e 100644
              }
          }
      }
-@@ -2161,6 +2517,12 @@ void spu_overlay_note_get(spu_context* ctx, uint32_t ea, const uint8_t* ls, uint
+@@ -2161,6 +2760,12 @@ void spu_overlay_note_get(spu_context* ctx, uint32_t ea, const uint8_t* ls, uint
                  for (unsigned slot = 0; slot < 4; ++slot) {
                      if (ctx->resident_code[slot].image_id && ctx->resident_code[slot].lsa != lsa)
                          continue;
@@ -3182,7 +3453,7 @@ index 5fc50208..80bc067e 100644
                      ctx->resident_code[slot].lsa = lsa;
                      ctx->resident_code[slot].size = o->span;
                      ctx->resident_code[slot].source_ea = ea;
-@@ -2575,6 +2937,45 @@ static int spu_smc_microstep(spu_context* ctx)
+@@ -2575,6 +3180,45 @@ static int spu_smc_microstep(spu_context* ctx)
                fprintf(stderr, "[spu-smc] microstep img=%d pc=0x%05X word 0x%08X not in the"
                        " microstep set -- handing to the interpreter (steps=%d)\n",
                        ctx->image_id, pc, w, steps); }
@@ -3228,7 +3499,7 @@ index 5fc50208..80bc067e 100644
          ctx->pc = pc;
          /* Stop at the drain's return point too: it sits mid-function, so it is
           * no lifted entry, and a job's return would otherwise run on through
-@@ -2600,8 +3001,124 @@ static int spu_smc_microstep(spu_context* ctx)
+@@ -2600,8 +3244,124 @@ static int spu_smc_microstep(spu_context* ctx)
      return 0;
  }
  
@@ -3353,7 +3624,7 @@ index 5fc50208..80bc067e 100644
      /* Real SPU bi/bisl mask the target to the 256 KB local store; the high bits
       * of a computed pointer (e.g. a packed handle like 0x7a028803) are ignored.
       * Without this, any indirect branch through such a value fails the lookup
-@@ -2658,6 +3175,37 @@ void spu_indirect_branch(spu_context* ctx)
+@@ -2658,6 +3418,37 @@ void spu_indirect_branch(spu_context* ctx)
              return;
          }
      }
@@ -3391,7 +3662,7 @@ index 5fc50208..80bc067e 100644
      /* Synthetic HLE tasks have no resident taskset policy at 0xA70. Real
       * tasksets use the SAME syscall address, so the API table alone is not
       * evidence that this is an HLE context. LLE tasks must enter Sony's policy
-@@ -2722,6 +3270,32 @@ void spu_indirect_branch(spu_context* ctx)
+@@ -2722,6 +3513,32 @@ void spu_indirect_branch(spu_context* ctx)
              for (int i = 0; i < 64; i++) if (pages[i]) p += snprintf(line+p, sizeof(line)-p, " 0x%X", i<<12);
              fprintf(stderr, "%s\n", line); }
        } }
@@ -3424,7 +3695,7 @@ index 5fc50208..80bc067e 100644
      { static int s_t = -1; if (s_t < 0) s_t = getenv("SPU_POLLTRACE") ? 1 : 0;
        if (s_t) { static uint64_t s_n = 0; static uint32_t s_last = 0; static uint64_t s_run = 0;
          if (ctx->pc == s_last) s_run++; else { s_last = ctx->pc; s_run = 1; }
-@@ -3049,6 +3623,7 @@ void spu_indirect_branch(spu_context* ctx)
+@@ -3049,6 +3866,7 @@ void spu_indirect_branch(spu_context* ctx)
                        fprintf(stderr, "[jobexec] dumped LS at job entry -> %s\n", dp); }
                    s_dumped = 1; } } }
      }
@@ -3432,7 +3703,7 @@ index 5fc50208..80bc067e 100644
      if (fn) {
          spu_check_stack_reset(ctx, fn);
          /* MUSTTAIL: a guest loop that iterates through an indirect branch (the
-@@ -3316,4 +3891,102 @@ void spu_trace_rt(spu_context* ctx, uint32_t rt)
+@@ -3316,4 +4134,102 @@ void spu_trace_rt(spu_context* ctx, uint32_t rt)
  
  #ifdef __cplusplus
  }
@@ -6063,6 +6334,23 @@ index 195c75e3..95b4c5b8 100644
          }
          u128 x = spu_shufb(a, b, c), y = spu_shufb_ref(a, b, c);
          if (memcmp(&x, &y, 16)) {
+diff --git a/runtime/syscalls/sys_fs.c b/runtime/syscalls/sys_fs.c
+index f076ef89..5e972652 100644
+--- a/runtime/syscalls/sys_fs.c
++++ b/runtime/syscalls/sys_fs.c
+@@ -512,6 +512,12 @@ int64_t sys_fs_read(ppu_context* ctx)
+      * as a read error on every movie and never decoded a frame -- solid green
+      * video. ppu_fs.cpp fs_prefault is the same fix for cellFs. */
+     if (size) vm_commit(buf_addr, (uint32_t)size);
++    /* A user-mode write to each page before the kernel writes it: a page write-protected to watch its contents
++     * (the RSX's caches, the SPU code slots' sources) faults here and is lifted, where the kernel would fail
++     * the read instead. */
++    if (size) { volatile uint8_t* t = (volatile uint8_t*)buf;
++                for (uint64_t o = 0; o < size; o += 0x1000) t[o] = t[o];
++                t[size - 1] = t[size - 1]; }
+     size_t nread = fread(buf, 1, (size_t)size, f->fp);
+ 
+     /* PS3_FSTRACE=<n>: every nth read, the fd and the file offset it came from.
 diff --git a/runtime/syscalls/sys_timer.c b/runtime/syscalls/sys_timer.c
 index 3a022815..57e838c2 100644
 --- a/runtime/syscalls/sys_timer.c

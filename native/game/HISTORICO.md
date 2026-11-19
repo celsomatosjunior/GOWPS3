@@ -481,6 +481,19 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   (`logsb_s2.out` -0,30, `logsb_s3.out` +0,05): nos 16 pares -0,13 us/job (t ~-0,6, mediana 0), 0 janelas
   fora. **Neutro: não integrado** -- o cache de despacho por thread já resolvia esses alvos quase de graça; o custo
   das ~3,5 milhões de chamadas por segundo não está na busca do alvo.
+- **Módulo reenviado sem comparação, sob proteção de página** (ps3recomp `prot-ovl` 1eee4970 + 68c18017;
+  `SPU_OVL_PROT=0` desliga). Perfil do rp18: ~6% da thread crítica no `memcmp` do reenvio (~2 GB/s); teto medido
+  pulando a comparação (ramo de medida `medida-trust`, inseguro) ~-1,25 us/job. Depois de uma comparação igual, as
+  páginas do slot no LS e da origem na memória do guest ficam só leitura; um tratador de exceção vetorizado,
+  registrado antes do da textura do RSX, devolve a escrita, marca o slot ou a origem como sujos e deixa seguir.
+  Reenvio de slot limpo: só o que passa da área protegida é comparado. Auditoria: 1 em cada 256 pulos compara tudo
+  e, se achar diferença, desliga a proteção daquele slot. Faltas contadas por janela de 10 s (acima de 64, pausa de
+  10 s). Escritas do kernel (ReadFile dentro do fread) em página só leitura falham sem exceção: `cellFs`,
+  `sys_fs` e a leitura assíncrona agora tocam cada página do destino antes. No jogo: ~140 mil comparações puladas
+  por segundo, 0 auditorias diferentes. A/B po18 x rp18 (`logsb_po.out` -0,86, `logsb_pq.out` -0,50): nos 16
+  pares -0,68 us/job (~-2,4%, t ~-4,0, mediana -0,60), 0 janelas fora, executor sem divergências, máquina sem
+  disputa. Sessão de 20 min (`logs\longo_po18.log`): 527 janelas, 0 fora, 9,8 milhões de execuções nativas sem
+  divergência, 0 auditorias diferentes. **Integrado** (integra-17nov 68c18017).
 
 **18/11/2026 (fim de tarde): validação da instalação limpa (pasta `Projetos\instala18`).**
 - Clone do GitHub (GOWPS3 `native-recomp` 88ceab7) + ps3recomp 4e8f3ca8 + os 3 patches + glslang/asmjit nos commits
