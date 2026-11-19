@@ -461,7 +461,8 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   diagnóstico `diag-reget` (motivo de cada GET não pulado) em fila.
 - **gb/gbh/gbb/fsm/fsmh/fsmb/xswd/orx vetoriais** (ps3recomp `gather-vetor` 51416d71; `test_spu_gather.c`: 32
   milhões de comparações, 0 diferentes; reprodução 512 x 512, 0 diferentes). A/B contra qb18 (`logs\ab_gv.out`):
-  -0,30 us/job (dp 0,57, t ~-1,5): inconclusivo; mais 8 pares em `logs\ab_gw.out`.
+  -0,30 us/job; mais 8 pares (`logsb_gw.out`) -0,31. Nos 16 pares: -0,31 us/job (~-1%, dp 0,57, t ~-2,1,
+  mediana -0,25). **Integrado.**
 - **Diagnóstico dos reenvios** (`diag-reget` 6fa1ed1f, `logs\ovl_dg18.log`, por segundo): 120 mil GETs de 16 KB
   pulados pelo atalho (o módulo inteiro menos o fim); 40 mil GETs (~12 KB) que começam dentro da área verificada e
   passam do fim dela (o último pedaço, com os dados do job) -- copiados inteiros e comparados de novo; 480 mil GETs
