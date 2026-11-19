@@ -494,6 +494,30 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   pares -0,68 us/job (~-2,4%, t ~-4,0, mediana -0,60), 0 janelas fora, executor sem divergências, máquina sem
   disputa. Sessão de 20 min (`logs\longo_po18.log`): 527 janelas, 0 fora, 9,8 milhões de execuções nativas sem
   divergência, 0 auditorias diferentes. **Integrado** (integra-17nov 68c18017).
+- **Destino das chamadas computadas dos jobs** (ps3recomp `ib-sitios` 8fdbca2b, `SPU_IB_SITES=<s>`, diagnóstico):
+  ~3,8 milhões por segundo na thread das EDGE, quase todas de pontos com um destino só (1CAC8->1BB00, 0E750->0D140,
+  09978->0C380, 051C4->0CEC0...; os 16 primeiros pontos somam ~75%); 02DEC e 04480 vão a vários
+  (`logs\ib_is19.log`).
+- **Chamada computada resolvida no ponto de chamada** (ps3recomp `devirt` 7c9357dd: `spu_ib_site` devolve a função
+  que o atalho residente do `spu_indirect_branch` chamaria, nas mesmas condições, e o ponto a chama; `spu_lifter.py
+  --ib-site`; os 227 pontos dos módulos de job trocados por `scripts_locais\jobs_ib_site.py`; `SPU_IB_SITE=0`
+  desliga). Ideia: uma chamada indireta do host por ponto, cada uma prevista à parte. Verificação 330 s sem
+  divergências. A/B ds19 x po18 (`logs\ab_ds.out`, 8 pares): **+0,50 us/job** (t ~+1,7; 6 de 8 piores).
+  **Regressivo: não integrado** -- a resolução fora do despachante (chamada extra + checagens repetidas) custa
+  mais do que a previsão ganha; com o histograma e o atalho de 14/11 e o slot-tab, fica claro que o custo restante
+  do despacho não está nem na busca nem no salto compartilhado.
+- **Travada nova: falta do RSX dentro do lock de linha** (19/11). 2 das ~40 rodadas com o prot-ovl
+  (`rodar_pq_var_8`, `rodar_ds_var_4`) pararam com a mesma assinatura: uma thread PPU em
+  `VKGSRender::on_access_violation` (via `vm_rsx_veh`), esperando o thread do RSX esvaziar uma seção; o thread do RSX
+  em `spu_lockline_lock` (de `texture_read_semaphore_release`: relatórios e labels gravados dentro do lock desde
+  15/11); todas as SPUs em `spu_lockline_lock`. Ou seja, a PPU tomou a falta no meio de uma gravação coerente
+  (`VM_WRITE_COH`, `vm_memcpy_to`, `stwcx`...), com o lock na mão. Nenhuma das ~1.100 rodadas anteriores tem essa
+  assinatura (as travadas antigas eram o label 0x51 e o FIFO). Correção (ps3recomp `prefalta` 35008674):
+  `spu_coh_prefault_w/_r` (`spu_coh_bitmap.h`) tocam cada página do acesso antes de pegar o lock -- escrita por
+  OR atômico de zero (não grava nada), leitura por carga -- na PPU (gravações coerentes, `stwcx`/`stdcx`) e nas SPUs
+  (GETLLAR, PUTLLC, PUTLLUC, conjuntos de tarefas); `SPU_COH_PREFAULT=0` desliga. Diagnóstico (967cc919 + GOWPS3):
+  o lock guarda o id do dono e o `vm_rsx_veh` conta e nomeia as faltas tomadas dentro dele
+  (`[ps3rsx] falta dentro do lock de linha`). A/B com e sem a pré-falta em curso (`logs\ab_pf.out`).
 
 **18/11/2026 (fim de tarde): validação da instalação limpa (pasta `Projetos\instala18`).**
 - Clone do GitHub (GOWPS3 `native-recomp` 88ceab7) + ps3recomp 4e8f3ca8 + os 3 patches + glslang/asmjit nos commits
