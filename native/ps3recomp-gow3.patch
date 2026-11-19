@@ -4269,7 +4269,7 @@ index 49bc2b94..aa45939e 100644
              return;
          }
 diff --git a/runtime/spu/spu_helpers.h b/runtime/spu/spu_helpers.h
-index f04fda63..42597f75 100644
+index f04fda63..27f2b903 100644
 --- a/runtime/spu/spu_helpers.h
 +++ b/runtime/spu/spu_helpers.h
 @@ -467,18 +467,52 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) { return spu_selb_ref(a, b,
@@ -4689,7 +4689,60 @@ index f04fda63..42597f75 100644
  static inline u128 spu_rotqmbyi_ref(u128 a, int i7)  { int sh=(0-i7)&0x1F; u128 r=spu_zero(); if(sh>=16) return r; for(int i=0;i<16;i++){ int s=i-sh; if(s>=0) r._u8[SPU_W(i)]=a._u8[SPU_W(s)]; } return r; }
  #if defined(__ARM_NEON) && !defined(SPU_SCALAR_HELPERS) && !defined(SPU_SCALAR_INT)
  static inline u128 spu_rotqmbyi(u128 a, int i7) {
-@@ -2330,4 +2604,47 @@ static inline u128 spu_fsmh(u128 a) { return spu_fsmh_ref(a); }
+@@ -2259,14 +2533,44 @@ static inline u128 spu_xshw(u128 a) {
+     return spu__xs(_mm_srai_epi32(_mm_slli_epi32(spu__xl(a), 16), 16));
+ }
+ static inline u128 spu_clz(u128 a) { return spu_clz_ref(a); }
+-static inline u128 spu_xswd(u128 a) { return spu_xswd_ref(a); }
+-static inline u128 spu_orx(u128 a) { return spu_orx_ref(a); }
+-static inline u128 spu_gb(u128 a) { return spu_gb_ref(a); }
+-static inline u128 spu_gbh(u128 a) { return spu_gbh_ref(a); }
+-static inline u128 spu_gbb(u128 a) { return spu_gbb_ref(a); }
+-static inline u128 spu_fsm(u128 a) { return spu_fsm_ref(a); }
+-static inline u128 spu_fsmh(u128 a) { return spu_fsmh_ref(a); }
+-static inline u128 spu_fsmb(u128 a) { return spu_fsmb_ref(a); }
++static inline u128 spu_xswd(u128 a) {
++    /* host word 2d+1 is the SPU low word of doubleword d; its sign fills word 2d */
++    const __m128i x = spu__xl(a), s = _mm_shuffle_epi32(_mm_srai_epi32(x, 31), _MM_SHUFFLE(3, 3, 1, 1));
++    return spu__xs(_mm_blend_epi16(s, x, 0xCC));
++}
++static inline u128 spu_orx(u128 a) {
++    __m128i x = spu__xl(a);
++    x = _mm_or_si128(x, _mm_shuffle_epi32(x, _MM_SHUFFLE(1, 0, 3, 2)));
++    x = _mm_or_si128(x, _mm_shuffle_epi32(x, _MM_SHUFFLE(2, 3, 0, 1)));
++    return spu__xs(_mm_cvtsi32_si128(_mm_cvtsi128_si32(x)));
++}
++/* gather: reversing the four host words puts SPU element 15-k (bytes) / 7-k (halfwords) / 3-k (words) at host
++ * position k, so a movemask of the shifted-up LSBs gives the SPU bit order (element 0 -> highest bit). */
++static inline u128 spu_gb(u128 a) {
++    const __m128i x = _mm_shuffle_epi32(_mm_slli_epi32(spu__xl(a), 31), _MM_SHUFFLE(0, 1, 2, 3));
++    return spu__xs(_mm_cvtsi32_si128(_mm_movemask_ps(_mm_castsi128_ps(x))));
++}
++static inline u128 spu_gbh(u128 a) {
++    const __m128i x = _mm_shuffle_epi32(_mm_slli_epi16(spu__xl(a), 15), _MM_SHUFFLE(0, 1, 2, 3));
++    return spu__xs(_mm_cvtsi32_si128(_mm_movemask_epi8(_mm_packs_epi16(x, _mm_setzero_si128()))));
++}
++static inline u128 spu_gbb(u128 a) {
++    const __m128i x = _mm_shuffle_epi32(_mm_slli_epi16(spu__xl(a), 7), _MM_SHUFFLE(0, 1, 2, 3));
++    return spu__xs(_mm_cvtsi32_si128(_mm_movemask_epi8(x)));
++}
++static inline u128 spu_fsm(u128 a) {
++    const __m128i w = _mm_setr_epi32(8, 4, 2, 1);
++    return spu__xs(_mm_cmpeq_epi32(_mm_and_si128(_mm_set1_epi32((int)a._u32[0]), w), w));
++}
++static inline u128 spu_fsmh(u128 a) {
++    const __m128i w = _mm_setr_epi16(64, 128, 16, 32, 4, 8, 1, 2);
++    return spu__xs(_mm_cmpeq_epi16(_mm_and_si128(_mm_set1_epi16((short)a._u32[0]), w), w));
++}
++static inline u128 spu_fsmb(u128 a) {
++    const __m128i w = _mm_setr_epi8(16, 32, 64, -128, 1, 2, 4, 8, 16, 32, 64, -128, 1, 2, 4, 8);
++    const __m128i v = _mm_unpacklo_epi64(_mm_set1_epi8((char)(a._u32[0] >> 8)), _mm_set1_epi8((char)a._u32[0]));
++    return spu__xs(_mm_cmpeq_epi8(_mm_and_si128(v, w), w));
++}
+ #else
+ static inline u128 spu_absdb(u128 a, u128 b) { return spu_absdb_ref(a, b); }
+ static inline u128 spu_avgb(u128 a, u128 b) { return spu_avgb_ref(a, b); }
+@@ -2330,4 +2634,47 @@ static inline u128 spu_fsmh(u128 a) { return spu_fsmh_ref(a); }
  static inline u128 spu_fsmb(u128 a) { return spu_fsmb_ref(a); }
  #endif
  
@@ -5901,6 +5954,45 @@ index 2a930b50..6831d65f 100644
  int spu_coh_is_reserved(uint32_t ea) { (void)ea;return 0; }
  void spu_coh_notify_write(uint32_t ea) { (void)ea; }
  void spu_coh_notify_write_except(uint32_t ea,const void* c) { (void)ea;(void)c; }
+diff --git a/runtime/spu/tests/test_spu_gather.c b/runtime/spu/tests/test_spu_gather.c
+new file mode 100644
+index 00000000..8f215433
+--- /dev/null
++++ b/runtime/spu/tests/test_spu_gather.c
+@@ -0,0 +1,33 @@
++/* test_spu_gather.c: the vectorised gather / form-select / sign-extend / or-across forms (gb, gbh, gbb, fsm, fsmh,
++ * fsmb, xswd, orx) against their scalar _ref forms on random and edge-pattern quadwords. Exit 0 when every result
++ * is identical. */
++#include "spu_context.h"
++#include "spu_helpers.h"
++#include <stdio.h>
++#include <string.h>
++
++static uint64_t s_x = 0x9E3779B97F4A7C15ull;
++static uint32_t rnd(void)
++{
++    s_x ^= s_x << 13; s_x ^= s_x >> 7; s_x ^= s_x << 17;
++    return (uint32_t)(s_x >> 16);
++}
++
++static int same(u128 a, u128 b) { return memcmp(&a, &b, 16) == 0; }
++
++#define CHK(op) do { n++; if (!same(spu_##op(a), spu_##op##_ref(a))) { if (bad++ < 8) printf(#op " %08X %08X %08X %08X\n", \
++    a._u32[0], a._u32[1], a._u32[2], a._u32[3]); } } while (0)
++
++int main(void)
++{
++    long bad = 0, n = 0;
++    for (long t = 0; t < 4000000; t++) {
++        u128 a;
++        for (int k = 0; k < 4; k++) a._u32[k] = rnd();
++        if (t < 65536) a._u32[0] = (uint32_t)t | (rnd() & 0xFFFF0000u & (t & 1 ? ~0u : 0u));   /* every mask */
++        if ((t & 7) == 3) for (int k = 0; k < 4; k++) a._u32[k] &= 0x01010101u;
++        CHK(gb); CHK(gbh); CHK(gbb); CHK(fsm); CHK(fsmh); CHK(fsmb); CHK(xswd); CHK(orx);
++    }
++    printf("test_spu_gather: %ld comparisons, %ld different\n", n, bad);
++    return bad != 0;
++}
 diff --git a/runtime/spu/tests/test_spu_qbits.c b/runtime/spu/tests/test_spu_qbits.c
 new file mode 100644
 index 00000000..d410361d
