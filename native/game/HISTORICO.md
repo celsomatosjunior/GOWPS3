@@ -369,7 +369,7 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   - ordem nova: 0 com atrasos 20 e 100.
 - A exatidão da reprodução não é afetada: a reprodução não registra faixas de IO, e a memória final é a mesma.
 - Resumo para o Arnaldo: `GOW3_trabalho\resumo_fifo_arnaldo.md`.
-- **A/B de custo 6+6** (`ab_exes.sh 6 fb dg17 fb18`, 330 s, `logsb_fb.out`): us/job(60s) +1,2% (EP ~1,0;
+- **A/B de custo 6+6** (`ab_exes.sh 6 fb dg17 fb18`, 330 s, `logs\ab_fb.out`): us/job(60s) +1,2% (EP ~1,0;
   o par 4 puxa sozinho, +1,6 us), us/job da cena +0,5%; q/s reais iguais no ruído. Executor Wws 0 divergências.
   **Custo no ruído.**
 - **Caçada 8** (`caca_fifo.sh 40 fb18`, sem atraso): **0 desync e 0 travada em 40 cenas** (mais 0 nas 12 do A/B).
@@ -461,7 +461,7 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   diagnóstico `diag-reget` (motivo de cada GET não pulado) em fila.
 - **gb/gbh/gbb/fsm/fsmh/fsmb/xswd/orx vetoriais** (ps3recomp `gather-vetor` 51416d71; `test_spu_gather.c`: 32
   milhões de comparações, 0 diferentes; reprodução 512 x 512, 0 diferentes). A/B contra qb18 (`logs\ab_gv.out`):
-  -0,30 us/job; mais 8 pares (`logsb_gw.out`) -0,31. Nos 16 pares: -0,31 us/job (~-1%, dp 0,57, t ~-2,1,
+  -0,30 us/job; mais 8 pares (`logs\ab_gw.out`) -0,31. Nos 16 pares: -0,31 us/job (~-1%, dp 0,57, t ~-2,1,
   mediana -0,25). **Integrado.**
 - **Diagnóstico dos reenvios** (`diag-reget` 6fa1ed1f, `logs\ovl_dg18.log`, por segundo): 120 mil GETs de 16 KB
   pulados pelo atalho (o módulo inteiro menos o fim); 40 mil GETs (~12 KB) que começam dentro da área verificada e
