@@ -454,6 +454,11 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   milhões de comparações, 0 diferentes (AVX2 e SSE4.1). Reprodução `jobcap206s`: 512 x 512 jobs, 0 diferentes.
   A/B (`ab_exes.sh 8 qb sl18 qb18`, `logs\ab_qb.out`): us/job(60s) 29,46 -> 28,90 (-0,56, dp 0,54, t ~-2,9,
   ~-1,9%); q/s reais 11-15 nos dois (a cena varia mais que 2%); 16/16 sem travada. **Integrado.**
+- **Igualdade SSE2 no módulo reenviado** (ps3recomp `cmp-rapido` 02909f77; ~3 -> ~1,1 us por 55 KB no banco
+  isolado). A/B (`ab_exes.sh 8 cr sl18 cr18`, `logs\ab_cr.out`): +0,07 us/job (dp 0,57, t ~0,4). **Neutro: não
+  integrado.** As estatísticas (`SPU_OVL_STATS=10`, `logs\ovl_sl18.log`) mostram ~42 mil reenvios por segundo
+  (~12 KB cada, ~520 MB/s) que ainda passam por cópia + `note_get`: o atalho de igualdade não os pega. Ramo de
+  diagnóstico `diag-reget` (motivo de cada GET não pulado) em fila.
 
 **18/11/2026 (fim de tarde): validação da instalação limpa (pasta `Projetos\instala18`).**
 - Clone do GitHub (GOWPS3 `native-recomp` 88ceab7) + ps3recomp 4e8f3ca8 + os 3 patches + glslang/asmjit nos commits
