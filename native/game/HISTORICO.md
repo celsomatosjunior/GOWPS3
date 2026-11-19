@@ -478,7 +478,7 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   `spu_indirect_branch`; `SPU_SLOT_TAB_CHECK=1` compara cada resposta com a do resolvedor completo no jogo (o replay
   dos jobs roda fora do modo de política e não passa por ela).
   No jogo: 1,44 bilhão de consultas, 0 diferentes; 22 montagens por rodada (fixas). A/B st2 x rp18
-  (`logsb_s2.out` -0,30, `logsb_s3.out` +0,05): nos 16 pares -0,13 us/job (t ~-0,6, mediana 0), 0 janelas
+  (`logs\ab_s2.out` -0,30, `logs\ab_s3.out` +0,05): nos 16 pares -0,13 us/job (t ~-0,6, mediana 0), 0 janelas
   fora. **Neutro: não integrado** -- o cache de despacho por thread já resolvia esses alvos quase de graça; o custo
   das ~3,5 milhões de chamadas por segundo não está na busca do alvo.
 - **Módulo reenviado sem comparação, sob proteção de página** (ps3recomp `prot-ovl` 1eee4970 + 68c18017;
@@ -490,7 +490,7 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   e, se achar diferença, desliga a proteção daquele slot. Faltas contadas por janela de 10 s (acima de 64, pausa de
   10 s). Escritas do kernel (ReadFile dentro do fread) em página só leitura falham sem exceção: `cellFs`,
   `sys_fs` e a leitura assíncrona agora tocam cada página do destino antes. No jogo: ~140 mil comparações puladas
-  por segundo, 0 auditorias diferentes. A/B po18 x rp18 (`logsb_po.out` -0,86, `logsb_pq.out` -0,50): nos 16
+  por segundo, 0 auditorias diferentes. A/B po18 x rp18 (`logs\ab_po.out` -0,86, `logs\ab_pq.out` -0,50): nos 16
   pares -0,68 us/job (~-2,4%, t ~-4,0, mediana -0,60), 0 janelas fora, executor sem divergências, máquina sem
   disputa. Sessão de 20 min (`logs\longo_po18.log`): 527 janelas, 0 fora, 9,8 milhões de execuções nativas sem
   divergência, 0 auditorias diferentes. **Integrado** (integra-17nov 68c18017).
