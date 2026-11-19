@@ -448,6 +448,12 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
 - Conclusão: o perfil plano confirma que o ganho tem de vir do job inteiro (controle, gerenciador, runtime e código
   pequeno), não de mais núcleos por função -- a mesma conclusão do Arnaldo no Ascension. Próximo: reprodução do job
   206 e o caminho direto no modelo de `gowa_drawcmd/direct.c` para a forma de draw mais comum.
+- **Rotações de bits vetoriais** (ps3recomp `rotqbi-vetor` dab6ea29; lição do otavix010: os maiores ganhos dele
+  foram operações SPU que eram laços escalares). rotqbi/rotqbii/shlqbi/shlqbii/rotqmbi/rotqmbii viram 4 instruções
+  SSE (deslocamento por palavra + vizinha); as versões antigas ficam como `*_ref`. Teste `test_spu_qbits.c`: 97,2
+  milhões de comparações, 0 diferentes (AVX2 e SSE4.1). Reprodução `jobcap206s`: 512 x 512 jobs, 0 diferentes.
+  A/B (`ab_exes.sh 8 qb sl18 qb18`, `logs\ab_qb.out`): us/job(60s) 29,46 -> 28,90 (-0,56, dp 0,54, t ~-2,9,
+  ~-1,9%); q/s reais 11-15 nos dois (a cena varia mais que 2%); 16/16 sem travada. **Integrado.**
 
 **18/11/2026 (fim de tarde): validação da instalação limpa (pasta `Projetos\instala18`).**
 - Clone do GitHub (GOWPS3 `native-recomp` 88ceab7) + ps3recomp 4e8f3ca8 + os 3 patches + glslang/asmjit nos commits

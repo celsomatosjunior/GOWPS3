@@ -4269,7 +4269,7 @@ index 49bc2b94..aa45939e 100644
              return;
          }
 diff --git a/runtime/spu/spu_helpers.h b/runtime/spu/spu_helpers.h
-index f04fda63..d6727fbc 100644
+index f04fda63..42597f75 100644
 --- a/runtime/spu/spu_helpers.h
 +++ b/runtime/spu/spu_helpers.h
 @@ -467,18 +467,52 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) { return spu_selb_ref(a, b,
@@ -4345,6 +4345,20 @@ index f04fda63..d6727fbc 100644
  #if defined(__SSE4_1__) || defined(__ARM_NEON)
  /* The byte loop stays as the reference (tests/test_spu_shufb.c checks both). */
  static inline u128 spu_shufb_ref(u128 a, u128 b, u128 c) {
+@@ -588,11 +625,11 @@ static inline u128 spu_rotqbyi(u128 a, int sh) { return spu_rotqbyi_ref(a, sh);
+  * word1<<32, but SPU's MS half is word0<<32 | word1), so native shifts on them
+  * corrupt any bits crossing a 32-bit boundary. Assemble the logical hi/lo halves
+  * with _u32[0] as most-significant, shift, then disassemble. */
+-static inline u128 spu_shlqbii(u128 a, int sh) { sh&=7; if(!sh) return a;
++static inline u128 spu_shlqbii_ref(u128 a, int sh) { sh&=7; if(!sh) return a;
+     uint64_t hi=((uint64_t)a._u32[0]<<32)|a._u32[1], lo=((uint64_t)a._u32[2]<<32)|a._u32[3];
+     uint64_t nhi=(hi<<sh)|(lo>>(64-sh)), nlo=(lo<<sh);
+     u128 r; r._u32[0]=(uint32_t)(nhi>>32); r._u32[1]=(uint32_t)nhi; r._u32[2]=(uint32_t)(nlo>>32); r._u32[3]=(uint32_t)nlo; return r; }
+-static inline u128 spu_rotqbii(u128 a, int sh) { sh&=7; if(!sh) return a;
++static inline u128 spu_rotqbii_ref(u128 a, int sh) { sh&=7; if(!sh) return a;
+     uint64_t hi=((uint64_t)a._u32[0]<<32)|a._u32[1], lo=((uint64_t)a._u32[2]<<32)|a._u32[3];
+     uint64_t nhi=(hi<<sh)|(lo>>(64-sh)), nlo=(lo<<sh)|(hi>>(64-sh));
+     u128 r; r._u32[0]=(uint32_t)(nhi>>32); r._u32[1]=(uint32_t)nhi; r._u32[2]=(uint32_t)(nlo>>32); r._u32[3]=(uint32_t)nlo; return r; }
 @@ -787,7 +824,148 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
  SPU__SF_V3(spu__fma_s,  spu__fma_any(x, y, z, 0, 0))
  SPU__SF_V3(spu__fms_s,  spu__fma_any(x, y, z, 0, 0x80000000u))
@@ -4495,6 +4509,20 @@ index f04fda63..d6727fbc 100644
  /* Four lanes at a time, every lane exact, with no FPCR change. The host rounds to nearest (the
   * thread's default FPCR: RN, no flush-to-zero -- writing FPCR per op serializes, ~17 ns on an
   * M4); the SPU truncates. A result rounded to nearest is either the truncated one or one step
+@@ -1401,11 +1579,11 @@ static inline u128 spu_shl_ref(u128 a, u128 b)   { u128 r; for(int i=0;i<4;i++){
+ static inline u128 spu_shlh_ref(u128 a, u128 b)  { u128 r; for(int i=0;i<8;i++){ uint32_t sh=b._u16[i]&0x1F; r._u16[i]=(sh>15)?0:(uint16_t)(a._u16[i]<<sh); } return r; }
+ static inline u128 spu_rot_ref(u128 a, u128 b)   { u128 r; for(int i=0;i<4;i++){ uint32_t sh=b._u32[i]&31; r._u32[i]= sh ? ((a._u32[i]<<sh)|(a._u32[i]>>(32-sh))) : a._u32[i]; } return r; }
+ static inline u128 spu_roth_ref(u128 a, u128 b)  { u128 r; for(int i=0;i<8;i++){ uint32_t sh=b._u16[i]&15; r._u16[i]= sh ? (uint16_t)((a._u16[i]<<sh)|(a._u16[i]>>(16-sh))) : a._u16[i]; } return r; }
+-static inline u128 spu_shlqbi(u128 a, u128 b){ int sh=b._u32[0]&7; if(!sh) return a;
++static inline u128 spu_shlqbi_ref(u128 a, u128 b){ int sh=b._u32[0]&7; if(!sh) return a;
+     uint64_t hi=((uint64_t)a._u32[0]<<32)|a._u32[1], lo=((uint64_t)a._u32[2]<<32)|a._u32[3];
+     uint64_t nhi=(hi<<sh)|(lo>>(64-sh)), nlo=(lo<<sh);
+     u128 r; r._u32[0]=(uint32_t)(nhi>>32); r._u32[1]=(uint32_t)nhi; r._u32[2]=(uint32_t)(nlo>>32); r._u32[3]=(uint32_t)nlo; return r; }
+-static inline u128 spu_rotqbi(u128 a, u128 b){ int sh=b._u32[0]&7; if(!sh) return a;
++static inline u128 spu_rotqbi_ref(u128 a, u128 b){ int sh=b._u32[0]&7; if(!sh) return a;
+     uint64_t hi=((uint64_t)a._u32[0]<<32)|a._u32[1], lo=((uint64_t)a._u32[2]<<32)|a._u32[3];
+     uint64_t nhi=(hi<<sh)|(lo>>(64-sh)), nlo=(lo<<sh)|(hi>>(64-sh));
+     u128 r; r._u32[0]=(uint32_t)(nhi>>32); r._u32[1]=(uint32_t)nhi; r._u32[2]=(uint32_t)(nlo>>32); r._u32[3]=(uint32_t)nlo; return r; }
 @@ -1575,7 +1753,7 @@ SPU__XE_INLINE __m128i spu__xe_narrow(__m256i v) {
  /* (2^13 | base) * 2^19 - step * y is 2^32 + d with d = base * 2^19 - step * y (base < 2^13,
   * step * y < 2^29): the magnitude is >= 2^32 exactly when base * 2^19 >= step * y, and its low
@@ -4612,7 +4640,56 @@ index f04fda63..d6727fbc 100644
  #else
  static inline u128 spu_fi(u128 a, u128 b)      { return spu_fi_ref(a, b); }
  static inline u128 spu_frest(u128 a)           { return spu_frest_ref(a); }
-@@ -2330,4 +2576,47 @@ static inline u128 spu_fsmh(u128 a) { return spu_fsmh_ref(a); }
+@@ -1816,7 +2062,7 @@ static inline u128 spu_rotma_ref(u128 a, u128 b)  { u128 r; for(int i=0;i<4;i++)
+ static inline u128 spu_rothm_ref(u128 a, u128 b)  { u128 r; for(int i=0;i<8;i++){ uint32_t sh=(0-b._u16[i])&0x1F; r._u16[i]=(sh>15)?0:(uint16_t)(a._u16[i]>>sh); } return r; }
+ static inline u128 spu_rothma_ref(u128 a, u128 b) { u128 r; for(int i=0;i<8;i++){ uint32_t sh=(0-b._u16[i])&0x1F; r._s16[i]=(sh>15)?(a._s16[i]>>15):(a._s16[i]>>sh); } return r; }
+ static inline u128 spu_rothmi(u128 a, int i7) { u128 r; int sh=(0-i7)&0x1F; for(int i=0;i<8;i++) r._u16[i]=(sh>15)?0:(uint16_t)(a._u16[i]>>sh); return r; }
+-static inline u128 spu_rotqmbi(u128 a, u128 b)   { int sh=(0-(int)b._u32[0])&7; if(!sh) return a;
++static inline u128 spu_rotqmbi_ref(u128 a, u128 b)   { int sh=(0-(int)b._u32[0])&7; if(!sh) return a;
+     uint64_t hi=((uint64_t)a._u32[0]<<32)|a._u32[1], lo=((uint64_t)a._u32[2]<<32)|a._u32[3];
+     uint64_t nlo=(lo>>sh)|(hi<<(64-sh)), nhi=(hi>>sh);
+     u128 r; r._u32[0]=(uint32_t)(nhi>>32); r._u32[1]=(uint32_t)nhi; r._u32[2]=(uint32_t)(nlo>>32); r._u32[3]=(uint32_t)nlo; return r; }
+@@ -1844,10 +2090,38 @@ static inline u128 spu_rotqmbybi(u128 a, u128 b) {
+ #else
+ static inline u128 spu_rotqmbybi(u128 a, u128 b) { return spu_rotqmbybi_ref(a, b); }
+ #endif
+-static inline u128 spu_rotqmbii(u128 a, int i7)  { int sh=(0-i7)&7; if(!sh) return a;
++static inline u128 spu_rotqmbii_ref(u128 a, int i7)  { int sh=(0-i7)&7; if(!sh) return a;
+     uint64_t hi=((uint64_t)a._u32[0]<<32)|a._u32[1], lo=((uint64_t)a._u32[2]<<32)|a._u32[3];
+     uint64_t nlo=(lo>>sh)|(hi<<(64-sh)), nhi=(hi>>sh);
+     u128 r; r._u32[0]=(uint32_t)(nhi>>32); r._u32[1]=(uint32_t)nhi; r._u32[2]=(uint32_t)(nlo>>32); r._u32[3]=(uint32_t)nlo; return r; }
++/* The six bit-granular quadword shifts above, vectorised (x86): a 1-7 bit shift of the 128-bit big-endian value is,
++ * per SPU word k (host lane k), its own shift OR'd with the neighbour's bits that cross in: for a left shift the next
++ * word (k + 1, rotated round or zero), for a right shift the previous one (k - 1, zero). Four or five SSE2
++ * instructions against ~23 scalar ones; identical results (tests/test_spu_qbits.c checks every count against the
++ * _ref forms). The 0x6C10 loop of God of War III's EDGE job runs six rotqbii an iteration. */
++#if SPU_X86
++SPU__XI __m128i spu__qbits_l(__m128i a, int n, int rot) {
++    const __m128i nx = rot ? _mm_shuffle_epi32(a, _MM_SHUFFLE(0, 3, 2, 1)) : _mm_srli_si128(a, 4);
++    return _mm_or_si128(_mm_sll_epi32(a, _mm_cvtsi32_si128(n)), _mm_srl_epi32(nx, _mm_cvtsi32_si128(32 - n)));
++}
++SPU__XI __m128i spu__qbits_r(__m128i a, int n) {
++    const __m128i pv = _mm_slli_si128(a, 4);
++    return _mm_or_si128(_mm_srl_epi32(a, _mm_cvtsi32_si128(n)), _mm_sll_epi32(pv, _mm_cvtsi32_si128(32 - n)));
++}
++static inline u128 spu_shlqbii(u128 a, int sh) { sh &= 7; return sh ? spu__xs(spu__qbits_l(spu__xl(a), sh, 0)) : a; }
++static inline u128 spu_rotqbii(u128 a, int sh) { sh &= 7; return sh ? spu__xs(spu__qbits_l(spu__xl(a), sh, 1)) : a; }
++static inline u128 spu_shlqbi(u128 a, u128 b) { const int sh = b._u32[0] & 7; return sh ? spu__xs(spu__qbits_l(spu__xl(a), sh, 0)) : a; }
++static inline u128 spu_rotqbi(u128 a, u128 b) { const int sh = b._u32[0] & 7; return sh ? spu__xs(spu__qbits_l(spu__xl(a), sh, 1)) : a; }
++static inline u128 spu_rotqmbi(u128 a, u128 b) { const int sh = (0 - (int)b._u32[0]) & 7; return sh ? spu__xs(spu__qbits_r(spu__xl(a), sh)) : a; }
++static inline u128 spu_rotqmbii(u128 a, int i7) { const int sh = (0 - i7) & 7; return sh ? spu__xs(spu__qbits_r(spu__xl(a), sh)) : a; }
++#else
++static inline u128 spu_shlqbii(u128 a, int sh) { return spu_shlqbii_ref(a, sh); }
++static inline u128 spu_rotqbii(u128 a, int sh) { return spu_rotqbii_ref(a, sh); }
++static inline u128 spu_shlqbi(u128 a, u128 b) { return spu_shlqbi_ref(a, b); }
++static inline u128 spu_rotqbi(u128 a, u128 b) { return spu_rotqbi_ref(a, b); }
++static inline u128 spu_rotqmbi(u128 a, u128 b) { return spu_rotqmbi_ref(a, b); }
++static inline u128 spu_rotqmbii(u128 a, int i7) { return spu_rotqmbii_ref(a, i7); }
++#endif
+ static inline u128 spu_rotqmbyi_ref(u128 a, int i7)  { int sh=(0-i7)&0x1F; u128 r=spu_zero(); if(sh>=16) return r; for(int i=0;i<16;i++){ int s=i-sh; if(s>=0) r._u8[SPU_W(i)]=a._u8[SPU_W(s)]; } return r; }
+ #if defined(__ARM_NEON) && !defined(SPU_SCALAR_HELPERS) && !defined(SPU_SCALAR_INT)
+ static inline u128 spu_rotqmbyi(u128 a, int i7) {
+@@ -2330,4 +2604,47 @@ static inline u128 spu_fsmh(u128 a) { return spu_fsmh_ref(a); }
  static inline u128 spu_fsmb(u128 a) { return spu_fsmb_ref(a); }
  #endif
  
@@ -5824,6 +5901,54 @@ index 2a930b50..6831d65f 100644
  int spu_coh_is_reserved(uint32_t ea) { (void)ea;return 0; }
  void spu_coh_notify_write(uint32_t ea) { (void)ea; }
  void spu_coh_notify_write_except(uint32_t ea,const void* c) { (void)ea;(void)c; }
+diff --git a/runtime/spu/tests/test_spu_qbits.c b/runtime/spu/tests/test_spu_qbits.c
+new file mode 100644
+index 00000000..d410361d
+--- /dev/null
++++ b/runtime/spu/tests/test_spu_qbits.c
+@@ -0,0 +1,42 @@
++/* test_spu_qbits.c: the vectorised bit-granular quadword shifts (shlqbi/shlqbii, rotqbi/rotqbii, rotqmbi/rotqmbii)
++ * against their scalar _ref forms, for every shift count (immediates and register counts, including the bits the
++ * instructions ignore) on random and edge-pattern quadwords. Exit 0 when every result is identical. */
++#include "spu_context.h"
++#include "spu_helpers.h"
++#include <stdio.h>
++#include <string.h>
++
++static uint64_t s_x = 0x9E3779B97F4A7C15ull;
++static uint32_t rnd(void)
++{
++    s_x ^= s_x << 13; s_x ^= s_x >> 7; s_x ^= s_x << 17;
++    return (uint32_t)(s_x >> 16);
++}
++
++static int same(u128 a, u128 b) { return memcmp(&a, &b, 16) == 0; }
++
++int main(void)
++{
++    static const uint32_t pat[][4] = {
++        {0, 0, 0, 0}, {0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu}, {0x80000000u, 0, 0, 1},
++        {1, 0x80000000u, 1, 0x80000000u}, {0x01234567u, 0x89ABCDEFu, 0xFEDCBA98u, 0x76543210u}};
++    long bad = 0, n = 0;
++    for (int t = 0; t < 200000; t++) {
++        u128 a, b = spu_zero();
++        if (t < (int)(sizeof pat / sizeof pat[0])) memcpy(a._u32, pat[t], 16);
++        else for (int k = 0; k < 4; k++) a._u32[k] = rnd();
++        for (int c = -40; c <= 40; c++) {
++            b._u32[0] = (uint32_t)c ^ (rnd() & 0xFFFFFFF8u & (t & 1 ? ~0u : 0u));   /* high bits ignored */
++            b._u32[1] = rnd(); b._u32[2] = rnd(); b._u32[3] = rnd();
++            n += 6;
++            if (!same(spu_shlqbii(a, c), spu_shlqbii_ref(a, c))) { if (bad++ < 8) printf("shlqbii c=%d\n", c); }
++            if (!same(spu_rotqbii(a, c), spu_rotqbii_ref(a, c))) { if (bad++ < 8) printf("rotqbii c=%d\n", c); }
++            if (!same(spu_rotqmbii(a, c), spu_rotqmbii_ref(a, c))) { if (bad++ < 8) printf("rotqmbii c=%d\n", c); }
++            if (!same(spu_shlqbi(a, b), spu_shlqbi_ref(a, b))) { if (bad++ < 8) printf("shlqbi c=%08X\n", b._u32[0]); }
++            if (!same(spu_rotqbi(a, b), spu_rotqbi_ref(a, b))) { if (bad++ < 8) printf("rotqbi c=%08X\n", b._u32[0]); }
++            if (!same(spu_rotqmbi(a, b), spu_rotqmbi_ref(a, b))) { if (bad++ < 8) printf("rotqmbi c=%08X\n", b._u32[0]); }
++        }
++    }
++    printf("test_spu_qbits: %ld comparisons, %ld different\n", n, bad);
++    return bad != 0;
++}
 diff --git a/runtime/spu/tests/test_spu_shufb.c b/runtime/spu/tests/test_spu_shufb.c
 index 195c75e3..95b4c5b8 100644
 --- a/runtime/spu/tests/test_spu_shufb.c
