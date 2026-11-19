@@ -459,6 +459,14 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   integrado.** As estatísticas (`SPU_OVL_STATS=10`, `logs\ovl_sl18.log`) mostram ~42 mil reenvios por segundo
   (~12 KB cada, ~520 MB/s) que ainda passam por cópia + `note_get`: o atalho de igualdade não os pega. Ramo de
   diagnóstico `diag-reget` (motivo de cada GET não pulado) em fila.
+- **gb/gbh/gbb/fsm/fsmh/fsmb/xswd/orx vetoriais** (ps3recomp `gather-vetor` 51416d71; `test_spu_gather.c`: 32
+  milhões de comparações, 0 diferentes; reprodução 512 x 512, 0 diferentes). A/B contra qb18 (`logs\ab_gv.out`):
+  -0,30 us/job (dp 0,57, t ~-1,5): inconclusivo; mais 8 pares em `logs\ab_gw.out`.
+- **Diagnóstico dos reenvios** (`diag-reget` 6fa1ed1f, `logs\ovl_dg18.log`, por segundo): 120 mil GETs de 16 KB
+  pulados pelo atalho (o módulo inteiro menos o fim); 40 mil GETs (~12 KB) que começam dentro da área verificada e
+  passam do fim dela (o último pedaço, com os dados do job) -- copiados inteiros e comparados de novo; 480 mil GETs
+  de dados (~1,2 KB). Correção: `reget-parcial` 45459b80 (a parte de dentro, se igual, fica; só o resto é copiado e
+  anotado; `SPU_OVL_PARTIAL=0` desliga). A/B contra gv18 em `logs\ab_rp.out`.
 
 **18/11/2026 (fim de tarde): validação da instalação limpa (pasta `Projetos\instala18`).**
 - Clone do GitHub (GOWPS3 `native-recomp` 88ceab7) + ps3recomp 4e8f3ca8 + os 3 patches + glslang/asmjit nos commits
