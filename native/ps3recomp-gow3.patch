@@ -2631,7 +2631,7 @@ index 35052c67..b059c9ef 100644
  #define VMX_FUN(name, expr, flush_in, nanmode) \
  VMX_INL void name(VMX_D, VMX_B, uint32_t vscr) { const uint8_t* b = (const uint8_t*)b_; uint8_t r[16]; \
 diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
-index 5fc50208..1ff509a6 100644
+index 5fc50208..80bc067e 100644
 --- a/runtime/spu/spu_channels.c
 +++ b/runtime/spu/spu_channels.c
 @@ -23,6 +23,7 @@
@@ -3090,7 +3090,7 @@ index 5fc50208..1ff509a6 100644
      static int64_t s_g = -2;
      if (s_g == -2) { const char* e = getenv("SPU_LOCKGUARD"); s_g = e ? (int64_t)strtoul(e, 0, 16) : -1; }
      if (s_g < 0 || !vm_base) return;
-@@ -2129,21 +2430,69 @@ void spu_lockguard_check(spu_context* ctx, uint32_t ea, const uint8_t* src, uint
+@@ -2129,21 +2430,76 @@ void spu_lockguard_check(spu_context* ctx, uint32_t ea, const uint8_t* src, uint
                  ea, size, os, on, ns, nn); }
  }
  
@@ -3098,18 +3098,25 @@ index 5fc50208..1ff509a6 100644
 + * resident code slot loaded from that same source, changes nothing -- not the code, not the job's data, not
 + * the slot -- so it can skip both the copy and spu_overlay_note_get. One compare instead of a copy plus the
 + * compare note_get makes after it (God of War III's Wws PM re-sends each job's code with every job). */
-+int spu_overlay_get_unchanged(spu_context* ctx, uint32_t ea, const uint8_t* ls, const uint8_t* src, uint32_t size)
++/* Returns how many leading bytes of the GET can be left alone: size when the whole GET is a re-send, 0 when
++ * none. SPU_OVL_PARTIAL (default on, 0 = off): a GET that starts inside the slot and runs past its end (the
++ * last chunk of a re-sent module, which carries the job's data after the span -- one per GOW3 EDGE job) skips
++ * the part inside the slot when those bytes are already there; the caller copies and notes only the rest. */
++uint32_t spu_overlay_get_unchanged(spu_context* ctx, uint32_t ea, const uint8_t* ls, const uint8_t* src, uint32_t size)
 +{
-+    static int s_inc = -1;
++    static int s_inc = -1, s_part = -1;
 +    if (s_inc < 0) { const char* e = getenv("SPU_OVL_INCREMENTAL"); s_inc = e && e[0] == '1'; }
++    if (s_part < 0) { const char* e = getenv("SPU_OVL_PARTIAL"); s_part = !(e && e[0] == '0'); }
 +    if (!s_inc || size < 128) return 0;
 +    const uint32_t lsa = (uint32_t)(ls - ctx->ls);
 +    for (unsigned slot = 0; slot < 4; ++slot) {
 +        const uint32_t base = ctx->resident_code[slot].lsa, n = ctx->resident_code[slot].size;
-+        if (!ctx->resident_code[slot].image_id || lsa < base || lsa + size > base + n) continue;
++        if (!ctx->resident_code[slot].image_id || lsa < base || lsa >= base + n) continue;
++        const uint32_t head = lsa + size > base + n ? base + n - lsa : size;
++        if (head != size && (!s_part || head < 128)) continue;
 +        if (ctx->resident_code[slot].verify_state != SPU_OVERLAY_VERIFIED ||
 +            ea != ctx->resident_code[slot].source_ea + (lsa - base)) return 0;
-+        return memcmp(ls, src, size) == 0;
++        return memcmp(ls, src, head) == 0 ? head : 0;
 +    }
 +    return 0;
 +}
@@ -3162,7 +3169,7 @@ index 5fc50208..1ff509a6 100644
              }
          }
      }
-@@ -2161,6 +2510,12 @@ void spu_overlay_note_get(spu_context* ctx, uint32_t ea, const uint8_t* ls, uint
+@@ -2161,6 +2517,12 @@ void spu_overlay_note_get(spu_context* ctx, uint32_t ea, const uint8_t* ls, uint
                  for (unsigned slot = 0; slot < 4; ++slot) {
                      if (ctx->resident_code[slot].image_id && ctx->resident_code[slot].lsa != lsa)
                          continue;
@@ -3175,7 +3182,7 @@ index 5fc50208..1ff509a6 100644
                      ctx->resident_code[slot].lsa = lsa;
                      ctx->resident_code[slot].size = o->span;
                      ctx->resident_code[slot].source_ea = ea;
-@@ -2575,6 +2930,45 @@ static int spu_smc_microstep(spu_context* ctx)
+@@ -2575,6 +2937,45 @@ static int spu_smc_microstep(spu_context* ctx)
                fprintf(stderr, "[spu-smc] microstep img=%d pc=0x%05X word 0x%08X not in the"
                        " microstep set -- handing to the interpreter (steps=%d)\n",
                        ctx->image_id, pc, w, steps); }
@@ -3221,7 +3228,7 @@ index 5fc50208..1ff509a6 100644
          ctx->pc = pc;
          /* Stop at the drain's return point too: it sits mid-function, so it is
           * no lifted entry, and a job's return would otherwise run on through
-@@ -2600,8 +2994,124 @@ static int spu_smc_microstep(spu_context* ctx)
+@@ -2600,8 +3001,124 @@ static int spu_smc_microstep(spu_context* ctx)
      return 0;
  }
  
@@ -3346,7 +3353,7 @@ index 5fc50208..1ff509a6 100644
      /* Real SPU bi/bisl mask the target to the 256 KB local store; the high bits
       * of a computed pointer (e.g. a packed handle like 0x7a028803) are ignored.
       * Without this, any indirect branch through such a value fails the lookup
-@@ -2658,6 +3168,37 @@ void spu_indirect_branch(spu_context* ctx)
+@@ -2658,6 +3175,37 @@ void spu_indirect_branch(spu_context* ctx)
              return;
          }
      }
@@ -3384,7 +3391,7 @@ index 5fc50208..1ff509a6 100644
      /* Synthetic HLE tasks have no resident taskset policy at 0xA70. Real
       * tasksets use the SAME syscall address, so the API table alone is not
       * evidence that this is an HLE context. LLE tasks must enter Sony's policy
-@@ -2722,6 +3263,32 @@ void spu_indirect_branch(spu_context* ctx)
+@@ -2722,6 +3270,32 @@ void spu_indirect_branch(spu_context* ctx)
              for (int i = 0; i < 64; i++) if (pages[i]) p += snprintf(line+p, sizeof(line)-p, " 0x%X", i<<12);
              fprintf(stderr, "%s\n", line); }
        } }
@@ -3417,7 +3424,7 @@ index 5fc50208..1ff509a6 100644
      { static int s_t = -1; if (s_t < 0) s_t = getenv("SPU_POLLTRACE") ? 1 : 0;
        if (s_t) { static uint64_t s_n = 0; static uint32_t s_last = 0; static uint64_t s_run = 0;
          if (ctx->pc == s_last) s_run++; else { s_last = ctx->pc; s_run = 1; }
-@@ -3049,6 +3616,7 @@ void spu_indirect_branch(spu_context* ctx)
+@@ -3049,6 +3623,7 @@ void spu_indirect_branch(spu_context* ctx)
                        fprintf(stderr, "[jobexec] dumped LS at job entry -> %s\n", dp); }
                    s_dumped = 1; } } }
      }
@@ -3425,7 +3432,7 @@ index 5fc50208..1ff509a6 100644
      if (fn) {
          spu_check_stack_reset(ctx, fn);
          /* MUSTTAIL: a guest loop that iterates through an indirect branch (the
-@@ -3316,4 +3884,102 @@ void spu_trace_rt(spu_context* ctx, uint32_t rt)
+@@ -3316,4 +3891,102 @@ void spu_trace_rt(spu_context* ctx, uint32_t rt)
  
  #ifdef __cplusplus
  }
@@ -3984,10 +3991,10 @@ index d9f86bb4..b9ded356 100644
          }
      }
 diff --git a/runtime/spu/spu_dma.h b/runtime/spu/spu_dma.h
-index 8c4ccaa8..76702efe 100644
+index 8c4ccaa8..66fa5437 100644
 --- a/runtime/spu/spu_dma.h
 +++ b/runtime/spu/spu_dma.h
-@@ -595,8 +595,12 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
+@@ -595,8 +595,13 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
                                lsa, (uint32_t)ea, size, (uint32_t)spu->pc, spu->image_id, "\n");
                }
            } }
@@ -3995,23 +4002,26 @@ index 8c4ccaa8..76702efe 100644
 -        memcpy(ls_ptr, ea_ptr, size);
 +        /* GET: main memory -> local store. A re-sent verified code span that is already there exactly
 +         * is left alone (spu_overlay_get_unchanged; also skips the overlay bookkeeping below). */
-+        extern int spu_overlay_get_unchanged(spu_context*, uint32_t, const uint8_t*, const uint8_t*, uint32_t);
-+        const int get_same = spu_overlay_get_unchanged(spu, (uint32_t)ea, (const uint8_t*)ls_ptr, (const uint8_t*)ea_ptr, size);
-+        if (!get_same) memcpy(ls_ptr, ea_ptr, size);
++        extern uint32_t spu_overlay_get_unchanged(spu_context*, uint32_t, const uint8_t*, const uint8_t*, uint32_t);
++        const uint32_t get_skip = spu_overlay_get_unchanged(spu, (uint32_t)ea, (const uint8_t*)ls_ptr, (const uint8_t*)ea_ptr, size);
++        const int get_same = get_skip == size;
++        if (!get_same) memcpy((uint8_t*)ls_ptr + get_skip, (const uint8_t*)ea_ptr + get_skip, size - get_skip);
 +        if (__builtin_expect(g_spu_jobcap_live > 0, 0)) spu_jobcap_dma(spu, 0, lsa, ea, (const uint8_t*)ls_ptr, size);
          /* SPU_STACKEA_WATCH (b): scan the just-loaded payload for a 0xD00Cxxxx
           * dword = the completion-word EA arriving in a job buffer. */
          { static int s_se = -1; if (s_se < 0) s_se = getenv("SPU_STACKEA_WATCH") ? 1 : 0;
-@@ -626,7 +630,7 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
+@@ -626,8 +631,8 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
          /* Swappable-overlay tracking: a GET from a registered overlay source
           * (by EA or by content signature) marks that overlay's lifted
           * functions resident for this context. */
 -        { extern void spu_overlay_note_get(spu_context*, uint32_t, const uint8_t*, uint32_t);
+-          spu_overlay_note_get(spu, (uint32_t)ea, (const uint8_t*)ls_ptr, size); }
 +        if (!get_same) { extern void spu_overlay_note_get(spu_context*, uint32_t, const uint8_t*, uint32_t);
-           spu_overlay_note_get(spu, (uint32_t)ea, (const uint8_t*)ls_ptr, size); }
++          spu_overlay_note_get(spu, (uint32_t)ea + get_skip, (const uint8_t*)ls_ptr + get_skip, size - get_skip); }
          /* SPU_LS_WATCH: a DMA GET landing on a watched LS line is how the PPU
           * delivers commands into the SPU's queue (bypasses spu_ls_write128). */
-@@ -643,6 +647,7 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
+         { int _n; unsigned* _w = spu_ls_watch_list(&_n);
+@@ -643,6 +648,7 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
                }
            } }
      } else if (mfc_is_put(cmd)) {
@@ -4019,7 +4029,7 @@ index 8c4ccaa8..76702efe 100644
          /* PUT: local store -> main memory.
           *
           * A plain PUT is a store by another processor as far as every SPU
-@@ -678,6 +683,7 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
+@@ -678,6 +684,7 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
              extern void spu_coh_notify_write_except(uint32_t, const void*);
              extern void spu_lockline_lock(void);
              extern void spu_lockline_unlock(void);
@@ -4027,7 +4037,7 @@ index 8c4ccaa8..76702efe 100644
              extern void spu_lockguard_check(spu_context*, uint32_t, const uint8_t*, uint32_t, const char*);
              spu_lockguard_check(spu, (uint32_t)ea, (const uint8_t*)ls_ptr, size, "PUT");
              uint32_t a0 = (uint32_t)ea & ~127u;
-@@ -697,7 +703,7 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
+@@ -697,7 +704,7 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
                      const uint32_t lo = a > ea32 ? a - ea32 : 0u;
                      const uint32_t hi = a + 128u - ea32 < size ? a + 128u - ea32 : size;
                      if (spu_coh_is_reserved(a)) locked_lines[i >> 6] |= 1ull << (i & 63u);
@@ -4036,7 +4046,7 @@ index 8c4ccaa8..76702efe 100644
                      if (a == a1) break;
                  }
                  spu_lockline_lock();
-@@ -706,7 +712,7 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
+@@ -706,7 +713,7 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
                      const uint32_t lo = a > ea32 ? a - ea32 : 0u;
                      const uint32_t hi = a + 128u - ea32 < size ? a + 128u - ea32 : size;
                      if ((locked_lines[i >> 6] >> (i & 63u)) & 1u) {
@@ -4045,7 +4055,7 @@ index 8c4ccaa8..76702efe 100644
                          spu_coh_notify_write_except(a, spu);
                      } else if (spu_coh_is_reserved(a)) {
                          spu_coh_notify_write_except(a, spu);   /* reserved after its copy */
-@@ -716,14 +722,14 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
+@@ -716,14 +723,14 @@ static inline int mfc_do_transfer(spu_context* spu, uint32_t lsa, uint64_t ea,
                  spu_lockline_unlock();
              } else if (span_reserved) {
                  spu_lockline_lock();
@@ -4062,7 +4072,7 @@ index 8c4ccaa8..76702efe 100644
                  for (uint32_t a = a0; ; a += 128u) {
                      if (spu_coh_is_reserved(a)) {
                          spu_lockline_lock();
-@@ -956,6 +962,52 @@ static inline int mfc_enqueue(mfc_engine* mfc, spu_context* spu)
+@@ -956,6 +963,52 @@ static inline int mfc_enqueue(mfc_engine* mfc, spu_context* spu)
      return 0;
  }
  
@@ -4115,7 +4125,7 @@ index 8c4ccaa8..76702efe 100644
  /*
   * Submit and immediately execute an MFC command.
   * This is the main entry point called when the SPU writes to MFC_Cmd.
-@@ -1024,6 +1076,11 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
+@@ -1024,6 +1077,11 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
      uint32_t size = spu->mfc_size;
      uint32_t tag  = spu->mfc_tag & 0x1F;
      int rc = 0;
@@ -4127,7 +4137,7 @@ index 8c4ccaa8..76702efe 100644
  
      /* SPU_WATCHEA=<hex guest addr>: report every DMA whose destination range
       * covers one word, with the SPU id, its pc and the value the word holds
-@@ -1347,6 +1404,12 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
+@@ -1347,6 +1405,12 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
         * only when such episodes are. Unset: no cost beyond the existing test. */
        static int64_t s_log = -1;
        if (s_log < 0) { const char* e = getenv("SPU_DMA_REPEAT_LOG"); s_log = e ? atoll(e) : 0; }
@@ -4140,7 +4150,7 @@ index 8c4ccaa8..76702efe 100644
        if ((uint32_t)ea == s_last_ea && lsa == s_last_lsa) {
            if (++s_rep >= s_limit) {
                unsigned long long now = ps3_ms_now();
-@@ -1354,6 +1417,25 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
+@@ -1354,6 +1418,25 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
                    s_since = now;
                    if (s_log) spu_dma_repeat_log_start(spu);
                }
@@ -4166,7 +4176,7 @@ index 8c4ccaa8..76702efe 100644
                if (now - s_since >= s_secs * 1000u) {
                    s_rep = 0; s_since = 0;   /* re-arm: the chain may run this job again */
                    extern void spu_halt(spu_context*);
-@@ -1573,6 +1655,24 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
+@@ -1573,6 +1656,24 @@ static inline int mfc_submit(mfc_engine* mfc, spu_context* spu, uint32_t cmd)
          }
      }
  
@@ -4191,7 +4201,7 @@ index 8c4ccaa8..76702efe 100644
      /* Execute the transfer.
       * List commands (GETL/PUTL...): per CBEA the LIST's local-store address is
       * carried in MFC_EAL (the PM writes EAL=list, LSA=dest) and each element
-@@ -1776,6 +1876,9 @@ static inline uint32_t mfc_channel_read(mfc_engine* mfc, spu_context* spu,
+@@ -1776,6 +1877,9 @@ static inline uint32_t mfc_channel_read(mfc_engine* mfc, spu_context* spu,
           * spu_mfc_atomic(): 0 = PUTLLC_SUCCESS, 1 = PUTLLC_FAILURE (line moved,
           * SPU must retry). Honoring this is what keeps the SPURS lock-free queue
           * consistent across concurrent SPU kernel threads. */
@@ -5942,14 +5952,14 @@ index 47488b29..c075d892 100644
  void spu_img_restore(spu_context* c, int32_t sv) { (void)c; (void)sv; }
  #ifdef LIFTED_CASES_INC
 diff --git a/runtime/spu/tests/test_mfc_resume_elements.c b/runtime/spu/tests/test_mfc_resume_elements.c
-index 2a930b50..6831d65f 100644
+index 2a930b50..da1fac73 100644
 --- a/runtime/spu/tests/test_mfc_resume_elements.c
 +++ b/runtime/spu/tests/test_mfc_resume_elements.c
 @@ -24,6 +24,8 @@ unsigned spu_sn_defer_ticks(void) { return 0; }
  unsigned* spu_ls_watch_list(int* n) { *n=0;return NULL; }
  void spu_overlay_note_get(spu_context* c,uint32_t ea,const uint8_t* p,uint32_t n)
  { (void)c;(void)ea;(void)p;(void)n; }
-+int spu_overlay_get_unchanged(spu_context* c,uint32_t ea,const uint8_t* p,const uint8_t* s,uint32_t n)
++uint32_t spu_overlay_get_unchanged(spu_context* c,uint32_t ea,const uint8_t* p,const uint8_t* s,uint32_t n)
 +{ (void)c;(void)ea;(void)p;(void)s;(void)n;return 0; }
  int spu_coh_is_reserved(uint32_t ea) { (void)ea;return 0; }
  void spu_coh_notify_write(uint32_t ea) { (void)ea; }

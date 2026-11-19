@@ -467,7 +467,10 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   pulados pelo atalho (o módulo inteiro menos o fim); 40 mil GETs (~12 KB) que começam dentro da área verificada e
   passam do fim dela (o último pedaço, com os dados do job) -- copiados inteiros e comparados de novo; 480 mil GETs
   de dados (~1,2 KB). Correção: `reget-parcial` 45459b80 (a parte de dentro, se igual, fica; só o resto é copiado e
-  anotado; `SPU_OVL_PARTIAL=0` desliga). A/B contra gv18 em `logs\ab_rp.out`.
+  anotado; `SPU_OVL_PARTIAL=0` desliga). Reenvios copiados: ~42 mil -> ~2,5 mil por segundo; reprodução
+  512 x 512, 0 diferentes. A/B contra gv18: `logs\ab_rp.out` -0,11 us/job, `logs\ab_rq.out` -0,35; nos 16 pares
+  -0,23 us/job (~-0,8%, t ~-2,1), 0 janelas fora, executor Wws sem divergências. **Integrado** (integra-17nov
+  45459b80).
 
 **18/11/2026 (fim de tarde): validação da instalação limpa (pasta `Projetos\instala18`).**
 - Clone do GitHub (GOWPS3 `native-recomp` 88ceab7) + ps3recomp 4e8f3ca8 + os 3 patches + glslang/asmjit nos commits
