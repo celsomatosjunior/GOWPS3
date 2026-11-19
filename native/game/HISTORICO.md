@@ -471,6 +471,16 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   512 x 512, 0 diferentes. A/B contra gv18: `logs\ab_rp.out` -0,11 us/job, `logs\ab_rq.out` -0,35; nos 16 pares
   -0,23 us/job (~-0,8%, t ~-2,1), 0 janelas fora, executor Wws sem divergências. **Integrado** (integra-17nov
   45459b80).
+- **Tabela direta do despacho indireto nos módulos de job** (`slot-tab` a127893f): primeira versão ligada só em
+  `spu_indirect_branch_mt`, que nenhum código usa -- os jobs chamam `spu_indirect_branch` direto (bisl), e o
+  vinculador descartou o `_mt` (ausente do mapa). Exe idêntico em comportamento ao gv18 (0 tabelas montadas); A/B
+  interrompido. Refeito em `slot-tab2` (sobre integra-17nov 45459b80): a tabela consultada na entrada de
+  `spu_indirect_branch`; `SPU_SLOT_TAB_CHECK=1` compara cada resposta com a do resolvedor completo no jogo (o replay
+  dos jobs roda fora do modo de política e não passa por ela).
+  No jogo: 1,44 bilhão de consultas, 0 diferentes; 22 montagens por rodada (fixas). A/B st2 x rp18
+  (`logsb_s2.out` -0,30, `logsb_s3.out` +0,05): nos 16 pares -0,13 us/job (t ~-0,6, mediana 0), 0 janelas
+  fora. **Neutro: não integrado** -- o cache de despacho por thread já resolvia esses alvos quase de graça; o custo
+  das ~3,5 milhões de chamadas por segundo não está na busca do alvo.
 
 **18/11/2026 (fim de tarde): validação da instalação limpa (pasta `Projetos\instala18`).**
 - Clone do GitHub (GOWPS3 `native-recomp` 88ceab7) + ps3recomp 4e8f3ca8 + os 3 patches + glslang/asmjit nos commits
