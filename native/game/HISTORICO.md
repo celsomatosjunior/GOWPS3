@@ -549,6 +549,16 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   segundo slot): corrigido, 195/195 com e sem o índice. Medida: 533 ciclos por aviso (ppu 175, fence 103, watches
   56). A/B 16 pares no mesmo exe (ci19 com x `SPU_COH_IDX=0`; `logs\cadeia_ci.out` + `logs\cadeia_cj.out`, a
   segunda metade com registro de contenção, limpo): **-0,60 us/job (t -2,69)**, 0 travadas em 32 rodadas.
+- **Travada rara em combate com o índice (20/11) e auditoria.** 1 combate de 420 s em 5 parou aos ~336 s: aos
+  ~265 s a tarefa 0 do taskset 0x7498C100 mandou 3 eventos de usuário SPURS à porta 1, que nunca foi ligada
+  (`[spu-evt] ... unbound port 1 dropped`), e o bit 0x0002 do event flag 0x7498DA00 nunca chegou à thread que
+  esperava. A mensagem só aparece nesse log entre 1.652. Caçada 5+5 combates alternados com/sem índice
+  (`logs\cb_idx2.out`): 0 travadas, 0 eventos perdidos (placar: com índice 1/13, sem 0/8). Auditoria
+  (ps3recomp `coh-idx-audit` 45ed9094, `SPU_COH_IDX_AUDIT=1`: a cada aviso pelo índice percorre também todos os
+  contextos e conta os que seguram a linha sem estar no balde): **3 combates, ~350 milhões de avisos, 0 faltas,
+  0 marcas atrasadas** (`logs\cadeia_au.out`). O índice fica. Suspeita restante, à parte: o HLE do event flag
+  nunca grava a máscara de espera do PPU (+0x04), então a tarefa SPU só manda evento à porta se ler a linha
+  corrompida ou se outro código gravou nela; `cellSpursEventFlagAttachLv2EventQueue` não liga porta nenhuma.
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
