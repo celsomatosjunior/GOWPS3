@@ -571,6 +571,12 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   `--ppu-avx2` medido pela terceira vez, agora com poder (A/B 12 pares uc20 x av20, exes alternados,
   `logs\cadeia_av.out`, máquina limpa nos `maq_rodar_av_*`): us/job +0,81 (t 2,65, só 1 de 12 melhor), q/s reais
   -0,40 (t -0,8). **Regressivo: fechado, não repetir.**
+
+  Cache negativa no despacho SPU (ps3recomp b6a4285a, `SPU_DCACHE_NEG=0` desliga): a busca do interpretador
+  falhava quase sempre e era refeita a cada passo; agora a falta também fica na cache, com a mesma chave. Sombra
+  em combate (cada resposta conferida contra a busca completa): 3,4 bi acertos, 0 divergências. A/B 10 pares
+  (`logs\cadeia_dn.out`): us/job -0,42 (t -2,44; 6 melhores, 3 iguais, 1 pior), q/s reais +0,11 (ruído), 0
+  travadas. **Integrada, ligada por padrão.**
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
