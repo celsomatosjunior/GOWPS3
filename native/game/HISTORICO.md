@@ -529,6 +529,19 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   `do_local_task` no VK e no GL; o ZCULL não roda de novo). GOWPS3 `gow3_rsx_rpcs3.cpp` liga; `PS3_RSX_STORE_SERVE=0`
   desliga. A/B 6 pares com/sem: atendimentos em todas as 6 rodadas com (1 a 8 por rodada), 0 travadas em 12,
   velocidade igual (+0,22 us/job, t 1,2, ruído). A pré-falta fica (custo zero, reduz as faltas no lock).
+- **Perfil do ra19 (19/11 noite, `logs\prof_ra19*`):** na thread SPU mais ocupada, código traduzido 58% do ocupado,
+  despacho 9,4%, nativos 7,9%, DMA/MFC 6%, VCRUNTIME 4,9%, coerência 4,6%, canais 3,4%; perfil plano (maior função
+  traduzida 3%). Com chamadores (`GOW3_PROF=100,40,1`, `scripts_locais\prof_cham.py`): os ~21% em ntdll são o
+  `spurs_pm_worker` ocioso esperando o próximo job (a soma dos jobs EDGE ~= o quadro: não é caminho crítico); o
+  memcpy (~2%) é a cópia do próprio DMA. EDGE 2.561-2.666 jobs/quadro, ~13,6-13,8 q/s reais.
+- **Gerador do Arnaldo (`ascension-native/tools/gen_native_from_lift.py`) sobre a nossa tradução:** funciona com
+  `--channels --stops` a partir das funções quentes (a entrada 0xD200 chama o corpo por desvio indireto): 11 raízes
+  (9A68, 6C10, FA78, F428, DD50, 11310, 7D78, 11740, 6130, ABF0, 8C50), 107 funções, ~17% do ocupado, sem chamadas
+  indiretas dentro. Não testado no jogo: o ganho dele (-31%) vem de tirar os registradores do contexto ("the same
+  code with the registers left in the context costs what the lift costs"), o que o nosso `spu_reg_locals` +
+  `--spu-vivos` já faz, e as nossas chamadas diretas já são `musttail`/chamada C. Sem hipótese nova, não entra.
+- Já cobertos (não repetir): CCD/afinidade (`GOW3_PIN` põe tudo no CCD 0: neutro), limites de float (~6%, tirar
+  quebra a imagem, 07/11), LS espelhada (pior, +3%), `spu_lifted_lookup` (cache por thread; slot-tab neutro).
 
 **18/11/2026 (fim de tarde): validação da instalação limpa (pasta `Projetos\instala18`).**
 - Clone do GitHub (GOWPS3 `native-recomp` 88ceab7) + ps3recomp 4e8f3ca8 + os 3 patches + glslang/asmjit nos commits
