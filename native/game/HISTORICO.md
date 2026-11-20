@@ -549,6 +549,12 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   segundo slot): corrigido, 195/195 com e sem o índice. Medida: 533 ciclos por aviso (ppu 175, fence 103, watches
   56). A/B 16 pares no mesmo exe (ci19 com x `SPU_COH_IDX=0`; `logs\cadeia_ci.out` + `logs\cadeia_cj.out`, a
   segunda metade com registro de contenção, limpo): **-0,60 us/job (t -2,69)**, 0 travadas em 32 rodadas.
+- **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
+  o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
+  3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
+  2,7%, 0xFA78 2,0%, 912f:0x52A4 1,8%. `spu_fifo_hole` 1,2% (ordem do buraco do FIFO: necessária).
+  `ppu_resv_break_line` 0,6%: percorre ~35 contextos PPU; um índice como o das SPUs exigiria marcar em cada `lwarx`
+  traduzido (regerar o PPU inteiro, uma gravação a mais por `lwarx`) para no máximo 0,6%: não vale.
 - Já cobertos (não repetir): CCD/afinidade (`GOW3_PIN` põe tudo no CCD 0: neutro), limites de float (~6%, tirar
   quebra a imagem, 07/11), LS espelhada (pior, +3%), `spu_lifted_lookup` (cache por thread; slot-tab neutro).
 
