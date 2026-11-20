@@ -568,6 +568,9 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   reação do PPU; é trabalho do PPU. Não repetir.
 - **PPU principal no perfil ci19:** 54% ocupado; `func_0022F1CC` 16,8%, `vmx_vmaddfp` 9,8% (sem `--ppu-avx2` é o
   laço escalar com `fmaf`, que sem FMA vira chamada de biblioteca: ucrtbase 2,1%), `vaddfp` 2,4%, `vsubfp` 0,9%.
+  `--ppu-avx2` medido pela terceira vez, agora com poder (A/B 12 pares uc20 x av20, exes alternados,
+  `logs\cadeia_av.out`, máquina limpa nos `maq_rodar_av_*`): us/job +0,81 (t 2,65, só 1 de 12 melhor), q/s reais
+  -0,40 (t -0,8). **Regressivo: fechado, não repetir.**
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
