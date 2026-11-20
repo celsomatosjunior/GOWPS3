@@ -559,6 +559,15 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   0 marcas atrasadas** (`logs\cadeia_au.out`). O índice fica. Suspeita restante, à parte: o HLE do event flag
   nunca grava a máscara de espera do PPU (+0x04), então a tarefa SPU só manda evento à porta se ler a linha
   corrompida ou se outro código gravou nela; `cellSpursEventFlagAttachLv2EventQueue` não liga porta nenhuma.
+  Diagnóstico deixado no `integra-17nov` (ps3recomp 932d3782): ao descartar um evento SPURS numa porta sem fila,
+  despeja as linhas de 128 bytes de todos os event flags vivos (8 primeiras vezes). 4 combates (ed20): limpos.
+- **Reação do PPU à lista EDGE (`PS3_USLEEP_CAP_US`, ps3recomp `usleep-cap` 2df669f3, desligado):** limita as
+  esperas curtas do `sys_timer_usleep` (o PPU sonda a lista com `usleep(30)`; o laço do jogo reconfere a condição a
+  cada volta, nada é pulado). A/B 8 pares no mesmo exe (uc20, `logs\cadeia_uc.out`) sem x com `=5`: q/s reais
+  +0,23 (t 0,5), us/job -0,06 (t -0,3): **neutro**. O tempo parado da SPU das EDGE entre listas não é atraso de
+  reação do PPU; é trabalho do PPU. Não repetir.
+- **PPU principal no perfil ci19:** 54% ocupado; `func_0022F1CC` 16,8%, `vmx_vmaddfp` 9,8% (sem `--ppu-avx2` é o
+  laço escalar com `fmaf`, que sem FMA vira chamada de biblioteca: ucrtbase 2,1%), `vaddfp` 2,4%, `vsubfp` 0,9%.
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
