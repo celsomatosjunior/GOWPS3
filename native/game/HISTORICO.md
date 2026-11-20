@@ -540,6 +540,15 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   indiretas dentro. Não testado no jogo: o ganho dele (-31%) vem de tirar os registradores do contexto ("the same
   code with the registers left in the context costs what the lift costs"), o que o nosso `spu_reg_locals` +
   `--spu-vivos` já faz, e as nossas chamadas diretas já são `musttail`/chamada C. Sem hipótese nova, não entra.
+- **Índice de donos por linha no aviso de escrita (ps3recomp `coh-idx` 1d4d0791, INTEGRADO no `integra-17nov`
+  em 20/11).** Medida antes (`SPU_COH_STATS=1`, ra19): ~290 mil avisos/s, 852 ciclos cada, ~500 só no percurso
+  dos ~52 contextos SPU registrados (boa parte dentro do lock de linha). Agora cada reserva marca o seu bit num
+  índice de 4.096 baldes por linha (falso positivo possível, falso negativo não), e o aviso visita só os bits do
+  balde; cada candidato passa pela mesma checagem `spu_coh_holds`. Mais de 64 contextos ou `SPU_COH_IDX=0`: percurso
+  antigo. O teste de coerência pegou um aviso duplicado depois do `spu_reset` (contexto ainda registrado pegava um
+  segundo slot): corrigido, 195/195 com e sem o índice. Medida: 533 ciclos por aviso (ppu 175, fence 103, watches
+  56). A/B 16 pares no mesmo exe (ci19 com x `SPU_COH_IDX=0`; `logs\cadeia_ci.out` + `logs\cadeia_cj.out`, a
+  segunda metade com registro de contenção, limpo): **-0,60 us/job (t -2,69)**, 0 travadas em 32 rodadas.
 - Já cobertos (não repetir): CCD/afinidade (`GOW3_PIN` põe tudo no CCD 0: neutro), limites de float (~6%, tirar
   quebra a imagem, 07/11), LS espelhada (pior, +3%), `spu_lifted_lookup` (cache por thread; slot-tab neutro).
 

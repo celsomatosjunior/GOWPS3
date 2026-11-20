@@ -3961,7 +3961,7 @@ index 79bffe73..508ae326 100644
  }
  #endif
 diff --git a/runtime/spu/spu_coherency.c b/runtime/spu/spu_coherency.c
-index ed2bcf58..33c41c55 100644
+index ed2bcf58..3371c23f 100644
 --- a/runtime/spu/spu_coherency.c
 +++ b/runtime/spu/spu_coherency.c
 @@ -40,6 +40,9 @@ static volatile long g_lockline = 0;
@@ -4023,7 +4023,7 @@ index ed2bcf58..33c41c55 100644
  #endif
  
  /* ===========================================================================
-@@ -139,6 +166,39 @@ typedef struct spu_coh_entry {
+@@ -139,6 +166,86 @@ typedef struct spu_coh_entry {
  static spu_coh_entry* s_coh_ctxs;
  static spu_coh_watch* s_coh_watches;
  
@@ -4053,6 +4053,53 @@ index ed2bcf58..33c41c55 100644
 +    for (spu_coh_entry* e = s_coh_ctxs; e; e = e->next) s_coh_arr[i++] = e->ctx;
 +    __atomic_store_n(&s_coh_n, n, __ATOMIC_RELAXED);
 +}
++/* The holder index: which holders may have a reservation on a line, so a notify visits those and not every
++ * registered context (GOW3: 52 contexts, ~290 thousand notifies/s, ~500 of a notify's ~850 cycles in the walk,
++ * most of it under the lock-line lock). Each holder gets one of 64 slots when it is listed; a reservation sets
++ * its slot's bit in the 64-bit mask of the line's bucket (4096 buckets, by line). Bits are never cleared, so a
++ * mask is a superset -- of the holders now, and of whoever held the slot before -- and every candidate is still
++ * checked with spu_coh_holds; a context without a slot (more than 64 listed) sends every notify back to the full
++ * walk for good. The steady state only reads the masks: the same lines are reserved again and again. The bit is
++ * set before the reservation is published (spu_coh_reserve_fast: before its fence; spu_coh_reserve: under the
++ * lock), and a notifier reads the mask after its fence, so the argument at spu_coh_reserve_fast holds for the
++ * mask as it held for each context's resv_valid. SPU_COH_IDX=0: the full walk. */
++#define SPU_COH_IDX_SLOTS   64
++#define SPU_COH_IDX_BUCKETS 4096u
++static spu_context* s_coh_slot[SPU_COH_IDX_SLOTS];
++static uint64_t s_coh_idx[SPU_COH_IDX_BUCKETS];
++static int s_coh_idx_full;
++static inline unsigned spu_coh_idx_h(uint32_t line) { return ((line >> 7) * 0x9E3779B1u) >> 20; }
++static int spu_coh_idx_on(void)
++{
++    static int s = -1;
++    if (s < 0) { const char* e = getenv("SPU_COH_IDX"); s = !(e && e[0] == '0'); }
++    return s;
++}
++static inline void spu_coh_idx_mark(const spu_context* ctx, uint32_t ea)
++{
++    const int s = ctx->coh_slot;
++    if (!s) return;
++    uint64_t* b = &s_coh_idx[spu_coh_idx_h(ea & ~127u)];
++    const uint64_t bit = 1ull << (s - 1);
++    if (!(__atomic_load_n(b, __ATOMIC_RELAXED) & bit)) __atomic_fetch_or(b, bit, __ATOMIC_RELAXED);
++}
++static void spu_coh_slot_take(spu_context* ctx)   /* under the lock */
++{
++    if (ctx->coh_slot) return;
++    /* A context reset while listed (spu_reset clears coh_slot) keeps its slot: one slot a context, or a
++     * notify would visit it twice. */
++    for (int i = 0; i < SPU_COH_IDX_SLOTS; i++)
++        if (s_coh_slot[i] == ctx) { ctx->coh_slot = i + 1; return; }
++    for (int i = 0; i < SPU_COH_IDX_SLOTS; i++)
++        if (!s_coh_slot[i]) { s_coh_slot[i] = ctx; ctx->coh_slot = i + 1; return; }
++    __atomic_store_n(&s_coh_idx_full, 1, __ATOMIC_RELAXED);
++}
++static void spu_coh_slot_drop(spu_context* ctx)   /* under the lock */
++{
++    if (ctx->coh_slot && s_coh_slot[ctx->coh_slot - 1] == ctx) s_coh_slot[ctx->coh_slot - 1] = NULL;
++    ctx->coh_slot = 0;
++}
++
 +static int spu_coh_use_list(void)
 +{
 +    static int s = -1;
@@ -4063,23 +4110,49 @@ index ed2bcf58..33c41c55 100644
  unsigned long g_spu_lr_raise = 0;
  
  void spu_coh_reserve(spu_context* ctx, uint32_t ea)
-@@ -166,6 +226,7 @@ void spu_coh_reserve(spu_context* ctx, uint32_t ea)
+@@ -156,7 +263,12 @@ void spu_coh_reserve(spu_context* ctx, uint32_t ea)
+ 
+     if (!ctx) return;
+     for (spu_coh_entry* entry = s_coh_ctxs; entry; entry = entry->next)
+-        if (entry->ctx == ctx) { __atomic_store_n(&ctx->coh_listed, 1, __ATOMIC_RELAXED); return; }
++        if (entry->ctx == ctx) {
++            spu_coh_slot_take(ctx);
++            spu_coh_idx_mark(ctx, ea);
++            __atomic_store_n(&ctx->coh_listed, 1, __ATOMIC_RELAXED);
++            return;
++        }
+     spu_coh_entry* entry = (spu_coh_entry*)malloc(sizeof(*entry));
+     if (!entry) {
+         fprintf(stderr, "[spu-coh] cannot register reservation holder %p\n", (void*)ctx);
+@@ -166,6 +278,9 @@ void spu_coh_reserve(spu_context* ctx, uint32_t ea)
      entry->ctx = ctx;
      entry->next = s_coh_ctxs;
      s_coh_ctxs = entry;
 +    spu_coh_arr_rebuild();
++    spu_coh_slot_take(ctx);
++    spu_coh_idx_mark(ctx, ea);
      __atomic_store_n(&ctx->coh_listed, 1, __ATOMIC_RELAXED);
  }
  
-@@ -222,6 +283,7 @@ void spu_coh_unregister(spu_context* ctx)
+@@ -222,8 +337,10 @@ void spu_coh_unregister(spu_context* ctx)
          spu_coh_entry* entry = *link;
          *link = entry->next;
          free(entry);
 +        spu_coh_arr_rebuild();
          break;
      }
++    spu_coh_slot_drop(ctx);
      __atomic_store_n(&ctx->coh_listed, 0, __ATOMIC_RELAXED);
-@@ -251,6 +313,7 @@ void spu_coh_forget_range(uintptr_t lo, uintptr_t hi)
+     spu_lockline_unlock();
+ }
+@@ -246,11 +363,14 @@ void spu_coh_forget_range(uintptr_t lo, uintptr_t hi)
+                 fprintf(stderr, "[spu-coh] leaked ctx %p (img=%d) dropped at thread exit\n",
+                         (void*)c, entry->ctx->image_id);
+             *link = entry->next;
++            for (int s = 0; s < SPU_COH_IDX_SLOTS; s++)   /* by the table: the context itself may be gone */
++                if (s_coh_slot[s] == entry->ctx) s_coh_slot[s] = NULL;
+             free(entry);
+         } else {
              link = &entry->next;
          }
      }
@@ -4087,13 +4160,32 @@ index ed2bcf58..33c41c55 100644
      spu_lockline_unlock();
  }
  
-@@ -353,8 +416,13 @@ void spu_coh_notify_write_except(uint32_t ea, const void* self)
+@@ -340,6 +460,7 @@ int spu_coh_reserve_fast(spu_context* ctx, uint32_t ea)
+         return 0;
+     /* Retire any older reservation before retargeting it. The fence is what
+      * the argument above rests on. */
++    spu_coh_idx_mark(ctx, ea);   /* before the fence: the holder index (spu_coh_idx_mark) */
+     __atomic_store_n(&ctx->resv_valid, 0, __ATOMIC_RELAXED);
+     __atomic_store_n(&ctx->resv_ea, ea, __ATOMIC_RELAXED);
+     __atomic_store_n(&ctx->resv_valid, 1, __ATOMIC_RELAXED);
+@@ -353,8 +474,24 @@ void spu_coh_notify_write_except(uint32_t ea, const void* self)
      ppu_resv_break_line(ea);
      spu_coh_writer_fence();
      spu_coh_wake_watches(line);
 -    for (spu_coh_entry* entry = s_coh_ctxs; entry; entry = entry->next) {
 -        spu_context* c = entry->ctx;
 +    const int ul = spu_coh_use_list();
++    if (!ul && spu_coh_idx_on() && !__atomic_load_n(&s_coh_idx_full, __ATOMIC_RELAXED)) {
++        for (uint64_t m = __atomic_load_n(&s_coh_idx[spu_coh_idx_h(line)], __ATOMIC_RELAXED); m; m &= m - 1) {
++            spu_context* c = s_coh_slot[__builtin_ctzll(m)];
++            if (!c || (const void*)c == self || !spu_coh_holds(c, line)) continue;
++            SPU_EVENT_SET(c, SPU_EVENT_LR);
++            __atomic_store_n(&c->resv_valid, 0, __ATOMIC_RELAXED);
++            g_spu_lr_raise++;
++            spu_ch_wake(c);
++        }
++        return;
++    }
 +    if (!ul) /* the holders' reservation words, all in flight at once rather than one miss after another */
 +        for (unsigned pi = 0; pi < s_coh_n; pi++) if (s_coh_arr[pi]) __builtin_prefetch(&s_coh_arr[pi]->resv_valid);
 +    spu_coh_entry* entry = s_coh_ctxs;
@@ -4103,7 +4195,7 @@ index ed2bcf58..33c41c55 100644
          if (!c || (const void*)c == self) continue;
          if (spu_coh_holds(c, line)) {
              SPU_EVENT_SET(c, SPU_EVENT_LR);
-@@ -365,14 +433,61 @@ void spu_coh_notify_write_except(uint32_t ea, const void* self)
+@@ -365,14 +502,65 @@ void spu_coh_notify_write_except(uint32_t ea, const void* self)
      }
  }
  
@@ -4158,16 +4250,20 @@ index ed2bcf58..33c41c55 100644
 +        __atomic_fetch_add(&s_coh_t_watch, t3 - t2, __ATOMIC_RELAXED);
 +    }
 +    const int ul = spu_coh_use_list();
-+    if (!ul) /* the holders' reservation words, all in flight at once rather than one miss after another */
++    const int ix = !ul && spu_coh_idx_on() && !__atomic_load_n(&s_coh_idx_full, __ATOMIC_RELAXED);
++    uint64_t m = ix ? __atomic_load_n(&s_coh_idx[spu_coh_idx_h(line)], __ATOMIC_RELAXED) : 0;
++    if (!ul && !ix) /* the holders' reservation words, all in flight at once rather than one miss after another */
 +        for (unsigned pi = 0; pi < s_coh_n; pi++) if (s_coh_arr[pi]) __builtin_prefetch(&s_coh_arr[pi]->resv_valid);
 +    spu_coh_entry* entry = s_coh_ctxs;
-+    for (unsigned ci = 0; ul ? entry != NULL : ci < s_coh_n; ci++) {
-+        spu_context* c = ul ? entry->ctx : s_coh_arr[ci];
++    for (unsigned ci = 0; ix ? m != 0 : ul ? entry != NULL : ci < s_coh_n; ci++) {
++        spu_context* c;
++        if (ix) { c = s_coh_slot[__builtin_ctzll(m)]; m &= m - 1; }
++        else c = ul ? entry->ctx : s_coh_arr[ci];
 +        if (ul) entry = entry->next;
          if (!c) continue;
          if (spu_coh_holds(c, line)) {
              SPU_EVENT_SET(c, SPU_EVENT_LR);
-@@ -398,3 +513,42 @@ void spu_coh_notify_write(uint32_t ea)
+@@ -398,3 +586,42 @@ void spu_coh_notify_write(uint32_t ea)
  #ifdef __cplusplus
  }
  #endif
@@ -4224,7 +4320,7 @@ index ea2e8351..4e85cde8 100644
  /* Mark `ea`'s 128-byte line as SPU-reserved and remember `ctx` as a possible
   * reservation holder. Called from the SPU's GETLLAR with the lock held.
 diff --git a/runtime/spu/spu_context.h b/runtime/spu/spu_context.h
-index c5ccbec7..927fcef1 100644
+index c5ccbec7..209b8855 100644
 --- a/runtime/spu/spu_context.h
 +++ b/runtime/spu/spu_context.h
 @@ -196,6 +196,12 @@ typedef struct spu_context {
@@ -4240,7 +4336,17 @@ index c5ccbec7..927fcef1 100644
  
      /* Program counter (local store address, 0-0x3FFFF) */
      uint32_t pc;
-@@ -472,14 +478,35 @@ typedef struct spu_context {
+@@ -425,6 +431,9 @@ typedef struct spu_context {
+      * spu_coh_reserve_fast). Written under that lock, read by the context's
+      * own thread. */
+     int coh_listed;
++    /* 1 + this context's slot in spu_coherency.c's holder index (0: none), assigned with coh_listed under
++     * the lock-line lock. */
++    int coh_slot;
+ } spu_context;
+ 
+ /* event_status is written from more than one host thread: the SPU's own
+@@ -472,14 +481,35 @@ typedef struct spu_context {
  void spu_mfc_release(spu_context* ctx);
  void spu_mfc_forget_range(uintptr_t lo, uintptr_t hi);
  
@@ -4276,7 +4382,7 @@ index c5ccbec7..927fcef1 100644
  /* ---------------------------------------------------------------------------
   * Local store access helpers
   * -----------------------------------------------------------------------*/
-@@ -619,15 +646,30 @@ static SPU_NOINLINE_COLD void spu_ls_read_diag(const spu_context* ctx, uint32_t
+@@ -619,15 +649,30 @@ static SPU_NOINLINE_COLD void spu_ls_read_diag(const spu_context* ctx, uint32_t
      g_spu_ls_rdiag = g_spu_ls_probe || spu_ls_wws_probe_on() || g_spu_ls_watch_n != 0;
  }
  
@@ -4311,7 +4417,7 @@ index c5ccbec7..927fcef1 100644
  #elif SPU_LS_FAST
      uint32_t w0, w1, w2, w3;
      memcpy(&w0, p,      4); memcpy(&w1, p + 4,  4);
-@@ -645,6 +687,15 @@ static inline u128 spu_ls_read128(const spu_context* ctx, uint32_t lsa)
+@@ -645,6 +690,15 @@ static inline u128 spu_ls_read128(const spu_context* ctx, uint32_t lsa)
      return v;
  }
  
@@ -4327,7 +4433,7 @@ index c5ccbec7..927fcef1 100644
  static SPU_NOINLINE_COLD void spu_ls_write_probe_pre(spu_context* ctx, uint32_t lsa, u128 val)
  {
      if (lsa == 0x1320 && ctx->image_id == 2 && ctx->policy_mode) {
-@@ -719,12 +770,14 @@ static SPU_NOINLINE_COLD void spu_ls_write_diag(spu_context* ctx, uint32_t lsa,
+@@ -719,12 +773,14 @@ static SPU_NOINLINE_COLD void spu_ls_write_diag(spu_context* ctx, uint32_t lsa,
      g_spu_ls_wdiag = spu_ls_wws_probe_on() || g_spu_smc_watch || g_spu_ls_watch_n != 0;
  }
  
@@ -4344,7 +4450,7 @@ index c5ccbec7..927fcef1 100644
  #elif SPU_LS_FAST
      uint32_t w0 = SPU_BSWAP32(val._u32[0]), w1 = SPU_BSWAP32(val._u32[1]);
      uint32_t w2 = SPU_BSWAP32(val._u32[2]), w3 = SPU_BSWAP32(val._u32[3]);
-@@ -739,10 +792,39 @@ static inline void spu_ls_write128(spu_context* ctx, uint32_t lsa, u128 val)
+@@ -739,10 +795,39 @@ static inline void spu_ls_write128(spu_context* ctx, uint32_t lsa, u128 val)
          p[i*4 + 3] = (uint8_t)w;
      }
  #endif
@@ -4385,7 +4491,7 @@ index c5ccbec7..927fcef1 100644
  /* ---------------------------------------------------------------------------
   * Preferred slot extraction
   *
-@@ -923,6 +1005,24 @@ void spu_irqwait_diag(spu_context* ctx);
+@@ -923,6 +1008,24 @@ void spu_irqwait_diag(spu_context* ctx);
  
  /* Drain a translated call up to its explicit architectural return PC. */
  void spu_drain_call(spu_context* ctx, uint32_t return_pc);
@@ -4410,7 +4516,7 @@ index c5ccbec7..927fcef1 100644
  /* SPU_PCHIST=1: bucket SPU execution by the GPU module's own symbols.
   *
   * SPU_VRAMPC showed 3.7M VRAM writes from Host2Local_Body and ZERO from
-@@ -1044,6 +1144,43 @@ void spu_direct_init(void);
+@@ -1044,6 +1147,43 @@ void spu_direct_init(void);
      } while (0)
  #endif
  
@@ -4454,7 +4560,7 @@ index c5ccbec7..927fcef1 100644
  /* Depth-aware SPU link return (`bi $r0`): host `return` while a matched
   * brsl/bisl frame is live (host_depth>0); at 0 the frame was destroyed (task
   * resume / restack unwind) so dispatch to the link register instead -- faithful
-@@ -1055,6 +1192,18 @@ void spu_direct_init(void);
+@@ -1055,6 +1195,18 @@ void spu_direct_init(void);
          return;                                                \
      } while (0)
  
