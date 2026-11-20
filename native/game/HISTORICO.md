@@ -577,6 +577,12 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   em combate (cada resposta conferida contra a busca completa): 3,4 bi acertos, 0 divergências. A/B 10 pares
   (`logs\cadeia_dn.out`): us/job -0,42 (t -2,44; 6 melhores, 3 iguais, 1 pior), q/s reais +0,11 (ruído), 0
   travadas. **Integrada, ligada por padrão.**
+  Perfil do in21 (integra b6a4285a, `logs\prof_in21.*`, `GOW3_PROF=100,40,1` com chamadores): us/job(60s) 28,9;
+  a thread SPU mais ocupada passa 18% em `ZwWaitForAlertByThreadId` dentro do `spurs_pm_worker` (espera de
+  workload pronto, não trava); o VCRUNTIME (5,2% do ocupado) é quase todo `mfc_do_transfer` (cópia de DMA
+  necessária), `spu_overlay_get_unchanged` só 0,5%. `SPURS_EDGE_READY=10` de novo (`logs\edgeready_in21.log`):
+  em 99,8% dos inícios de lista EDGE as outras duas não estão prontas; wids 8/9/10 ~32% cada, ~96% somados. A
+  ociosidade é o revezamento das listas entre threads (13/11), não folga: **não repetir**. Sobra o custo por job.
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
