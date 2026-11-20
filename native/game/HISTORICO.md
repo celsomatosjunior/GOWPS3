@@ -583,6 +583,8 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   necessária), `spu_overlay_get_unchanged` só 0,5%. `SPURS_EDGE_READY=10` de novo (`logs\edgeready_in21.log`):
   em 99,8% dos inícios de lista EDGE as outras duas não estão prontas; wids 8/9/10 ~32% cada, ~96% somados. A
   ociosidade é o revezamento das listas entre threads (13/11), não folga: **não repetir**. Sobra o custo por job.
+  Teste longo do in21 (`combate.sh`, 1.200 s, `logsodar_longo_in21.log`): sem travada, us/job(60s) 27,5, q/s
+  reais mediana 16,1 (inclui telas de morte/carregamento; o roteiro morre e recarrega o ponto de verificação).
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
