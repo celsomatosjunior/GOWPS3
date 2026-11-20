@@ -555,6 +555,16 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
   2,7%, 0xFA78 2,0%, 912f:0x52A4 1,8%. `spu_fifo_hole` 1,2% (ordem do buraco do FIFO: necessária).
   `ppu_resv_break_line` 0,6%: percorre ~35 contextos PPU; um índice como o das SPUs exigiria marcar em cada `lwarx`
   traduzido (regerar o PPU inteiro, uma gravação a mais por `lwarx`) para no máximo 0,6%: não vale.
+- **Mistura de instruções do código traduzido (20/11, `scripts_locais\prof_ins.py <map> <log> <exe> [n]`:
+  desmonta com o llvm-objdump do VS as 60 funções de job mais quentes do ci19 e soma as amostras por instrução,
+  59% das amostras de job):** derramamento de registradores na pilha 27% (carga 14,7, gravação 12,2), ALU
+  vetorial/escalar 19%, limites min/max 12%, outras cargas/gravações (LS, contexto) 17%, `vpshufb` 8%, constantes
+  via rip 5%, contas de float só 2,7%, desvios 2,2%. A CPU (Ryzen 9 5950X, Zen 3) não tem AVX-512, então não dá
+  para dobrar os registradores vetoriais pelo compilador.
+- **Limite exato através de `shlqbyi`/`rotqbyi` por múltiplo de 4 (tentado e descartado, 20/11):** o
+  `mark_body_flow` (`spu_float_inputs.py`) já segue cópias, constantes, and/andc e rótulos. A regra nova tiraria 8
+  de 2.919 `SPU_AXI` no 14561, 14 de 1.594 no 912f e 0 no 2be92eb: os limites que sobram são de valores lidos da
+  LS. Não entra.
 - Já cobertos (não repetir): CCD/afinidade (`GOW3_PIN` põe tudo no CCD 0: neutro), limites de float (~6%, tirar
   quebra a imagem, 07/11), LS espelhada (pior, +3%), `spu_lifted_lookup` (cache por thread; slot-tab neutro).
 
