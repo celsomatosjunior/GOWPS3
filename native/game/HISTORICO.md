@@ -676,6 +676,9 @@ odar_dsv2.log`, ciclos do TSC de uma entrada 0xD200 à seguinte da mesma
   capturas).
   Regressão dos saves com o padrão novo (pd22, caminho direto ligado; `cadeia_rh.sh`): carregar -> AUTOSAVE;
   escolher manual + R1 -> save novo; reabrir -> o save novo carrega; imagem certa no altar.
+  Draw de material completo em conferência (bloco de estado copiado para o anel pequeno: w0 bytes de +0x80 do
+  bloco no next2 antigo, next2 += round128(w0 + 0x180); 4.024 de 4.024 iguais), mas o A/B tomando (10 pares)
+  deu q/s reais -0,73 (t -1,4) e us/job -0,06: **sem ganho, fica desligado** (`GOW3_DIRECT_MAT=2` liga).
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
