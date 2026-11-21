@@ -636,6 +636,8 @@ odar_dsv2.log`, ciclos do TSC de uma entrada 0xD200 à seguinte da mesma
   comandos (detalhes no caderno local). Anel: mesmo formato de linha do Ascension; a reserva que o caminho direto
   faria (índices + posições de 12 bytes, alinhada a 128) bate com o avanço real do anel em 4,16 mi jobs da forma
   direta e difere em 0,28 mi (exemplos: primeiro job da thread e volta do anel, artefatos da medida; sonda ds27).
+  Comandos RSX do job (PUT em PARAMS+4): a mesma seqüência do caminho direto do Ascension sem o bloco de
+  viewport/clip (1740 0xC32, 1680, 1714, 181C, 1808, 1824, 1808, 1D6C, 1D74, NOP até 16 x LS[T+1]).
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
