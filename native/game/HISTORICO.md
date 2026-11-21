@@ -647,6 +647,8 @@ odar_dsv2.log`, ciclos do TSC de uma entrada 0xD200 à seguinte da mesma
   índices) responde pelo resto. **Fora o 0x87D8: 74.112 iguais e 4 diferentes (99,995%).** Próximo: decidir o
   0x87D8 antes de tomar e computar as posições (fase B), depois tomar o job (fase C) e A/B. O 0x87D8 é o draw de
   estado de material: PARAMS+0x30 != 0 em 100% dos casos e em nenhum outro (dc35), como no Ascension; recusado.
+  **Fase B (posições), sem skin:** num contexto clonado com cópia da LS, FE08 -> D658 -> 11740 (matriz 0x126B0, o
+  r9 que a 0x45A0 passa à geometria) dá as mesmas posições que o job grava, byte a byte, em 20.428 jobs (dc38).
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
