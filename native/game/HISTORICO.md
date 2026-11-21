@@ -642,7 +642,10 @@ odar_dsv2.log`, ciclos do TSC de uma entrada 0xD200 à seguinte da mesma
   geometria 0x4BF0 o plano + índices nativos numa cópia da LS + comandos montados; no job seguinte compara com a
   memória principal. 84.626 jobs da forma conferidos: **86% iguais byte a byte** (índices, next do anel, comandos);
   os 14% restantes são o recorte de triângulos (parcial, máscara PARAMS+0xC = 0x0001FFFF, e total, geométrico).
-  Custo do modo a 1/50: nenhum mensurável (us/job 26,5). Próximo: posições + recorte traduzido 0xF870 (fase B).
+  Custo do modo a 1/50: nenhum mensurável (us/job 26,5). Causas separadas (dc25-dc34): o recorte 0xF870 não
+  roda nesses jobs; T+4 = 5 marca registros de 24 bytes (recusados); e o caminho 0x8470 -> 0x87D8 (reprocessa os
+  índices) responde pelo resto. **Fora o 0x87D8: 74.112 iguais e 4 diferentes (99,995%).** Próximo: decidir o
+  0x87D8 antes de tomar e computar as posições (fase B), depois tomar o job (fase C) e A/B.
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
