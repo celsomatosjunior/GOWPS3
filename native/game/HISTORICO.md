@@ -651,6 +651,11 @@ odar_dsv2.log`, ciclos do TSC de uma entrada 0xD200 à seguinte da mesma
   r9 que a 0x45A0 passa à geometria) dá as mesmas posições que o job grava, byte a byte, em 20.428 jobs (dc38).
   Com skin (0x10760 com paleta = entrada 4, contagem = PARAMS+8, ossos = entrada 8): **63.819 jobs conferidos,
   63.819 iguais em tudo** (índices, next, comandos, posições; dc39). Próximo: tomar o job (fase C) e A/B.
+  **Fase C (tomar o job, `GOW3_DIRECT=1`, dt21):** o gancho da 0x4BF0 faz posições e índices no próprio contexto,
+  grava a linha do anel sob o lock de linha e os dados e comandos pelo caminho de cópia/coerência do DMA, e pula a
+  geometria e a saída 0xB9A8. Uma rodada de 330 s: us/job 24,2 contra 26,5, q/s reais mediana 16,0 contra ~14,0,
+  ~52% dos jobs tomados, sem travar, imagem certa; com conferência 1/50 ligada junto, 77.183 de 77.187 iguais.
+  A/B de 10 pares em curso.
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
