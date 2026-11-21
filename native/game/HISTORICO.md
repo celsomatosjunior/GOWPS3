@@ -268,6 +268,13 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
 
 ## Ponto de retomada (atualizado a cada pausa)
 
+**21/11/2026 (manhã): caminho direto do GOW3 no padrão.**
+- Padrão: ps3recomp 35089848 (RZ) + ganchos locais `<trabalho>\edge_nativo` com o caminho direto (`gow3_direct.h`;
+  cópia anterior em `edge_nativo_antes_direto_21nov`). Exe local `exe_pd22`: us/job 24,0, q/s reais 15,2 (330 s).
+- A/B do caminho direto: us/job -7,2% (t -10), q/s +0,7 (t 2,3); 1.200 s estável; saves conferidos.
+- Próximo: registro 03 18 (dois arrays, laço de vértices) e o bloco de estado do draw de material; ambos com o
+  modo conferência antes de tomar. Envio aos dois repositórios em 24/11 (os ganchos ficam locais).
+
 **21/11/2026 (madrugada): RZ no padrão; saves e instalação conferidos; mapa do caminho direto em curso.**
 - Padrão: `native-recomp` c2e4a5d+ com ps3recomp `integra-17nov` 35089848 (RZ: `--spu-rz` e `SPU_RZ=1`).
   Exe de referência local `exe_pd21` (us/job 26,5, q/s reais mediana 14,0 na cena de 330 s).
@@ -667,6 +674,8 @@ odar_dsv2.log`, ciclos do TSC de uma entrada 0xD200 à seguinte da mesma
   também um bloco de estado no anel pequeno, que o caminho não reproduz; tomando, a imagem mostrou polígonos
   chapados. **Material continua recusado.** Os jobs tomados fazem só os 4 PUTs reproduzidos (254 de 254 nas
   capturas).
+  Regressão dos saves com o padrão novo (pd22, caminho direto ligado; `cadeia_rh.sh`): carregar -> AUTOSAVE;
+  escolher manual + R1 -> save novo; reabrir -> o save novo carrega; imagem certa no altar.
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
