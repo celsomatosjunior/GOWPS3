@@ -598,14 +598,14 @@ odar_longo_in21.log`): sem travada, us/job(60s) 27,5, q/s
   de precisão dupla e o frds rodam com o MXCSR padrão dentro dos helpers `SPU__DP_RN*`). A SPU trunca; com RZ +
   FTZ/DAZ um estouro finito dá FLT_MAX, sem Inf/NaN, então os limites dos resultados de fa/fm/fma do modo aprox
   podem sair (`SPU_AX_RZ`). Imagem conferida nas rodadas rzv/srv (sem amarelo de NaN). A/B 10 pares rz21 x sr21,
-  ambos com `SPU_RZ=1` (`logsb_sr.out`): us/job -0,48 (t -4,1), us/job(60s) -0,69 (t -3,8); q/s reais na
+  ambos com `SPU_RZ=1` (`logs\ab_sr.out`): us/job -0,48 (t -4,1), us/job(60s) -0,69 (t -3,8); q/s reais na
   mediana dos pares +0,1 (o par 9 da base caiu numa cena leve, 24 q/s), executor Wws 0 divergências, 0 travadas.
   Sombra dos núcleos EDGE nativos sob RZ (sr21, `GOW3_EDGE_SOMBRA=1`): DD50, 9040, 10E20 e C168, 0 diferenças.
   Sonda do caminho direto do ascension-native (`edge_sonda`, só conta; `logs
 odar_dsv.log`): 56% dos jobs EDGE
   têm a forma que ele leva (índices 2/3, sem normais nem segundo fluxo, com fragmento de posição; 71% deles com
   skin) e nenhum deles entra no laço de vértices 0x9530; 35% são recusados por normais/segundo fluxo.
-  Pacote RZ contra o padrão anterior (A/B 10 pares, in21 com `SPU_RZ=0` x sr21 com `SPU_RZ=1`, `logsb_pk.out`):
+  Pacote RZ contra o padrão anterior (A/B 10 pares, in21 com `SPU_RZ=0` x sr21 com `SPU_RZ=1`, `logs\ab_pk.out`):
   us/job -0,41 (t -1,8), us/job(60s) -0,58 (t -2,2), q/s reais mediana 13,5 -> 14,0 (+0,5, t 1,0), 0 divergências.
   Teste longo sr21 (1.200 s, `logs
 odar_longo_sr21.log`): sem travada, us/job(60s) 27,6, q/s reais mediana 16,0.
