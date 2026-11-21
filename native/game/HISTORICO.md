@@ -655,7 +655,10 @@ odar_dsv2.log`, ciclos do TSC de uma entrada 0xD200 à seguinte da mesma
   grava a linha do anel sob o lock de linha e os dados e comandos pelo caminho de cópia/coerência do DMA, e pula a
   geometria e a saída 0xB9A8. Uma rodada de 330 s: us/job 24,2 contra 26,5, q/s reais mediana 16,0 contra ~14,0,
   ~52% dos jobs tomados, sem travar, imagem certa; com conferência 1/50 ligada junto, 77.183 de 77.187 iguais.
-  A/B de 10 pares em curso.
+  **A/B 10 pares (pd21 x dt21 com `GOW3_DIRECT=1`, `logs\ab_dt.out`): us/job 26,36 -> 24,45 (-1,91, -7,2%,
+  t -10,0), us/job(60s) -2,02 (t -12,5), q/s reais +0,71 por par (t 2,3; 9 de 10 melhores; medianas 13,84 ->
+  14,25)**, executor Wws 0 divergências, nenhum aborto. O ganho em q/s é menor que o do EDGE: outra parte do
+  quadro (PPU/RSX) pesa junto. Teste longo de 1.200 s em curso.
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
