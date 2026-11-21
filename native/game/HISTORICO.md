@@ -663,6 +663,10 @@ odar_dsv2.log`, ciclos do TSC de uma entrada 0xD200 à seguinte da mesma
   **Integrado (21/11) nos ganchos locais (`<trabalho>\edge_nativo`, cópia anterior em
   `edge_nativo_antes_direto_21nov`): ligado por padrão, `GOW3_DIRECT=0` desliga.** O código fica só local: é o
   caminho direto do ascension-native (Arnaldo Lima, com a permissão dele) adaptado com constantes do jogo.
+  Draw de material (PARAMS+0x30): plano e comandos exatos em modo conferência (6.982 de 6.982), mas o job grava
+  também um bloco de estado no anel pequeno, que o caminho não reproduz; tomando, a imagem mostrou polígonos
+  chapados. **Material continua recusado.** Os jobs tomados fazem só os 4 PUTs reproduzidos (254 de 254 nas
+  capturas).
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
