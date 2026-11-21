@@ -168,7 +168,7 @@ index 4d916ac7..7c21f5d7 100644
      }
  
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
-index 82ea66c6..3d5504af 100644
+index 82ea66c6..947c2b07 100644
 --- a/libs/spurs/cellSpurs.c
 +++ b/libs/spurs/cellSpurs.c
 @@ -16,6 +16,7 @@
@@ -639,7 +639,7 @@ index 82ea66c6..3d5504af 100644
  static DWORD WINAPI spurs_pm_worker(LPVOID p)
  {
      struct SpursPmSlot* slot = (struct SpursPmSlot*)p;
-@@ -1723,16 +2107,116 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
+@@ -1723,16 +2107,122 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
      { ULONG g = 256 * 1024; SetThreadStackGuarantee(&g); }
  #endif
      ps3_tprof_thread('S', (uint32_t)slot->spu_num);
@@ -647,6 +647,12 @@ index 82ea66c6..3d5504af 100644
 +    /* SPU_FTZ=1: denormal results and operands as zero in host float ops on this SPU thread, as the SPU
 +     * reads and writes them (spu_helpers.h SPU_AX_NOFLUSH relies on it instead of masking every result). */
 +    { const char* e = getenv("SPU_FTZ"); if (e && e[0] == '1') _mm_setcsr(_mm_getcsr() | 0x8040u); }
++    /* SPU_RZ=1 (with SPU_FTZ): host float ops on this SPU thread also round toward zero (MXCSR RC = 11), as
++     * the SPU's single precision does: the approximate fa/fm/fma (SPU_FLOAT_APPROX) then truncate like the
++     * SPU in the normal range, and a finite overflow gives +-FLT_MAX (the SPU's saturation as the approximate
++     * mode clamps it) instead of an Inf, so finite operands never make an Inf or NaN. Double precision (and frds)
++     * runs with the default MXCSR inside its helpers (spu_helpers.h SPU__DP_RN*). */
++    { const char* e = getenv("SPU_RZ"); if (e && e[0] == '1') _mm_setcsr(_mm_getcsr() | 0x6000u); }
 +#endif
 +#ifdef _WIN32
 +    /* SPURS_PM_AFFINITY=1: each worker on a physical core of its own (every other logical processor, from
@@ -760,7 +766,7 @@ index 82ea66c6..3d5504af 100644
          AcquireSRWLockExclusive(&si->lock);
          u32 wid = slot->wid;
          if (si->active[wid]) si->active[wid]--;
-@@ -1740,7 +2224,7 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
+@@ -1740,7 +2230,7 @@ static DWORD WINAPI spurs_pm_worker(LPVOID p)
          vm_base[slot->ea + SPURS_WKL_CURCONT + wid] = si->active[wid];
          ef_line_end(slot->ea);
          if (polls) si->idle[wid] = 0;
@@ -769,7 +775,7 @@ index 82ea66c6..3d5504af 100644
          slot->busy = 0;
          WakeAllConditionVariable(&si->wake);
      }
-@@ -1767,7 +2251,23 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1767,7 +2257,23 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
          if (__atomic_exchange_n(&si->kick, 0, __ATOMIC_ACQ_REL)) {
              kick_pass = ++kick_run < 16;
          } else {
@@ -794,7 +800,7 @@ index 82ea66c6..3d5504af 100644
              /* This full pass reads the line after any commit that woke it. */
              (void)__atomic_exchange_n(&si->kick, 0, __ATOMIC_ACQ_REL);
          }
-@@ -1779,8 +2279,52 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1779,8 +2285,52 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
          if (!kick_pass) si->pass_no++;
          u32 enabled = vm_read32(ea + SPURS_WKL_ENABLED);
          for (u32 sn = 0; sn < si->nspus; sn++) {
@@ -847,7 +853,7 @@ index 82ea66c6..3d5504af 100644
              for (u32 checked = 0; checked < 16; checked++) {
                  u32 wid = si->cursor;
                  si->cursor = (wid + 1) & 15;
-@@ -1790,13 +2334,17 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1790,13 +2340,17 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                      continue;
                  if (!vm_read8(ea + SPURS_WKL_INFO1 + wid * SPURS_WKL_INFO_SZ + 0x18 + sn))
                      continue; /* priority zero makes this physical lane ineligible */
@@ -867,7 +873,7 @@ index 82ea66c6..3d5504af 100644
                  if (kicked) si->idle[wid] = 0;
                  if (!kicked && (kick_pass || (si->pass_no & ((1u << si->idle[wid]) - 1))))
                      continue;
-@@ -1806,7 +2354,20 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
+@@ -1806,7 +2360,20 @@ static DWORD WINAPI spurs_kernel_thread(LPVOID p)
                  if (ready) vm_base[ea + SPURS_WKL_READY1 + wid] = (u8)(ready - 1);
                  if (signal & (0x8000u >> wid))
                      ef_w16(ea + SPURS_WKL_SIGNAL1, (u16)(signal & ~(0x8000u >> wid)));
@@ -888,7 +894,7 @@ index 82ea66c6..3d5504af 100644
                  slot->fn = pm->fn; slot->image_id = pm->image_id;
                  slot->pm = vm_base + (u32)(uintptr_t)s_workloads[wid].pm;
                  slot->pm_size = s_workloads[wid].sizePm;
-@@ -1833,6 +2394,8 @@ static s32 spurs_scheduler_start(struct SpursInst* si)
+@@ -1833,6 +2400,8 @@ static s32 spurs_scheduler_start(struct SpursInst* si)
      __atomic_store_n(&si->kick, 0, __ATOMIC_RELAXED);
      { extern void (*g_spu_line_commit_hook)(uint32_t);
        g_spu_line_commit_hook = spurs_commit_hook; }
@@ -4960,7 +4966,7 @@ index 49bc2b94..aa45939e 100644
              return;
          }
 diff --git a/runtime/spu/spu_helpers.h b/runtime/spu/spu_helpers.h
-index f04fda63..27f2b903 100644
+index f04fda63..4f89d0ec 100644
 --- a/runtime/spu/spu_helpers.h
 +++ b/runtime/spu/spu_helpers.h
 @@ -467,18 +467,52 @@ static inline u128 spu_selb(u128 a, u128 b, u128 c) { return spu_selb_ref(a, b,
@@ -5050,7 +5056,7 @@ index f04fda63..27f2b903 100644
      uint64_t hi=((uint64_t)a._u32[0]<<32)|a._u32[1], lo=((uint64_t)a._u32[2]<<32)|a._u32[3];
      uint64_t nhi=(hi<<sh)|(lo>>(64-sh)), nlo=(lo<<sh)|(hi>>(64-sh));
      u128 r; r._u32[0]=(uint32_t)(nhi>>32); r._u32[1]=(uint32_t)nhi; r._u32[2]=(uint32_t)(nlo>>32); r._u32[3]=(uint32_t)nlo; return r; }
-@@ -787,7 +824,148 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
+@@ -787,7 +824,152 @@ SPU__SF_V2(spu__fm_s, spu__fm_any(x, y))
  SPU__SF_V3(spu__fma_s,  spu__fma_any(x, y, z, 0, 0))
  SPU__SF_V3(spu__fms_s,  spu__fma_any(x, y, z, 0, 0x80000000u))
  SPU__SF_V3(spu__fnms_s, spu__fma_any(x, y, z, 0x80000000u, 0))
@@ -5140,7 +5146,11 @@ index f04fda63..27f2b903 100644
 +#endif
 +    return _mm_min_ps(_mm_max_ps(r, _mm_set1_ps(-0x1.fffffep127f)), _mm_set1_ps(0x1.fffffep127f));
 +}
-+#if defined(SPU_AX_TESTE_SEMRES) && SPU_AX_TESTE_SEMRES   /* measurement only: no result clamps */
++/* SPU_AX_RZ=1: no result clamps. Correct only on a thread with MXCSR at round toward zero (SPU_RZ=1,
++ * libs/spurs/cellSpurs.c, set by gow3_build's rodar): there a finite overflow gives +-FLT_MAX, the SPU's
++ * saturation as this mode models it, so with finite operands (the SPU_AXI clamps on the others) no fa/fm/fma
++ * result is Inf or NaN and the clamp changes nothing. SPU_AX_TESTE_SEMRES is the old name, for measurement. */
++#if (defined(SPU_AX_TESTE_SEMRES) && SPU_AX_TESTE_SEMRES) || (defined(SPU_AX_RZ) && SPU_AX_RZ)
 +SPU__AX_INLINE u128 spu__ax_clo(__m128 r) { u128 o; _mm_storeu_ps(o._f32, r); return o; }
 +SPU__AX_INLINE u128 SPU_AXI(u128 x) { u128 o; _mm_storeu_ps(o._f32, spu__ax_cl(spu__ax_raw(x))); return o; }
 +#else
@@ -5200,7 +5210,32 @@ index f04fda63..27f2b903 100644
  /* Four lanes at a time, every lane exact, with no FPCR change. The host rounds to nearest (the
   * thread's default FPCR: RN, no flush-to-zero -- writing FPCR per op serializes, ~17 ns on an
   * M4); the SPU truncates. A result rounded to nearest is either the truncated one or one step
-@@ -1401,11 +1579,11 @@ static inline u128 spu_shl_ref(u128 a, u128 b)   { u128 r; for(int i=0;i<4;i++){
+@@ -1369,6 +1551,24 @@ static inline void spu__fpcr_put(uint64_t v) { __asm__ volatile("msr fpcr, %0" :
+     if (__builtin_expect(m == 0, 1)) return f##_h_(a, b, c); \
+     spu__fpcr_put(0); __asm__ volatile("" : "+m"(a), "+m"(b), "+m"(c)); u128 r = f##_h_(a, b, c); \
+     __asm__ volatile("" : "+m"(r)); spu__fpcr_put(m); return r; }
++#elif (defined(__x86_64__) || defined(_M_X64)) && !defined(SPU_SCALAR_HELPERS)
++/* x86: the same with MXCSR. An SPU thread may run with SPU_FTZ (FTZ/DAZ) and SPU_RZ (round toward zero,
++ * libs/spurs/cellSpurs.c); a double op there runs with the default 0x1F80. The six sticky flag bits are
++ * ignored in the test; the caller's MXCSR, flags included, is put back. */
++#include <xmmintrin.h>
++#define SPU__CSR_DEF 0x1F80u
++#define SPU__DP_RN1(f) static inline u128 f(u128 a) { const unsigned m = _mm_getcsr(); \
++    if (__builtin_expect((m & ~0x3Fu) == SPU__CSR_DEF, 1)) return f##_h_(a); \
++    _mm_setcsr(SPU__CSR_DEF); __asm__ volatile("" : "+m"(a)); u128 r = f##_h_(a); \
++    __asm__ volatile("" : "+m"(r)); _mm_setcsr(m); return r; }
++#define SPU__DP_RN2(f) static inline u128 f(u128 a, u128 b) { const unsigned m = _mm_getcsr(); \
++    if (__builtin_expect((m & ~0x3Fu) == SPU__CSR_DEF, 1)) return f##_h_(a, b); \
++    _mm_setcsr(SPU__CSR_DEF); __asm__ volatile("" : "+m"(a), "+m"(b)); u128 r = f##_h_(a, b); \
++    __asm__ volatile("" : "+m"(r)); _mm_setcsr(m); return r; }
++#define SPU__DP_RN3(f) static inline u128 f(u128 a, u128 b, u128 c) { const unsigned m = _mm_getcsr(); \
++    if (__builtin_expect((m & ~0x3Fu) == SPU__CSR_DEF, 1)) return f##_h_(a, b, c); \
++    _mm_setcsr(SPU__CSR_DEF); __asm__ volatile("" : "+m"(a), "+m"(b), "+m"(c)); u128 r = f##_h_(a, b, c); \
++    __asm__ volatile("" : "+m"(r)); _mm_setcsr(m); return r; }
+ #else
+ #define SPU__DP_RN1(f) static inline u128 f(u128 a) { return f##_h_(a); }
+ #define SPU__DP_RN2(f) static inline u128 f(u128 a, u128 b) { return f##_h_(a, b); }
+@@ -1401,11 +1601,11 @@ static inline u128 spu_shl_ref(u128 a, u128 b)   { u128 r; for(int i=0;i<4;i++){
  static inline u128 spu_shlh_ref(u128 a, u128 b)  { u128 r; for(int i=0;i<8;i++){ uint32_t sh=b._u16[i]&0x1F; r._u16[i]=(sh>15)?0:(uint16_t)(a._u16[i]<<sh); } return r; }
  static inline u128 spu_rot_ref(u128 a, u128 b)   { u128 r; for(int i=0;i<4;i++){ uint32_t sh=b._u32[i]&31; r._u32[i]= sh ? ((a._u32[i]<<sh)|(a._u32[i]>>(32-sh))) : a._u32[i]; } return r; }
  static inline u128 spu_roth_ref(u128 a, u128 b)  { u128 r; for(int i=0;i<8;i++){ uint32_t sh=b._u16[i]&15; r._u16[i]= sh ? (uint16_t)((a._u16[i]<<sh)|(a._u16[i]>>(16-sh))) : a._u16[i]; } return r; }
@@ -5214,7 +5249,7 @@ index f04fda63..27f2b903 100644
      uint64_t hi=((uint64_t)a._u32[0]<<32)|a._u32[1], lo=((uint64_t)a._u32[2]<<32)|a._u32[3];
      uint64_t nhi=(hi<<sh)|(lo>>(64-sh)), nlo=(lo<<sh)|(hi>>(64-sh));
      u128 r; r._u32[0]=(uint32_t)(nhi>>32); r._u32[1]=(uint32_t)nhi; r._u32[2]=(uint32_t)(nlo>>32); r._u32[3]=(uint32_t)nlo; return r; }
-@@ -1575,7 +1753,7 @@ SPU__XE_INLINE __m128i spu__xe_narrow(__m256i v) {
+@@ -1575,7 +1775,7 @@ SPU__XE_INLINE __m128i spu__xe_narrow(__m256i v) {
  /* (2^13 | base) * 2^19 - step * y is 2^32 + d with d = base * 2^19 - step * y (base < 2^13,
   * step * y < 2^29): the magnitude is >= 2^32 exactly when base * 2^19 >= step * y, and its low
   * 32 bits are d mod 2^32 either way, so 32-bit lanes suffice. */
@@ -5223,7 +5258,7 @@ index f04fda63..27f2b903 100644
      const __m128i est = spu__xe_ld(b), y = _mm_and_si128(spu__xe_ld(a), _mm_set1_epi32(0x7FFFF));
      const __m128i exp = _mm_and_si128(_mm_srli_epi32(est, 23), _mm_set1_epi32(0xFF));
      const __m128i b19 = _mm_slli_epi32(_mm_and_si128(_mm_srli_epi32(est, 10), _mm_set1_epi32(0x1FFF)), 19);
-@@ -1603,7 +1781,7 @@ SPU__XE_INLINE __m128i spu__xe_lut(const uint32_t* tbl, int n, __m128i idx) {
+@@ -1603,7 +1803,7 @@ SPU__XE_INLINE __m128i spu__xe_lut(const uint32_t* tbl, int n, __m128i idx) {
      }
      return r;
  }
@@ -5232,7 +5267,7 @@ index f04fda63..27f2b903 100644
      const __m128i x = spu__xe_ld(a);
      const __m128i exp = _mm_and_si128(_mm_srli_epi32(x, 23), _mm_set1_epi32(0xFF));
      const __m128i idx = _mm_and_si128(_mm_srli_epi32(x, 18), _mm_set1_epi32(0x1F));
-@@ -1614,7 +1792,7 @@ SPU__XE_INLINE u128 spu_frest(u128 a) {
+@@ -1614,7 +1814,7 @@ SPU__XE_INLINE u128 spu_frest(u128 a) {
      return spu__xe_st(_mm_or_si128(_mm_or_si128(_mm_and_si128(x, _mm_set1_epi32((int)0x80000000u)),
                                                  _mm_slli_epi32(rexp, 23)), frac));
  }
@@ -5241,7 +5276,7 @@ index f04fda63..27f2b903 100644
      const __m128i x = spu__xe_ld(a);
      const __m128i exp = _mm_and_si128(_mm_srli_epi32(x, 23), _mm_set1_epi32(0xFF));
      const __m128i idx = _mm_and_si128(_mm_srli_epi32(x, 18), _mm_set1_epi32(0x3F));
-@@ -1658,7 +1836,31 @@ SPU__XE_INLINE __m128i spu__xe_cxflt(__m256d d, __m128i sign, __m128i nz, int i8
+@@ -1658,7 +1858,31 @@ SPU__XE_INLINE __m128i spu__xe_cxflt(__m256d d, __m128i sign, __m128i nz, int i8
      const __m128i flush = _mm_cmpgt_epi32(_mm_set1_epi32(1), biased);
      return _mm_and_si128(_mm_andnot_si128(flush, r), nz);
  }
@@ -5273,7 +5308,7 @@ index f04fda63..27f2b903 100644
      const __m128i v = spu__xe_ld(a);
      const __m256d d = _mm256_andnot_pd(_mm256_set1_pd(-0.0), _mm256_cvtepi32_pd(v));          /* |v|, exact */
      const __m128i sign = _mm_and_si128(v, _mm_set1_epi32((int)0x80000000u));
-@@ -1666,6 +1868,18 @@ SPU__XE_INLINE u128 spu_csflt(u128 a, int i8) {
+@@ -1666,6 +1890,18 @@ SPU__XE_INLINE u128 spu_csflt(u128 a, int i8) {
      return spu__xe_st(spu__xe_cxflt(d, sign, nz, i8));
  }
  SPU__XE_INLINE u128 spu_cuflt(u128 a, int i8) {
@@ -5292,7 +5327,7 @@ index f04fda63..27f2b903 100644
      const __m128i v = spu__xe_ld(a);
      /* unsigned -> double: flip the top bit, convert as signed, add 2^31 back (all exact) */
      const __m256d d = _mm256_add_pd(_mm256_cvtepi32_pd(_mm_xor_si128(v, _mm_set1_epi32((int)0x80000000u))),
-@@ -1673,6 +1887,38 @@ SPU__XE_INLINE u128 spu_cuflt(u128 a, int i8) {
+@@ -1673,6 +1909,38 @@ SPU__XE_INLINE u128 spu_cuflt(u128 a, int i8) {
      const __m128i nz = _mm_xor_si128(_mm_cmpeq_epi32(v, _mm_setzero_si128()), _mm_set1_epi32(-1));
      return spu__xe_st(spu__xe_cxflt(d, _mm_setzero_si128(), nz, i8));
  }
@@ -5331,7 +5366,7 @@ index f04fda63..27f2b903 100644
  #else
  static inline u128 spu_fi(u128 a, u128 b)      { return spu_fi_ref(a, b); }
  static inline u128 spu_frest(u128 a)           { return spu_frest_ref(a); }
-@@ -1816,7 +2062,7 @@ static inline u128 spu_rotma_ref(u128 a, u128 b)  { u128 r; for(int i=0;i<4;i++)
+@@ -1816,7 +2084,7 @@ static inline u128 spu_rotma_ref(u128 a, u128 b)  { u128 r; for(int i=0;i<4;i++)
  static inline u128 spu_rothm_ref(u128 a, u128 b)  { u128 r; for(int i=0;i<8;i++){ uint32_t sh=(0-b._u16[i])&0x1F; r._u16[i]=(sh>15)?0:(uint16_t)(a._u16[i]>>sh); } return r; }
  static inline u128 spu_rothma_ref(u128 a, u128 b) { u128 r; for(int i=0;i<8;i++){ uint32_t sh=(0-b._u16[i])&0x1F; r._s16[i]=(sh>15)?(a._s16[i]>>15):(a._s16[i]>>sh); } return r; }
  static inline u128 spu_rothmi(u128 a, int i7) { u128 r; int sh=(0-i7)&0x1F; for(int i=0;i<8;i++) r._u16[i]=(sh>15)?0:(uint16_t)(a._u16[i]>>sh); return r; }
@@ -5340,7 +5375,7 @@ index f04fda63..27f2b903 100644
      uint64_t hi=((uint64_t)a._u32[0]<<32)|a._u32[1], lo=((uint64_t)a._u32[2]<<32)|a._u32[3];
      uint64_t nlo=(lo>>sh)|(hi<<(64-sh)), nhi=(hi>>sh);
      u128 r; r._u32[0]=(uint32_t)(nhi>>32); r._u32[1]=(uint32_t)nhi; r._u32[2]=(uint32_t)(nlo>>32); r._u32[3]=(uint32_t)nlo; return r; }
-@@ -1844,10 +2090,38 @@ static inline u128 spu_rotqmbybi(u128 a, u128 b) {
+@@ -1844,10 +2112,38 @@ static inline u128 spu_rotqmbybi(u128 a, u128 b) {
  #else
  static inline u128 spu_rotqmbybi(u128 a, u128 b) { return spu_rotqmbybi_ref(a, b); }
  #endif
@@ -5380,7 +5415,7 @@ index f04fda63..27f2b903 100644
  static inline u128 spu_rotqmbyi_ref(u128 a, int i7)  { int sh=(0-i7)&0x1F; u128 r=spu_zero(); if(sh>=16) return r; for(int i=0;i<16;i++){ int s=i-sh; if(s>=0) r._u8[SPU_W(i)]=a._u8[SPU_W(s)]; } return r; }
  #if defined(__ARM_NEON) && !defined(SPU_SCALAR_HELPERS) && !defined(SPU_SCALAR_INT)
  static inline u128 spu_rotqmbyi(u128 a, int i7) {
-@@ -2259,14 +2533,44 @@ static inline u128 spu_xshw(u128 a) {
+@@ -2259,14 +2555,44 @@ static inline u128 spu_xshw(u128 a) {
      return spu__xs(_mm_srai_epi32(_mm_slli_epi32(spu__xl(a), 16), 16));
  }
  static inline u128 spu_clz(u128 a) { return spu_clz_ref(a); }
@@ -5433,7 +5468,7 @@ index f04fda63..27f2b903 100644
  #else
  static inline u128 spu_absdb(u128 a, u128 b) { return spu_absdb_ref(a, b); }
  static inline u128 spu_avgb(u128 a, u128 b) { return spu_avgb_ref(a, b); }
-@@ -2330,4 +2634,47 @@ static inline u128 spu_fsmh(u128 a) { return spu_fsmh_ref(a); }
+@@ -2330,4 +2656,47 @@ static inline u128 spu_fsmh(u128 a) { return spu_fsmh_ref(a); }
  static inline u128 spu_fsmb(u128 a) { return spu_fsmb_ref(a); }
  #endif
  

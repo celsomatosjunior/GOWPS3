@@ -530,6 +530,7 @@ def spu_simd(args, cm: Path):
     # código traduzido, sem chamar o despachante de canais (spu_helpers.h).
     defs = ("SPU_USE_DISPATCH_MT;SPU_INLINE_WRCH=1" + (";SPU_FLOAT_APPROX;SPU_AX_NOFLUSH=1" if args.spu_float == "aprox" else "")
             + (";SPU_AX_CLAMP=1" if args.spu_float == "aprox" and args.spu_reg_locais else "")
+            + (";SPU_AX_RZ=1" if args.spu_float == "aprox" and args.spu_reg_locais and args.spu_rz else "")
             + ("" if args.spu_ls_diag else ";SPU_LS_NODIAG"))
     # --spu-pgo: otimização guiada por perfil só no código SPU. "gerar" instrumenta (rodar com GOW3_PGO=<início>,<fim>
     # e LLVM_PROFILE_FILE, depois llvm-profdata merge); um caminho .profdata compila usando esse perfil.
@@ -773,6 +774,13 @@ def step_rodar(args, work: Path, state: dict, progress):
     # FTZ/DAZ nas threads de SPU (denormais como zero, como o SPU): o float aproximado sem zerar a cada operação
     # (SPU_AX_NOFLUSH) conta com isso.
     env.setdefault("SPU_FTZ", "1")
+    # Arredondamento para zero nas threads de SPU (MXCSR), como a precisão simples do SPU: fa/fm/fma truncam e um
+    # estouro finito dá +-FLT_MAX em vez de Inf. O build --spu-rz (SPU_AX_RZ, sem os limites dos resultados)
+    # precisa dele.
+    env.setdefault("SPU_RZ", "1")
+    if env.get("SPU_RZ") == "0" and getattr(args, "spu_rz", False):
+        print("aviso: SPU_RZ=0 com um build --spu-rz (sem limites dos resultados): estouros viram Inf/NaN; "
+              "use um build --no-spu-rz para medir sem RZ", file=sys.stderr)
     if args.jogo:
         root = Path(args.jogo)
         if (root / "PS3_GAME").is_dir():
@@ -834,6 +842,9 @@ def main() -> int:
                     help="compila as sondas de LS do runtime SPU (SPU_LS_WATCH etc.) no código traduzido")
     ap.add_argument("--spu-opt", default="",
                     help="opções de otimização das fontes SPU no lugar de -O2;-mllvm;-pre-RA-sched=list-burr;-DSPU_CFLT_INT, separadas por ;")
+    ap.add_argument("--spu-rz", action=argparse.BooleanOptionalAction, default=True,
+                    help="float aproximado sem os limites dos resultados (SPU_AX_RZ, padrão); conta com SPU_RZ=1 no rodar. "
+                         "--no-spu-rz volta aos limites (para rodar com SPU_RZ=0)")
     ap.add_argument("--spu-float", choices=["aprox", "exato"], default="aprox",
                     help="ponto flutuante do SPU: aprox = operações do host (como o RPCS3); exato = bit a bit")
     ap.add_argument("--sem-fundir", action="store_true",
