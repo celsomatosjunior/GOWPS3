@@ -268,6 +268,14 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
 
 ## Ponto de retomada (atualizado a cada pausa)
 
+**21/11/2026 (madrugada): RZ no padrão; saves e instalação conferidos; mapa do caminho direto em curso.**
+- Padrão: `native-recomp` c2e4a5d+ com ps3recomp `integra-17nov` 35089848 (RZ: `--spu-rz` e `SPU_RZ=1`).
+  Exe de referência local `exe_pd21` (us/job 26,5, q/s reais mediana 14,0 na cena de 330 s).
+- Feito e registrado: A/B do RZ (-0,4..-0,6 us/job), teste longo, regressão dos saves, instalação atualizada,
+  sondas do caminho direto (41% do tempo EDGE na forma que ele leva; tabela de entradas mapeada em parte).
+- Próximo: terminar o mapa (registro de saída, matriz, anel) e escrever o plano do caminho direto do GOW3 em modo
+  só-conferência contra os estágios traduzidos; só depois o A/B no jogo. Envio aos dois repositórios em 24/11.
+
 **17/11/2026: integração validada (`integra-17nov` aqui e no ps3recomp, autorização do Celso de 17/11).**
 - Conteúdo: `native-recomp` (recarga, padrão desde 15/11) + `ponte-lockline` (relatórios e labels do RSX dentro
   do lock de linha) + `fusao-folha` (folha 912f:4C48 fundida por padrão; `--sem-fundir-folha` desliga) +
