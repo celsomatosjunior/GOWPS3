@@ -592,6 +592,10 @@ odar_longo_in21.log`): sem travada, us/job(60s) 27,5, q/s
   podem sair (`SPU_AX_RZ`). Imagem conferida nas rodadas rzv/srv (sem amarelo de NaN). A/B 10 pares rz21 x sr21,
   ambos com `SPU_RZ=1` (`logsb_sr.out`): us/job -0,48 (t -4,1), us/job(60s) -0,69 (t -3,8); q/s reais na
   mediana dos pares +0,1 (o par 9 da base caiu numa cena leve, 24 q/s), executor Wws 0 divergências, 0 travadas.
+  Sombra dos núcleos EDGE nativos sob RZ (sr21, `GOW3_EDGE_SOMBRA=1`): DD50, 9040, 10E20 e C168, 0 diferenças.
+  Sonda do caminho direto do ascension-native (`edge_sonda`, só conta; `logsodar_dsv.log`): 56% dos jobs EDGE
+  têm a forma que ele leva (índices 2/3, sem normais nem segundo fluxo, com fragmento de posição; 71% deles com
+  skin) e nenhum deles entra no laço de vértices 0x9530; 35% são recusados por normais/segundo fluxo.
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
