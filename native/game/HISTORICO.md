@@ -622,7 +622,8 @@ odar_dsv2.log`, ciclos do TSC de uma entrada 0xD200 à seguinte da mesma
   `SPU_AX_RZ=1`, rodada de 330 s com os dados locais: us/job 26,6, q/s reais mediana 13,2, executor Wws ligado.
   Mapeamento para o caminho direto (sondas ds23 e LS final de `jobcap_comb`): a tabela de entradas do GOW3 está em
   LS 0x12780 (no Ascension 0x106B0) e foi renumerada em parte: fluxo de índices 5 -> 2, vértices 11 -> 10,
-  contagens 13 -> 13. Faltam atributos, estado RSX, skin e o anel de comandos (detalhes no caderno local).
+  contagens 13 -> 13; paleta do skin 6 -> 4 (ou 6), ossos 10 -> 8 (sonda ds24 na 0x10760); parâmetros do job em
+  LS 0x12730 (lá 0x10650). Faltam atributos, estado RSX e o anel de comandos (detalhes no caderno local).
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
