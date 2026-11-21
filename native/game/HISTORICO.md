@@ -617,6 +617,9 @@ odar_dsv2.log`, ciclos do TSC de uma entrada 0xD200 à seguinte da mesma
      Tumba de Ares, imagem certa. A volta da morte ao checkpoint segue coberta pelo teste longo (o roteiro morre e
      recarrega).
   Patches conferidos: em 4e8f3ca8 os 3 aplicam e reproduzem o 35089848 (fora finais de linha e os submódulos).
+  Instalação atualizada (`Projetos/instala18`: GOWPS3 05f23c7, ps3recomp 4e8f3ca8 com os patches antigos
+  desfeitos e os novos aplicados, glslang/asmjit mantidos): ponte RSX compila (189 objetos), build passa com
+  `SPU_AX_RZ=1`, rodada de 330 s com os dados locais: us/job 26,6, q/s reais mediana 13,2, executor Wws ligado.
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
