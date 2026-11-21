@@ -603,11 +603,20 @@ odar_dsv.log`): 56% dos jobs EDGE
 odar_longo_sr21.log`): sem travada, us/job(60s) 27,6, q/s reais mediana 16,0.
   **Integrado (ps3recomp 35089848 em integra-17nov): `--spu-rz` padrão (`--no-spu-rz` desliga) e `SPU_RZ=1` no
   rodar; com `SPU_RZ=0` num build `--spu-rz` o rodar avisa.**
-  Novo padrão pd21 (`logsodar_pdv.log`): us/job 26,5, q/s reais mediana 14,0, igual ao sr21.
-  Sonda com tempo por classe (ds22, `logsodar_dsv2.log`, ciclos do TSC de uma entrada 0xD200 à seguinte da mesma
+  Novo padrão pd21 (`logs
+odar_pdv.log`): us/job 26,5, q/s reais mediana 14,0, igual ao sr21.
+  Sonda com tempo por classe (ds22, `logs
+odar_dsv2.log`, ciclos do TSC de uma entrada 0xD200 à seguinte da mesma
   thread): forma direta sem skin 54,9 mil ciclos/job (1,49 mi jobs), com skin 77,1 mil (3,28 mi), laço de vértices
   170 mil (1,28 mi), outros 102,5 mil (2,49 mi). A forma que o caminho direto leva é **41% do tempo EDGE**; se ela
   custasse metade (no Ascension um job com skin cai de 109 mil para 56 mil ciclos), o EDGE cairia ~20%.
+  Regressão dos saves com o padrão pd21 (`scripts_locais\cadeia_rg.sh`, saves de trabalho com cópia antes):
+  1. Carregar: `escolhido 0 de 8` -> `BCES00510-AUTOSAVE`.
+  2. Escolher um manual (`PS3_SAVEDATA_ESCOLHA=211127004312`) -> carrega; R1 no altar -> `BCES00510-261121003001`.
+  3. Executável reaberto: o save novo vem primeiro (data decrescente) e carrega; Kratos de volta ao altar da
+     Tumba de Ares, imagem certa. A volta da morte ao checkpoint segue coberta pelo teste longo (o roteiro morre e
+     recarrega).
+  Patches conferidos: em 4e8f3ca8 os 3 aplicam e reproduzem o 35089848 (fora finais de linha e os submódulos).
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
