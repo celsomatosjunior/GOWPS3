@@ -691,6 +691,18 @@ odar_dsv2.log`, ciclos do TSC de uma entrada 0xD200 à seguinte da mesma
   Teste longo 1.200 s: 3,4 mi jobs 03 18 tomados, sem travada, imagem certa. Ligado por padrão nos ganchos locais
   (`edge_nativo`, cópia anterior `gow3_direct.h.antes_r318_23nov`); `GOW3_DIRECT_R318=0` desliga, `=1` só confere.
   Próximo grupo: registro 07 36 (54 B, ~1,1 mi recusas), que passa pelo laço de vértices 0x9530 (luz).
+- **Registro 07 36 (54 B) no caminho direto (23/11): exato, mas sem ganho; fica desligado.** Todos os 07 36 rodam o
+  recorte de triângulos (0xF870, sem a flag 2048) e a luz (atributos 29-32, laço de vértices 0x9530). O caminho
+  chama na ordem da geometria posições/normais, índices (0x106E0), recorte (que reduz e compacta os índices) e a
+  luz, refaz a reserva e os comandos com o número de índices pós-recorte (7 atributos, passo 54) e empacota como o
+  registro de 54 B; jobs recortados por inteiro (ou sem luz) voltam para a saída original. Conferência: 17.916 de
+  17.916 registros, índices, reserva e comandos iguais (dc54). A/B 10 pares (`ab_r7`): us/job -0,20 (t -1,2),
+  us/job(60s) -0,45 (t -1,8), q/s -0,07: **neutro** — o laço 0x9530 continua traduzido e domina esses jobs.
+  `GOW3_DIRECT_R0736=2` liga, `=1` só confere.
+  **Correção no 03 18 integrado:** a matriz das normais ia para r1+0x20 do chamador (64 bytes de locais do corpo
+  do job, já mortos depois da geometria: nenhum efeito visto); as seqüências passam a usar r1-368, o quadro da
+  própria geometria. Instalado em `edge_nativo` (cópia `gow3_direct.h.antes_quadro_23nov`); conferência do 03 18
+  28.287 de 28.287 e 10 rodadas de base do `ab_r7` sem problema.
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
