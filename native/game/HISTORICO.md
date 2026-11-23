@@ -679,6 +679,18 @@ odar_dsv2.log`, ciclos do TSC de uma entrada 0xD200 à seguinte da mesma
   Draw de material completo em conferência (bloco de estado copiado para o anel pequeno: w0 bytes de +0x80 do
   bloco no next2 antigo, next2 += round128(w0 + 0x180); 4.024 de 4.024 iguais), mas o A/B tomando (10 pares)
   deu q/s reais -0,73 (t -1,4) e us/job -0,06: **sem ganho, fica desligado** (`GOW3_DIRECT_MAT=2` liga).
+- **Registro 03 18 (36 B) no caminho direto, integrado (23/11):** o segundo maior grupo recusado (~37% das
+  tentativas). Lido no código traduzido da geometria: com a flag 0x10000 dos parâmetros o job grava a posição do
+  quadro anterior (atributo 33); sem skin, duas transformações das posições (matriz atual e anterior), matriz das
+  normais (linhas / |linha|²) aplicada aos buffers de normal e tangente e renormalização; com skin, o skin roda duas
+  vezes (paleta anterior e atual). Registro = posição float + normal SNORM16 xyzw + tangente 11:11:10 + posição
+  anterior, o mesmo empacotamento do registro de 54 B. O caminho chama as funções traduzidas na mesma ordem e
+  empacota em C. Conferência (dc49): **27.903 de 27.903 registros iguais byte a byte** e, com a ordem dos
+  comandos corrigida (um atributo por vez), 28.503 de 28.503 comandos iguais tomando (dc50). A/B 10 pares
+  (`ab_r3`): **us/job -0,86 (-3,5%, t -8,1, 10 de 10)**, us/job(60s) -1,07; q/s reais +0,11 (t 0,7, ruído de cena).
+  Teste longo 1.200 s: 3,4 mi jobs 03 18 tomados, sem travada, imagem certa. Ligado por padrão nos ganchos locais
+  (`edge_nativo`, cópia anterior `gow3_direct.h.antes_r318_23nov`); `GOW3_DIRECT_R318=0` desliga, `=1` só confere.
+  Próximo grupo: registro 07 36 (54 B, ~1,1 mi recusas), que passa pelo laço de vértices 0x9530 (luz).
 - **Perfil do ci19 (20/11, `logs\prof_ci19*`, us/job(60s) 28,1 nessa cena):** coerência 4,6% -> 3,6% do ocupado;
   o resto igual (traduzido 59%, despacho 9%, nativos 9%, DMA 5%). Funções traduzidas mais quentes: 14561:0x9A68
   3,5% (laço de luzes 0x9C48: núcleo nativo já tentado em 06/11, neutro por gancho caro e laços curtos), 0x6C10
