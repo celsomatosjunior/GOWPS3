@@ -268,6 +268,14 @@ python native\game\gow3_build.py --ps3recomp <ps3kit> --trabalho <trabalho> --sp
 
 ## Ponto de retomada (atualizado a cada pausa)
 
+**23/11/2026: registro 03 18 no caminho direto, no padrão.**
+- Padrão: ps3recomp 35089848 (RZ) + ganchos locais `<trabalho>\edge_nativo` (caminho direto com 12 B e 03 18;
+  quadro r1-368). Exe local `exe_pd24`: us/job 22,8, q/s reais 15,7 (330 s). Saves conferidos com o pd24
+  (carregar -> AUTOSAVE, salvar manual, reabrir carrega o save novo; saves de trabalho restaurados da cópia).
+- 07 36 e 06 2E passam pela luz (0x9530) e não rendem só pulando a saída (07 36: A/B neutro). Perfil do pd24
+  plano (nenhuma função traduzida acima de 2,8%); o próximo ganho estrutural seria o laço 0x9530 nativo.
+- Envio aos dois repositórios em 24/11 (só o validado; os ganchos ficam locais).
+
 **21/11/2026 (manhã): caminho direto do GOW3 no padrão.**
 - Padrão: ps3recomp 35089848 (RZ) + ganchos locais `<trabalho>\edge_nativo` com o caminho direto (`gow3_direct.h`;
   cópia anterior em `edge_nativo_antes_direto_21nov`). Exe local `exe_pd22`: us/job 24,0, q/s reais 15,2 (330 s).
