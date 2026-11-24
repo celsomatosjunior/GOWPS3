@@ -1,0 +1,16 @@
+12:36:06 == elf ==
+12:36:06 Cópia do EBOOT.ELF em D:\a\GOWPS3\GOWPS3\jogo\EBOOT.ELF
+12:36:06 EBOOT.ELF: D:\a\GOWPS3\GOWPS3\corpus\ps3_test.elf (846.656 bytes)
+12:36:06 == carregar ==
+12:36:06 19 funções, 0 importações do firmware, fim do código 0x100C3AEF
+12:36:06 == traduzir ==
+12:36:06 Traduzindo 19 funções em 8 arquivos (pode levar muitos minutos)...
+12:36:39 Tradução: 3482 funções. 9 arquivos. 1.928.564 linhas. 108 MB. 44939 instruções não traduzidas (TODO)
+12:36:39 == projeto ==
+12:37:05 Projeto configurado
+12:37:05 == compilar ==
+12:37:06 Compilando (a primeira vez leva de 20 a 60 minutos e usa bastante memória)...
+12:37:33 FALHOU em compilar: compilação falhou:
+FAILED: [code=1] ps3recomp_sdk/CMakeFiles/ps3recomp_runtime.dir/libs/video/rsx_shader_msl.cpp.obj 
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.52.37025\include\yvals_core.h(923,1): error: static assertion failed: error STL1000: Unexpected compiler version, expected Clang 22 or newer.
+12:37:33 PAROU (veja logs\ e estado.json)

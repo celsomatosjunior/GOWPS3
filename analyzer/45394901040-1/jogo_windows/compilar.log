@@ -1,0 +1,200 @@
+ 7370 |             dr->tex[_u].w   = s_d3d.cur_texs[_u].w;
+      |                               ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7371,13): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7371 |             dr->tex[_u].h   = s_d3d.cur_texs[_u].h;
+      |             ^~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7371,31): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7371 |             dr->tex[_u].h   = s_d3d.cur_texs[_u].h;
+      |                               ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7372,13): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7372 |             dr->tex[_u].fmt = s_d3d.cur_texs[_u].fmt;
+      |             ^~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7372,31): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7372 |             dr->tex[_u].fmt = s_d3d.cur_texs[_u].fmt;
+      |                               ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7373,21): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7373 |                     dr->tex[_u].ctrl1 = s_d3d.cur_texs[_u].ctrl1;
+      |                     ^~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7373,41): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7373 |                     dr->tex[_u].ctrl1 = s_d3d.cur_texs[_u].ctrl1;
+      |                                         ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7374,21): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7374 |                     dr->tex[_u].cube  = s_d3d.cur_texs[_u].cube;
+      |                     ^~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7374,41): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7374 |                     dr->tex[_u].cube  = s_d3d.cur_texs[_u].cube;
+      |                                         ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7375,21): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7375 |                     dr->tex[_u].mips  = s_d3d.cur_texs[_u].mips; dr->tex[_u].addr = s_d3d.cur_texs[_u].addr; dr->tex[_u].filter = s_d3d.cur_texs[_u].filter; dr->tex[_u].ctrl0 = s_d3d.cur_texs[_u].ctrl0; dr->tex[_u].border = s_d3d.cur_texs[_u].border;
+      |                     ^~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7375,41): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7375 |                     dr->tex[_u].mips  = s_d3d.cur_texs[_u].mips; dr->tex[_u].addr = s_d3d.cur_texs[_u].addr; dr->tex[_u].filter = s_d3d.cur_texs[_u].filter; dr->tex[_u].ctrl0 = s_d3d.cur_texs[_u].ctrl0; dr->tex[_u].border = s_d3d.cur_texs[_u].border;
+      |                                         ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7375,66): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7375 |                     dr->tex[_u].mips  = s_d3d.cur_texs[_u].mips; dr->tex[_u].addr = s_d3d.cur_texs[_u].addr; dr->tex[_u].filter = s_d3d.cur_texs[_u].filter; dr->tex[_u].ctrl0 = s_d3d.cur_texs[_u].ctrl0; dr->tex[_u].border = s_d3d.cur_texs[_u].border;
+      |                                                                  ^~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7375,85): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7375 |                     dr->tex[_u].mips  = s_d3d.cur_texs[_u].mips; dr->tex[_u].addr = s_d3d.cur_texs[_u].addr; dr->tex[_u].filter = s_d3d.cur_texs[_u].filter; dr->tex[_u].ctrl0 = s_d3d.cur_texs[_u].ctrl0; dr->tex[_u].border = s_d3d.cur_texs[_u].border;
+      |                                                                                     ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7375,110): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7375 |                     dr->tex[_u].mips  = s_d3d.cur_texs[_u].mips; dr->tex[_u].addr = s_d3d.cur_texs[_u].addr; dr->tex[_u].filter = s_d3d.cur_texs[_u].filter; dr->tex[_u].ctrl0 = s_d3d.cur_texs[_u].ctrl0; dr->tex[_u].border = s_d3d.cur_texs[_u].border;
+      |                                                                                                              ^~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7375,131): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7375 |                     dr->tex[_u].mips  = s_d3d.cur_texs[_u].mips; dr->tex[_u].addr = s_d3d.cur_texs[_u].addr; dr->tex[_u].filter = s_d3d.cur_texs[_u].filter; dr->tex[_u].ctrl0 = s_d3d.cur_texs[_u].ctrl0; dr->tex[_u].border = s_d3d.cur_texs[_u].border;
+      |                                                                                                                                   ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7375,158): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7375 |                     dr->tex[_u].mips  = s_d3d.cur_texs[_u].mips; dr->tex[_u].addr = s_d3d.cur_texs[_u].addr; dr->tex[_u].filter = s_d3d.cur_texs[_u].filter; dr->tex[_u].ctrl0 = s_d3d.cur_texs[_u].ctrl0; dr->tex[_u].border = s_d3d.cur_texs[_u].border;
+      |                                                                                                                                                              ^~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7375,178): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7375 |                     dr->tex[_u].mips  = s_d3d.cur_texs[_u].mips; dr->tex[_u].addr = s_d3d.cur_texs[_u].addr; dr->tex[_u].filter = s_d3d.cur_texs[_u].filter; dr->tex[_u].ctrl0 = s_d3d.cur_texs[_u].ctrl0; dr->tex[_u].border = s_d3d.cur_texs[_u].border;
+      |                                                                                                                                                                                  ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7375,204): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7375 |                     dr->tex[_u].mips  = s_d3d.cur_texs[_u].mips; dr->tex[_u].addr = s_d3d.cur_texs[_u].addr; dr->tex[_u].filter = s_d3d.cur_texs[_u].filter; dr->tex[_u].ctrl0 = s_d3d.cur_texs[_u].ctrl0; dr->tex[_u].border = s_d3d.cur_texs[_u].border;
+      |                                                                                                                                                                                                            ^~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7375,225): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7375 |                     dr->tex[_u].mips  = s_d3d.cur_texs[_u].mips; dr->tex[_u].addr = s_d3d.cur_texs[_u].addr; dr->tex[_u].filter = s_d3d.cur_texs[_u].filter; dr->tex[_u].ctrl0 = s_d3d.cur_texs[_u].ctrl0; dr->tex[_u].border = s_d3d.cur_texs[_u].border;
+      |                                                                                                                                                                                                                                 ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7376,13): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7376 |             dr->tex[_u].set = s_d3d.cur_texs[_u].set;
+      |             ^~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7376,31): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7376 |             dr->tex[_u].set = s_d3d.cur_texs[_u].set;
+      |                               ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7377,13): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7377 |             dr->tex_rt[_u]  = -1;
+      |             ^~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7420,44): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7420 |           for (int k = 0; k < ns; k++) if (seen[k] == offset) known = 1;
+      |                                            ^~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7421,35): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7421 |           if (!known && ns < 8) { seen[ns++] = offset;
+      |                                   ^~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7452,21): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7452 |                 if (vm_base[ea_loc  + i]) nz_loc++;
+      |                     ^~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7453,21): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7453 |                 if (vm_base[ea_main + i]) nz_main++;
+      |                     ^~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7501,29): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7501 |                         if (vm_base[_r  + i]) nz_r++;
+      |                             ^~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7502,29): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7502 |                         if (vm_base[alt + i]) nz_a++;
+      |                             ^~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7506,58): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7506 |                         for (int k = 0; k < ns; k++) if (seen[k] == offset) known = 1;
+      |                                                          ^~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7507,50): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7507 |                         if (!known && ns < 32) { seen[ns++] = offset;
+      |                                                  ^~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7517,11): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7517 |           s_d3d.cur_texs[unit].off = _r; }
+      |           ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7518,9): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7518 |         s_d3d.cur_texs[unit].raw = offset;
+      |         ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7519,9): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7519 |         s_d3d.cur_texs[unit].w = width; s_d3d.cur_texs[unit].h = height;
+      |         ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7519,41): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7519 |         s_d3d.cur_texs[unit].w = width; s_d3d.cur_texs[unit].h = height;
+      |                                         ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7520,9): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7520 |         s_d3d.cur_texs[unit].fmt = format;   /* full byte: LN(0x20)/UN(0x40) kept */
+      |         ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7521,9): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7521 |         s_d3d.cur_texs[unit].ctrl1 = tex->control1;
+      |         ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7522,9): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7522 |         s_d3d.cur_texs[unit].cube  = (tex->format & 4) ? 1 : 0;
+      |         ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7523,9): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7523 |         s_d3d.cur_texs[unit].mips  = (tex->format >> 16) & 0xFFFFu;
+      |         ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7524,9): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7524 |         s_d3d.cur_texs[unit].addr   = tex->address;
+      |         ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7525,9): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7525 |         s_d3d.cur_texs[unit].filter = tex->filter;
+      |         ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7526,9): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7526 |         s_d3d.cur_texs[unit].ctrl0  = tex->control0;
+      |         ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7527,9): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7527 |         s_d3d.cur_texs[unit].border = tex->border_color;
+      |         ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7530,49): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7530 |             int f=0; for (int i=0;i<ns;i++) if (seen[i]==k) f=1;
+      |                                                 ^~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7531,34): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7531 |             if (!f && ns < 64) { seen[ns++]=k;
+      |                                  ^~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7535,9): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7535 |         s_d3d.cur_texs[unit].set = 1;
+      |         ^~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7565,43): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7565 |             const rsx_vertex_attrib* a = &state->vertex_attribs[i];
+      |                                           ^~~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7727,13): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7727 |         if (s_d3d.cmd_allocators[i]) s_d3d.cmd_allocators[i]->lpVtbl->Release(s_d3d.cmd_allocators[i]);
+      |             ^~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7727,38): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7727 |         if (s_d3d.cmd_allocators[i]) s_d3d.cmd_allocators[i]->lpVtbl->Release(s_d3d.cmd_allocators[i]);
+      |                                      ^~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7727,79): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7727 |         if (s_d3d.cmd_allocators[i]) s_d3d.cmd_allocators[i]->lpVtbl->Release(s_d3d.cmd_allocators[i]);
+      |                                                                               ^~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7728,13): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7728 |         if (s_d3d.render_targets[i]) s_d3d.render_targets[i]->lpVtbl->Release(s_d3d.render_targets[i]);
+      |             ^~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7728,38): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7728 |         if (s_d3d.render_targets[i]) s_d3d.render_targets[i]->lpVtbl->Release(s_d3d.render_targets[i]);
+      |                                      ^~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7728,79): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7728 |         if (s_d3d.render_targets[i]) s_d3d.render_targets[i]->lpVtbl->Release(s_d3d.render_targets[i]);
+      |                                                                               ^~~~~~~~~~~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7781,14): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7781 |         if (!s_d3d.draws[_i].is_clear && s_d3d.draws[_i].rt_off == 0) {
+      |              ^~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7781,42): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7781 |         if (!s_d3d.draws[_i].is_clear && s_d3d.draws[_i].rt_off == 0) {
+      |                                          ^~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7801,17): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7801 |             if (s_d3d.draws[_i].is_clear) { clears++; continue; }
+      |                 ^~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7802,17): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7802 |             if (s_d3d.draws[_i].rt_off) offscreen++; else onscreen++;
+      |                 ^~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7808,19): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7808 |               if (s_d3d.draws[_i].is_clear) continue;
+      |                   ^~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7809,23): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7809 |               u32 o = s_d3d.draws[_i].rt_off; int f = -1;
+      |                       ^~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7810,51): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7810 |               for (int _j = 0; _j < nd; _j++) if (offs[_j] == o) { f = _j; break; }
+      |                                                   ^~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7811,42): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7811 |               if (f < 0) { if (nd < 8) { offs[nd] = o; cnt[nd] = 1; nd++; } }
+      |                                          ^~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7811,56): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7811 |               if (f < 0) { if (nd < 8) { offs[nd] = o; cnt[nd] = 1; nd++; } }
+      |                                                        ^~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7812,20): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7812 |               else cnt[f]++;
+      |                    ^~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7816,21): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7816 |                 if (s_d3d.draws[_i].is_clear) continue;
+      |                     ^~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7817,21): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7817 |                 if (s_d3d.draws[_i].is_vp) vp++; else novp++;
+      |                     ^~~~~~~~~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7824,46): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7824 |               fprintf(stderr, " 0x%08X x%u", offs[_j], cnt[_j]);
+      |                                              ^~~~
+D:\a\GOWPS3\GOWPS3\ps3recomp\libs\video\rsx_d3d12_backend.c(7824,56): warning: unsafe buffer access [-Wunsafe-buffer-usage]
+ 7824 |               fprintf(stderr, " 0x%08X x%u", offs[_j], cnt[_j]);
+      |                                                        ^~~
+1699 warnings generated.
+ninja: build stopped: subcommand failed.
+(código 1)

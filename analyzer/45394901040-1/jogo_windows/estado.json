@@ -1,0 +1,46 @@
+{
+ "elf": "D:\\a\\GOWPS3\\GOWPS3\\corpus\\ps3_test.elf",
+ "steps": {
+  "elf": {
+   "ok": true,
+   "seconds": 0
+  },
+  "carregar": {
+   "ok": true,
+   "seconds": 0
+  },
+  "traduzir": {
+   "ok": true,
+   "seconds": 33
+  },
+  "projeto": {
+   "ok": true,
+   "seconds": 25
+  },
+  "compilar": {
+   "ok": false,
+   "seconds": 28,
+   "error": "compilação falhou:\nFAILED: [code=1] ps3recomp_sdk/CMakeFiles/ps3recomp_runtime.dir/libs/video/rsx_shader_msl.cpp.obj \nC:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Tools\\MSVC\\14.52.37025\\include\\yvals_core.h(923,1): error: static assertion failed: error STL1000: Unexpected compiler version, expected Clang 22 or newer."
+  }
+ },
+ "functions_json": "D:\\a\\GOWPS3\\GOWPS3\\jogo\\analise\\ps3_test.functions.json",
+ "imports_json": "D:\\a\\GOWPS3\\GOWPS3\\jogo\\analise\\ps3_test.imports.json",
+ "n_functions": 19,
+ "n_imports": 0,
+ "code_end": 269236975,
+ "toc": "0x100e7a00",
+ "recomp_dir": "D:\\a\\GOWPS3\\GOWPS3\\jogo\\recompiled",
+ "lifted_functions": 3482,
+ "lifted_files": 9,
+ "lifted_bytes": 107796333,
+ "lifted_lines": 1928564,
+ "lifter_todos": 44939,
+ "lift_seconds": 33,
+ "build_dir": "D:\\a\\GOWPS3\\GOWPS3\\jogo\\build",
+ "spu": null,
+ "build_seconds": 26,
+ "build_errors": [
+  "FAILED: [code=1] ps3recomp_sdk/CMakeFiles/ps3recomp_runtime.dir/libs/video/rsx_shader_msl.cpp.obj ",
+  "C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Tools\\MSVC\\14.52.37025\\include\\yvals_core.h(923,1): error: static assertion failed: error STL1000: Unexpected compiler version, expected Clang 22 or newer."
+ ]
+}
